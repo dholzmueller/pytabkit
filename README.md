@@ -1,4 +1,4 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/scripts/tutorial_notebook.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/examples/tutorial_notebook.ipynb)
 
 # PyTabKit: Tabular ML models and benchmarking code
 
@@ -14,9 +14,9 @@ and (optionally) benchmarking them on our meta-train and meta-test benchmarks.
 ```commandline
 pip install pytabkit
 ```
-- If you want to use TabR, you have to manually install faiss, which is only available on conda
+- If you want to use **TabR**, you have to manually install faiss, which is only available on **conda**
 - Install torch before if you want to control the version (CPU/GPU etc.)
-- Use `pytabkit[full]` to also install the benchmarking library part. See also the [documentation](todo).
+- Use `pytabkit[full]` to also install the **benchmarking** library part. See also the [documentation](https://pytabkit.readthedocs.io).
 
 ## Using the ML models
 Most of our machine learning models are directly available via scikit-learn interfaces.
@@ -50,7 +50,7 @@ model = RealMLP_TD_Classifier(device='cpu', random_state=0, n_cv=1, n_refit=0,
 model.fit(X_train, y_train, val_idxs=val_idxs, cat_features=cat_features)
 model.predict_proba(X_test)
 ```
-See [this notebook](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/scripts/tutorial_notebook.ipynb)
+See [this notebook](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/examples/tutorial_notebook.ipynb)
 for more examples.
 
 ### Available ML models
@@ -78,7 +78,7 @@ Our benchmarking code has functionality for
 with automatic scheduling and trying to respect RAM constraints
 - analyzing/plotting results
 
-For more details, we refer to the [documentation](TODO).
+For more details, we refer to the [documentation](https://pytabkit.readthedocs.io).
 
 ## Citation
 
