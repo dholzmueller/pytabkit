@@ -67,7 +67,7 @@ We provide the following ML models:
 or random search hyperparameter optimization (HPO)
 - **XGB**, **LGBM**, **CatBoost** (D, TD, HPO, HPO-TPE): Interfaces for gradient-boosted 
 tree libraries XGBoost, LightGBM, CatBoost
-- **MLP**, **ResNet** (D, HPO): Models from [Revisiting Deep Learning Models for Tabular Data](Revisiting Deep Learning Models for Tabular Data)
+- **MLP**, **ResNet** (D, HPO): Models from [Revisiting Deep Learning Models for Tabular Data](https://proceedings.neurips.cc/paper_files/paper/2021/hash/9d86d83f925f2149e9edb0ac3b49229c-Abstract.html)
 - **TabR-S** (D): TabR model from [TabR: Tabular Deep Learning Meets Nearest Neighbors](https://openreview.net/forum?id=rhgIgTSSxW)
 - **Ensemble-TD**: Weighted ensemble of all TD models (RealMLP, XGB, LGBM, CatBoost)
 
