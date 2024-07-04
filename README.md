@@ -1,4 +1,4 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/examples/tutorial_notebook.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
 
 # PyTabKit: Tabular ML models and benchmarking code
 
@@ -50,7 +50,7 @@ model = RealMLP_TD_Classifier(device='cpu', random_state=0, n_cv=1, n_refit=0,
 model.fit(X_train, y_train, val_idxs=val_idxs, cat_features=cat_features)
 model.predict_proba(X_test)
 ```
-See [this notebook](https://colab.research.google.com/github/dholzmueller/tab_bench_dev/blob/master/examples/tutorial_notebook.ipynb)
+See [this notebook](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
 for more examples.
 
 ### Available ML models
