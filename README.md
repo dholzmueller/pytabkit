@@ -86,8 +86,8 @@ If you use this repository for research purposes, please cite TODO.
 
 ## Contributors
 
-- David Holzmüller (Main developer)
-- Léo Grinsztajn (Deep learning baselines, plotting)
+- David Holzmüller (main developer)
+- Léo Grinsztajn (deep learning baselines, plotting)
 - Ingo Steinwart (UCI dataset download)
 - Katharina Strecker (PyTorch-Lightning interface)
 

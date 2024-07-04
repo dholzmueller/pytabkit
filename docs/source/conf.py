@@ -6,12 +6,18 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+# following https://stackoverflow.com/questions/10324393/sphinx-build-fail-autodoc-cant-import-find-module
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../..'))
+
 from pytabkit.__about__ import __version__
 
 project = 'pytabkit'
 copyright = '2024, David Holzmüller, Léo Grinsztajn, Ingo Steinwart'
 author = 'David Holzmüller, Léo Grinsztajn, Ingo Steinwart'
 release = __version__
+# release = "0.0.1"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -39,8 +45,3 @@ autodoc_typehints = "description"
 
 # Don't show class signature with the class' name.
 autodoc_class_signature = "separated"
-
-# following https://stackoverflow.com/questions/10324393/sphinx-build-fail-autodoc-cant-import-find-module
-import os
-import sys
-sys.path.insert(0, os.path.abspath('../..'))
