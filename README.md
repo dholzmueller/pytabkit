@@ -1,4 +1,5 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
+[![](https://readthedocs.org/projects/pytabkit/badge/?version=latest&style=flat-default)](https://pytabkit.readthedocs.io/en/latest/)
 
 # PyTabKit: Tabular ML models and benchmarking code
 
