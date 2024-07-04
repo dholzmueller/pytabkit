@@ -15,6 +15,7 @@ build:
     # golang: "1.20"
   jobs:
     pre_build:
+      - export PYTHONPATH=$PYTHONPATH:$PWD
       - sphinx-apidoc -o docs/source/ pytabkit
 
 # Build documentation in the "docs/" directory with Sphinx
