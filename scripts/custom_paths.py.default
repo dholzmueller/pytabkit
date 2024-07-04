@@ -1,0 +1,2 @@
+def get_base_folder():
+    return 'tab_bench_data'
