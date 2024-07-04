@@ -27,7 +27,7 @@ conda init bash
 source ~/.bashrc
 conda deactivate
 conda activate ${CONDA_ENV_NAME}
-cd ~/git/tab_bench
+cd ~/git/pytabkit
 export RAY_DEDUP_LOGS=0  # to disable ray from trying to deduplicate log messages
 
 # ===== DO NOT CHANGE THINGS HERE UNLESS YOU KNOW WHAT YOU ARE DOING =====

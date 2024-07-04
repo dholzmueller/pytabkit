@@ -40,6 +40,10 @@ Therefore, it is in principle possible to run all experiments
 through a single slurm job,
 though experiments can be divided into smaller pieces by running them separately.
 
+First, in `scripts/ray_slurm_template.sh`, 
+replace the line `cd ~/git/pytabkit` according to your folder location.
+Also, make sure that the data path is specified there 
+if you want to set it via an environmental variable.
 Run the following command (replacing some of the parameters with your own values) on the login node:
 ```commandline
 python3 scripts/ray_slurm_launch.py --exp_name=my_exp_name --num_nodes=num_nodes --queue="queue_name" --time=24:00:00 --mail_user="my@address.edu" --log_folder=log_folder --command="python3 -u run_slurm.py"

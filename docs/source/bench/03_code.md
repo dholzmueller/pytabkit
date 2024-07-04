@@ -18,8 +18,8 @@ We represent our datasets using the `DictDatset` class from `tab_models`.
 These datasets can be loaded as follows:
 
 ```python
-from bench_rpltmpl.data.paths import Paths
-from bench_rpltmpl.data.tasks import TaskDescription
+from pytabkit.bench.data.paths import Paths
+from pytabkit.bench.data.tasks import TaskDescription
 
 paths = Paths.from_env_variables()
 task_desc = TaskDescription('openml-reg', 'fifa')
@@ -33,8 +33,8 @@ It is also possible to load a list of all TaskInfo objects
 for an entire task collection:
 
 ```python
-from bench_rpltmpl.data.paths import Paths
-from bench_rpltmpl.data.tasks import TaskCollection
+from pytabkit.bench.data.paths import Paths
+from pytabkit.bench.data.tasks import TaskCollection
 
 paths = Paths.from_env_variables()
 task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
@@ -50,9 +50,9 @@ respecting the provided resource requirements
 
 ```python
 from typing import List
-from bench_rpltmpl.scheduling.jobs import AbstractJob
-from bench_rpltmpl.scheduling.execution import RayJobManager
-from bench_rpltmpl.scheduling.schedulers import SimpleJobScheduler
+from pytabkit.bench.scheduling.jobs import AbstractJob
+from pytabkit.bench.scheduling.execution import RayJobManager
+from pytabkit.bench.scheduling.schedulers import SimpleJobScheduler
 
 jobs: List[AbstractJob] = []  # create a list of jobs here
 scheduler = SimpleJobScheduler(RayJobManager())

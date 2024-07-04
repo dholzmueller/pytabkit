@@ -12,7 +12,7 @@ The easiest option is to use the direct HPO interface:
 ```python
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
-from models_rpltmpl.sklearn.sklearn_interfaces import RealMLP_HPO_Classifier
+from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_HPO_Classifier
 
 X, y = make_classification(random_state=42, n_samples=200, n_features=5)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=0)
@@ -50,9 +50,9 @@ import torch
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
-from models_rpltmpl.alg_interfaces.nn_interfaces import RealMLPParamSampler
-from models_rpltmpl.sklearn.sklearn_interfaces import RealMLP_TD_Classifier
-from models_rpltmpl.training.metrics import Metrics
+from pytabkit.models.alg_interfaces.nn_interfaces import RealMLPParamSampler
+from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_TD_Classifier
+from pytabkit.models.training.metrics import Metrics
 
 n_hyperopt_steps = 10
 n_cv = 1
