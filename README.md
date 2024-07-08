@@ -3,11 +3,11 @@
 
 # PyTabKit: Tabular ML models and benchmarking
 
-[Paper](arxiv.org/abs/2407.04491) | [Documentation](https://pytabkit.readthedocs.io) | [RealMLP-TD-S standalone implementation](github.com/dholzmueller/realmlp-td-s_standalone)   | [Grinsztajn et al. benchmark code](https://github.com/LeoGrin/tabular-benchmark/tree/better_by_default) | [Data archive](https://doi.org/10.18419/darus-4255) |
+[Paper](https://arxiv.org/abs/2407.04491) | [Documentation](https://pytabkit.readthedocs.io) | [RealMLP-TD-S standalone implementation](https://github.com/dholzmueller/realmlp-td-s_standalone)   | [Grinsztajn et al. benchmark code](https://github.com/LeoGrin/tabular-benchmark/tree/better_by_default) | [Data archive](https://doi.org/10.18419/darus-4255) |
 | --- | --- |---------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| --- |
 
 PyTabKit provides **scikit-learn interfaces for modern tabular classification and regression methods**
-benchmarked in our [paper](arxiv.org/abs/2407.04491), see below. 
+benchmarked in our [paper](https://arxiv.org/abs/2407.04491), see below. 
 It also contains the code we used for **benchmarking** these methods 
 on our meta-train and meta-test benchmarks.
 
@@ -18,7 +18,7 @@ on our meta-train and meta-test benchmarks.
 ```commandline
 pip install pytabkit
 ```
-- If you want to use **TabR**, you have to manually install faiss,
+- If you want to use **TabR**, you have to manually install faiss, 
 which is only available on **conda**.
 - Install torch separately if you want to control the version (CPU/GPU etc.)
 - Use `pytabkit[full]` to also install the **benchmarking** library part. 
@@ -88,7 +88,7 @@ For more details, we refer to the [documentation](https://pytabkit.readthedocs.i
 
 ## Citation
 
-If you use this repository for research purposes, please cite our [paper](arxiv.org/abs/2407.04491):
+If you use this repository for research purposes, please cite our [paper](https://arxiv.org/abs/2407.04491):
 ```
 @article{holzmuller2024better,
   title={Better by default: Strong pre-tuned MLPs and boosted trees on tabular data},
@@ -113,3 +113,4 @@ code from https://github.com/catboost/benchmarks/
 (Apache 2.0 license), 
 and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html 
 (Apache 2.0 license).
+
