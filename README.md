@@ -18,7 +18,7 @@ on our meta-train and meta-test benchmarks.
 ```commandline
 pip install pytabkit
 ```
-- If you want to use **TabR**, you have to manually install faiss, #
+- If you want to use **TabR**, you have to manually install faiss,
 which is only available on **conda**.
 - Install torch separately if you want to control the version (CPU/GPU etc.)
 - Use `pytabkit[full]` to also install the **benchmarking** library part. 
