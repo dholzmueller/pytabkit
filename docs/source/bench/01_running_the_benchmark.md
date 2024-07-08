@@ -46,10 +46,10 @@ Also, make sure that the data path is specified there
 if you want to set it via an environmental variable.
 Run the following command (replacing some of the parameters with your own values) on the login node:
 ```commandline
-python3 scripts/ray_slurm_launch.py --exp_name=my_exp_name --num_nodes=num_nodes --queue="queue_name" --time=24:00:00 --mail_user="my@address.edu" --log_folder=log_folder --command="python3 -u run_slurm.py"
+python3 scripts/ray_slurm_launch.py --exp_name=my_exp_name --num_nodes=num_nodes --queue="queue_name" --time=24:00:00 --mail_user="my@address.edu" --log_folder=log_folder --command="python3 -u scripts/run_slurm.py"
 ```
-This will submit a job to the configured queue that will run `run_slurm.py` and create logfiles.
-Your experiments then have to be configured in `run_slurm.py`, see below.
+This will submit a job to the configured queue that will run `scripts/run_slurm.py` and create logfiles.
+Your experiments then have to be configured in `scripts/run_slurm.py`, see below.
 Multi-node is supported: `ray` will start instances on each node
 and our benchmarking code will schedule the individual experiments on the nodes.
 
@@ -57,10 +57,10 @@ and our benchmarking code will schedule the individual experiments on the nodes.
 
 Run the file with the corresponding experiments directly. 
 For example, many of our experiment configurations 
-can be found in `run_final_experiments.py`. 
+can be found in `scripts/run_experiments.py`. 
 One possible way to run the experiments detached from the shell with log-files is
 ````commandline
-systemd-run --scope --user python3 -u scripts/run_final_experiments.py > ./out.log 2> ./err.log &
+systemd-run --scope --user python3 -u scripts/run_experiments.py > ./out.log 2> ./err.log &
 ````
 
 ## Time measurements

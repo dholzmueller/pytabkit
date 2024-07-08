@@ -1,23 +1,28 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
 [![](https://readthedocs.org/projects/pytabkit/badge/?version=latest&style=flat-default)](https://pytabkit.readthedocs.io/en/latest/)
 
-# PyTabKit: Tabular ML models and benchmarking code
+# PyTabKit: Tabular ML models and benchmarking
 
-This repository accompanies our paper 
+[Paper](arxiv.org/abs/2407.04491) | [Documentation](https://pytabkit.readthedocs.io) | [RealMLP-TD-S standalone implementation](github.com/dholzmueller/realmlp-td-s_standalone)   | [Grinsztajn et al. benchmark code](https://github.com/LeoGrin/tabular-benchmark/tree/better_by_default) | [Data archive](https://doi.org/10.18419/darus-4255) |
+| --- | --- |---------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| --- |
 
-**[Better by default: Strong pre-tuned MLPs and boosted trees on tabular data](TODO)**
+PyTabKit provides **scikit-learn interfaces for modern tabular classification and regression methods**
+benchmarked in our [paper](arxiv.org/abs/2407.04491), see below. 
+It also contains the code we used for **benchmarking** these methods 
+on our meta-train and meta-test benchmarks.
 
-It contains code for applying tabular ML methods 
-and (optionally) benchmarking them on our meta-train and meta-test benchmarks.
+![Meta-test benchmark results](./figures/meta-test_benchmark_results.png)
 
 ## Installation
 
 ```commandline
 pip install pytabkit
 ```
-- If you want to use **TabR**, you have to manually install faiss, which is only available on **conda**
-- Install torch before if you want to control the version (CPU/GPU etc.)
-- Use `pytabkit[full]` to also install the **benchmarking** library part. See also the [documentation](https://pytabkit.readthedocs.io).
+- If you want to use **TabR**, you have to manually install faiss, #
+which is only available on **conda**.
+- Install torch separately if you want to control the version (CPU/GPU etc.)
+- Use `pytabkit[full]` to also install the **benchmarking** library part. 
+See also the [documentation](https://pytabkit.readthedocs.io).
 
 ## Using the ML models
 Most of our machine learning models are directly available via scikit-learn interfaces.
@@ -52,7 +57,7 @@ model.fit(X_train, y_train, val_idxs=val_idxs, cat_features=cat_features)
 model.predict_proba(X_test)
 ```
 See [this notebook](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
-for more examples.
+for more examples. Missing numerical values are currently *not* allowed and need to be imputed beforehand.
 
 ### Available ML models
 
@@ -83,7 +88,15 @@ For more details, we refer to the [documentation](https://pytabkit.readthedocs.i
 
 ## Citation
 
-If you use this repository for research purposes, please cite TODO.
+If you use this repository for research purposes, please cite our [paper](arxiv.org/abs/2407.04491):
+```
+@article{holzmuller2024better,
+  title={Better by default: Strong pre-tuned MLPs and boosted trees on tabular data},
+  author={Holzm{\"u}ller, David and Grinsztajn, Leo and Steinwart, Ingo},
+  journal={arXiv preprint arXiv:2407.04491},
+  year={2024}
+}
+```
 
 ## Contributors
 

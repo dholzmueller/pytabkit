@@ -1,6 +1,6 @@
 # Downloading the benchmark results
 
-The benchmark data (as well as the code) 
+The benchmark data (as well as the code)
 is archived at [DaRUS](https://doi.org/10.18419/darus-4255).
 To download the benchmark data, please
 - create a folder for the data

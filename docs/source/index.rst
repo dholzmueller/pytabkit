@@ -22,6 +22,7 @@ Tabular benchmarking using pytabkit.bench
 .. toctree::
    bench/00_installation
    bench/01_running_the_benchmark
+   bench/adding_models
    bench/02_stored_data
    bench/03_code
    bench/download_results
