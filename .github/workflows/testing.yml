@@ -27,10 +27,10 @@ jobs:
         run: uv pip install --system hatch
       - name: Install swig
         run: uv pip install --system swig
+      - name: Run tests
+        run: hatch test
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.5.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: skrub-data/skrub
-      - name: Run tests
-        run: hatch test
+          slug: dholzmueller/pytabkit
