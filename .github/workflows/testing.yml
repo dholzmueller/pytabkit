@@ -11,9 +11,10 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.8', '3.11', '3.12']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +26,6 @@ jobs:
         run: curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
       - name: Install hatch
         run: uv pip install --system hatch
-      - name: Install swig
-        run: uv pip install --system swig
       - name: Run tests
         run: hatch test
       - name: Upload coverage reports to Codecov
