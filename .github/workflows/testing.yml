@@ -11,6 +11,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
@@ -24,11 +25,13 @@ jobs:
       - name: Install UV
         run: curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
       - name: Install hatch
-        run: uv pip install hatch
+        run: uv pip install --system hatch
+      - name: Install swig
+        run: uv pip install --system swig
+      - name: Run tests
+        run: hatch test
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.5.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: skrub-data/skrub
-      - name: Run tests
-        run: hatch test --python ${{ matrix.python-version }} --cover-quiet
+          slug: dholzmueller/pytabkit

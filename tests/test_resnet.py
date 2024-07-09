@@ -26,9 +26,9 @@ def test_numerical_data(n_classes, resnet_or_mlp):
 
     # Train the classifier
     if resnet_or_mlp == "resnet":
-        clf = Resnet_RTDL_D_Classifier()
+        clf = Resnet_RTDL_D_Classifier(device="cpu")
     elif resnet_or_mlp == "mlp":
-        clf = MLP_RTDL_D_Classifier()
+        clf = MLP_RTDL_D_Classifier(device="cpu")
     clf.fit(X_train, y_train, cat_features=[False] * 20)  # Assuming no categorical features
 
     # Predict and evaluate
@@ -51,9 +51,9 @@ def test_categorical_data(n_classes, resnet_or_mlp):
 
     # Train the classifier with categorical feature
     if resnet_or_mlp == "resnet":
-        clf = Resnet_RTDL_D_Classifier()
+        clf = Resnet_RTDL_D_Classifier(device="cpu")
     elif resnet_or_mlp == "mlp":
-        clf = MLP_RTDL_D_Classifier()
+        clf = MLP_RTDL_D_Classifier(device="cpu")
     clf.fit(X_train, y_train, cat_features=[False] * 20 + [True])
 
     # Predict and evaluate
@@ -80,9 +80,9 @@ def test_regressor_numerical_categorical(tranformed_target, resnet_or_mlp):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=43)
 
     if resnet_or_mlp == "resnet":
-        regressor = Resnet_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41)
+        regressor = Resnet_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
     elif resnet_or_mlp == "mlp":
-        regressor = MLP_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41)
+        regressor = MLP_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
     regressor.fit(X_train, y_train, cat_features=cat_features)
     predictions = regressor.predict(X_test)
 
@@ -98,9 +98,9 @@ def test_regressor_numerical_categorical(tranformed_target, resnet_or_mlp):
 
 def create_model(regression, resnet_or_mlp, **kwargs):
     if resnet_or_mlp == "resnet":
-        model = Resnet_RTDL_D_Regressor(**kwargs) if regression else Resnet_RTDL_D_Classifier(**kwargs)
+        model = Resnet_RTDL_D_Regressor(device="cpu", **kwargs) if regression else Resnet_RTDL_D_Classifier(device="cpu", **kwargs)
     elif resnet_or_mlp == "mlp":
-        model = MLP_RTDL_D_Regressor(**kwargs) if regression else MLP_RTDL_D_Classifier(**kwargs)
+        model = MLP_RTDL_D_Regressor(device="cpu", **kwargs) if regression else MLP_RTDL_D_Classifier(device="cpu", **kwargs)
     return model
 
 

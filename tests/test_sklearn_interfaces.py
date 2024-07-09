@@ -14,7 +14,7 @@ from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_TD_Classifier, Re
     LGBM_TD_Classifier(min_data_in_leaf=2, subsample=1.0), LGBM_TD_Regressor(subsample=1.0),
     XGB_TD_Classifier(), XGB_TD_Regressor(),
     CatBoost_TD_Classifier(), CatBoost_TD_Regressor(),
-    RealMLP_TD_Classifier(n_epochs=8), RealMLP_TD_Regressor(n_epochs=64),
+    RealMLP_TD_Classifier(n_epochs=8, device='cpu'), RealMLP_TD_Regressor(n_epochs=64, device='cpu'),
     # MLP_RTDL_D_Classifier(), MLP_RTDL_D_Regressor(),
     # Resnet_RTDL_D_Classifier(), Resnet_RTDL_D_Regressor(),
     # Tabr_D_Classifier(), Tabr_D_Regressor(),
