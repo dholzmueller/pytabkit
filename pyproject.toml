@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "swig"]
 build-backend = "hatchling.build"
 
 [project]
@@ -26,7 +26,6 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-  "swig",
   "torch>=2.0",
   "numpy>=1.25,<2.0",
   "dill",
