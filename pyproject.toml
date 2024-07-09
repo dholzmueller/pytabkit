@@ -74,7 +74,6 @@ full = [
 path = "pytabkit/__about__.py"
 
 [tool.hatch.envs.default]
-dependencies = ["swig"]
 installer = "uv"
 features = ["full"]
 
