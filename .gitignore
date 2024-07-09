@@ -3,6 +3,7 @@
 *.zip
 
 experiments/*/
+!experiments/prototypes
 public_export
 dist
 

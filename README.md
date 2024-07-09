@@ -1,6 +1,6 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
 [![](https://readthedocs.org/projects/pytabkit/badge/?version=latest&style=flat-default)](https://pytabkit.readthedocs.io/en/latest/)
-
+[![test](https://github.com/dholzmueller/pytabkit/actions/workflows/testing.yml/badge.svg)](https://github.com/dholzmueller/pytabkit/actions/workflows/testing.yml)
 # PyTabKit: Tabular ML models and benchmarking
 
 [Paper](https://arxiv.org/abs/2407.04491) | [Documentation](https://pytabkit.readthedocs.io) | [RealMLP-TD-S standalone implementation](https://github.com/dholzmueller/realmlp-td-s_standalone)   | [Grinsztajn et al. benchmark code](https://github.com/LeoGrin/tabular-benchmark/tree/better_by_default) | [Data archive](https://doi.org/10.18419/darus-4255) |
@@ -20,9 +20,12 @@ pip install pytabkit
 ```
 - If you want to use **TabR**, you have to manually install faiss, 
 which is only available on **conda**.
-- Install torch separately if you want to control the version (CPU/GPU etc.)
+- You might need to install *swig* (e.g. via pip) if the build of *pyrfr* fails.
+- Please install torch separately if you want to control the version (CPU/GPU etc.)
 - Use `pytabkit[full]` to also install the **benchmarking** library part. 
-See also the [documentation](https://pytabkit.readthedocs.io).
+See also the [documentation](https://pytabkit.readthedocs.io). 
+To run the data download, you need one of rar, unrar, or 7-zip 
+to be installed on the system.
 
 ## Using the ML models
 Most of our machine learning models are directly available via scikit-learn interfaces.
@@ -104,6 +107,7 @@ If you use this repository for research purposes, please cite our [paper](https:
 - Léo Grinsztajn (deep learning baselines, plotting)
 - Ingo Steinwart (UCI dataset download)
 - Katharina Strecker (PyTorch-Lightning interface)
+- Jérôme Dockès (deployment, continuous integration)
 
 ## Acknowledgements
 Code from other repositories is acknowledged as well as possible in code comments. 
@@ -113,4 +117,3 @@ code from https://github.com/catboost/benchmarks/
 (Apache 2.0 license), 
 and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html 
 (Apache 2.0 license).
-
