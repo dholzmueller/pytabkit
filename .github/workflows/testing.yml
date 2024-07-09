@@ -25,6 +25,8 @@ jobs:
         run: curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
       - name: Install hatch
         run: uv pip install --system hatch
+      - name: Install swig
+        run: uv pip install --system swig
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.5.0
         with:

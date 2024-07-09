@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "swig"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
@@ -74,6 +74,7 @@ full = [
 path = "pytabkit/__about__.py"
 
 [tool.hatch.envs.default]
+dependencies = ["swig"]
 installer = "uv"
 features = ["full"]
 
