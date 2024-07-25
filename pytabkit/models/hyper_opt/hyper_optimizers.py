@@ -4,7 +4,7 @@ from typing import Callable, Tuple, Any, Dict, Union
 
 import numpy as np
 from ConfigSpace import Configuration
-from smac.initial_design import SobolInitialDesign
+# from smac.initial_design import SobolInitialDesign
 
 from pytabkit.models import utils
 from pytabkit.models.training.logging import Logger
