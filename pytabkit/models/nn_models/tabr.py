@@ -2,7 +2,7 @@ import os
 import inspect
 import warnings
 import math
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from torch import Tensor
 import torch.optim as optim

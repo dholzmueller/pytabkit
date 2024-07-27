@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any, Union
 
 import numpy as np
 import torch
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import logging
 
 from pytabkit.models import utils
@@ -48,7 +48,7 @@ class NNAlgInterface(AlgInterface):
                                    split_id=idxs.split_id) for idxs in idxs_list]
 
         # https://stackoverflow.com/questions/74364944/how-to-get-rid-of-info-logging-messages-in-pytorch-lightning
-        log = logging.getLogger("pytorch_lightning")
+        log = logging.getLogger("lightning")
         log.propagate = False
         log.setLevel(logging.ERROR)
 
