@@ -88,7 +88,7 @@ class AlgInterfaceEstimator(BaseEstimator):
         return {key: value for key, value in params.items() if value is not None}
 
     def fit(self, X, y, val_idxs: Optional[np.ndarray] = None,
-            cat_features: Optional[Union[List[bool], np.ndarray]] = None) -> BaseEstimator:
+            cat_features: Optional[Union[List[bool], np.ndarray]] = None, time_to_fit_in_seconds: int | None = None) -> BaseEstimator:
         """
         Fit the estimator.
 
@@ -301,7 +301,7 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         logger = StdoutLogger(verbosity_level=params.get('verbosity', 0))
 
-        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices)
+        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices, time_in_seconds=time_to_fit_in_seconds)
         self.cv_alg_interface_.fit(ds=ds, idxs_list=idxs_list, interface_resources=interface_resources,
                                    logger=logger, tmp_folders=tmp_folders, name=self.__class__.__name__)
 

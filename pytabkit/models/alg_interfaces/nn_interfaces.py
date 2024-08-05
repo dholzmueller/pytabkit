@@ -8,6 +8,8 @@ import torch
 import lightning.pytorch as pl
 import logging
 
+from future.backports.datetime import timedelta
+
 from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer, SMACOptimizer
@@ -81,7 +83,10 @@ class NNAlgInterface(AlgInterface):
         else:
             raise ValueError(f'Unknown device "{self.device}"')
 
+        max_time = None if interface_resources.time_in_seconds is None else timedelta(seconds=interface_resources.time_in_seconds)
+
         self.trainer = pl.Trainer(
+            max_time=max_time,
             accelerator=pl_accelerator,
             devices=pl_devices,
             callbacks=self.model.create_callbacks(),
@@ -106,6 +111,7 @@ class NNAlgInterface(AlgInterface):
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
 
         # print(f'Importances (sorted):', self.get_importances().sort()[0])  # todo
+        self.trainer.max_time = None
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         old_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
