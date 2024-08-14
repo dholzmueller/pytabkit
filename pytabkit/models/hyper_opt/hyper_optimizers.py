@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable, Tuple, Any, Dict, Union
 
 import numpy as np
-from ConfigSpace import Configuration
+# from ConfigSpace import Configuration
 # from smac.initial_design import SobolInitialDesign
 
 from pytabkit.models import utils
@@ -169,7 +169,7 @@ class SMACOptimizer(HyperOptimizer):
             self.f = f
             self.fixed_params = fixed_params
 
-        def __call__(self, params: Configuration, seed: int = 0):
+        def __call__(self, params, seed: int = 0):
             params = params.get_dictionary()
             params = utils.join_dicts(params, self.fixed_params)
             loss, additional_info = self.f(params)
