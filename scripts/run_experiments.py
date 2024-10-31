@@ -12,9 +12,10 @@ from pytabkit.bench.alg_wrappers.interface_wrappers import \
     LoadResultsWrapper, RandomParamsNNInterfaceWrapper, AlgorithmSelectionWrapper, ResNetRTDLInterfaceWrapper, \
     MLPRTDLInterfaceWrapper, RandomParamsRTDLMLPInterfaceWrapper, RandomParamsResnetInterfaceWrapper, \
     TabRInterfaceWrapper, RandomParamsXGBInterfaceWrapper, RandomParamsLGBMInterfaceWrapper, \
-    RandomParamsCatBoostInterfaceWrapper
+    RandomParamsCatBoostInterfaceWrapper, AutoGluonModelInterfaceWrapper, RandomParamsTabRInterfaceWrapper, \
+    RandomParamsRFInterfaceWrapper, FTTransformerInterfaceWrapper, RandomParamsFTTransformerInterfaceWrapper
 from pytabkit.bench.eval.analysis import get_ensemble_groups
-from pytabkit.bench.run.task_execution import RunConfig, TabBenchJobManager
+from pytabkit.bench.run.task_execution import RunConfig, TabBenchJobManager, run_alg_selection
 from pytabkit.bench.scheduling.schedulers import SimpleJobScheduler
 from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.nn_interfaces import RealMLPParamSampler
@@ -37,9 +38,11 @@ def run_gbdt_rs_configs(paths: Optional[Paths] = None, min_step_idx: int = 0, n_
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     if only_meta_train:
@@ -67,9 +70,41 @@ def run_gbdt_rs_configs(paths: Optional[Paths] = None, min_step_idx: int = 0, n_
     job_mgr.run_jobs(scheduler)
 
 
-def run_mlp_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper', rerun: bool = False):
+def run_rf_rs_configs(paths: Optional[Paths] = None, min_step_idx: int = 0, n_steps: int = 50, rerun: bool = False,
+                      min_split_idx: int = 0, n_splits: int = 10):
+    # took 18h30m on the Grinsztajn benchmark
+    if paths is None:
+        paths = Paths.from_env_variables()
+    job_mgr = TabBenchJobManager(paths)
+    scheduler = SimpleJobScheduler(RayJobManager(available_cpu_ram_multiplier=0.5))
+    run_config = RunConfig(min_split_idx=min_split_idx, n_tt_splits=min_split_idx + n_splits, n_cv=1, n_refit=0,
+                           save_y_pred=True)
+
+    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
+    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
+    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
+    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
+
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
+    train_task_infos = train_class_task_infos + train_reg_task_infos
+    test_task_infos = test_class_task_infos + test_reg_task_infos
+
+    for step_idx in range(min_step_idx, min_step_idx + n_steps):
+        job_mgr.add_jobs(grinsztajn_reg_task_infos + grinsztajn_class_task_infos, run_config,
+                         f'RF-HPO_step-{step_idx}',
+                         RandomParamsRFInterfaceWrapper(model_idx=step_idx),
+                         tags=['paper_rf-hpo'], rerun=rerun)
+
+    job_mgr.run_jobs(scheduler)
+
+
+def run_realmlp_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper', rerun: bool = False):
     # 2h37m for 10 steps on meta-train-class
     # for 5 steps on all: 1h20m + 13h4m
+    # 1h50m for 10 steps on grinsztajn-benchmark
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
     config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
@@ -78,9 +113,11 @@ def run_mlp_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper', 
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -91,103 +128,16 @@ def run_mlp_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper', 
                          RandomParamsNNInterfaceWrapper(model_idx=step_idx),
                          tags=[tag], rerun=rerun)
 
-    # job_mgr.add_jobs(class_task_infos, config_10_1_0,
-    #                  'XGB-PBB-D',  # Probst, Boulestix, and Bischl, "Tunability: Importance of ..."
-    #                  XGBInterfaceWrapper(n_estimators=4168, lr=0.018, min_child_weight=2.06,
-    #                                      max_depth=13, reg_lambda=0.982, reg_alpha=1.113, subsample=0.839,
-    #                                      colsample_bytree=0.752, colsample_bylevel=0.585,
-    #                                      tree_method='hist', max_n_threads=64,
-    #                                      tfms=['one_hot'], max_one_hot_cat_size=20),
-    #                  tags=['paper'])
-
     job_mgr.run_jobs(scheduler)
 
 
-def run_mlp_random_configs(paths: Paths, n_steps: int = 50, tag: str = 'mlp_random', rerun: bool = False):
-    # 2h37m for 10 steps on meta-train-class
-    # for 5 steps on all: 1h20m + 13h4m
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
-    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
-
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
-    train_task_infos = train_class_task_infos + train_reg_task_infos
-    test_task_infos = test_class_task_infos + test_reg_task_infos
-    all_task_infos = class_task_infos + reg_task_infos
-
-    sampler = RealMLPParamSampler(is_classification=False)
-
-    for step_idx in range(n_steps):
-        params = sampler.sample_params(seed=step_idx)
-        relevant_params = {key: value for key, value in params.items() if key in
-                           ['num_emb_type', 'add_front_scale', 'lr', 'p_drop', 'wd',
-                            'plr_sigma', 'act', 'hidden_sizes', 'ls_eps']}
-        config_str = ''
-        for key, value in relevant_params.items():
-            if key == 'hidden_sizes':
-                value = f'{value[0]}x{len(value)}'
-            config_str = config_str + '_' + key.replace('_', '-') + '-' + str(value)
-        job_mgr.add_jobs(train_reg_task_infos, config_10_1_0,
-                         f'RealMLP-reg' + config_str,
-                         NNInterfaceWrapper(**params),
-                         tags=[tag], rerun=rerun)
-
-    sampler = RealMLPParamSampler(is_classification=True)
-
-    for step_idx in range(n_steps):
-        params = sampler.sample_params(seed=step_idx)
-        relevant_params = {key: value for key, value in params.items() if key in
-                           ['num_emb_type', 'add_front_scale', 'lr', 'p_drop', 'wd',
-                            'plr_sigma', 'act', 'hidden_sizes', 'ls_eps']}
-        config_str = ''
-        for key, value in relevant_params.items():
-            if key == 'hidden_sizes':
-                value = f'{value[0]}x{len(value)}'
-            config_str = config_str + '_' + key.replace('_', '-') + '-' + str(value)
-        job_mgr.add_jobs(train_class_task_infos, config_10_1_0,
-                         f'RealMLP-class' + config_str,
-                         NNInterfaceWrapper(**params),
-                         tags=[tag], rerun=rerun)
-
-    job_mgr.run_jobs(scheduler)
-
-
-def run_mlp_random_seed_configs(paths: Paths, n_steps: int = 50, tag: str = 'mlp_random_seeds', rerun: bool = False):
-    # 2h37m for 10 steps on meta-train-class
-    # for 5 steps on all: 1h20m + 13h4m
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
-    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
-
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
-    train_task_infos = train_class_task_infos + train_reg_task_infos
-    test_task_infos = test_class_task_infos + test_reg_task_infos
-    all_task_infos = class_task_infos + reg_task_infos
-
-    for step_idx in range(n_steps):
-        job_mgr.add_jobs(train_reg_task_infos, config_10_1_0,
-                         f'RealMLP-reg_seed-offset-{step_idx}',
-                         NNInterfaceWrapper(**DefaultParams.RealMLP_TD_REG, random_seed_offset=step_idx),
-                         tags=[tag], rerun=rerun)
-
-    job_mgr.run_jobs(scheduler)
-
-
-def run_rtdl_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper', rerun: bool = False,
-                            with_mlp: bool = True, with_resnet: bool = True, only_meta_train: bool = False,
+def run_rtdl_tuning_configs(paths: Paths, n_steps: int = 50, rerun: bool = False,
+                            with_mlp: bool = True, with_resnet: bool = True, with_mlp_plr: bool = True,
+                            with_ftt: bool = True,
+                            only_meta_train: bool = False,
                             only_meta_test: bool = False, start_split=0, end_split=10):
+    # MLP-PLR takes about 1h5m per step
+    # takes around 4d6h for MLP-HPO and MLP-PLR-HPO together
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
     config_10_1_0 = RunConfig(n_tt_splits=end_split, min_split_idx=start_split, n_cv=1, n_refit=0, save_y_pred=True)
@@ -196,31 +146,82 @@ def run_rtdl_tuning_configs(paths: Paths, n_steps: int = 50, tag: str = 'paper',
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
+    all_train_task_infos = train_class_task_infos + train_reg_task_infos
+    grinsztajn_task_infos = grinsztajn_class_task_infos + grinsztajn_reg_task_infos
 
     if only_meta_train:
         class_task_infos = train_class_task_infos
         reg_task_infos = train_reg_task_infos
+        all_task_infos = train_class_task_infos + train_reg_task_infos
     elif only_meta_test:
         class_task_infos = test_class_task_infos
         reg_task_infos = test_reg_task_infos
+        all_task_infos = test_class_task_infos + test_reg_task_infos
 
     for step_idx in range(n_steps):
         if with_mlp:
             job_mgr.add_jobs(all_task_infos, config_10_1_0,
                              f'MLP-RTDL-HPO_step-{step_idx}',
                              RandomParamsRTDLMLPInterfaceWrapper(model_idx=step_idx),
-                             tags=[tag], rerun=rerun)
+                             tags=['paper_mlp-rtdl-hpo'], rerun=rerun)
         if with_resnet:
             job_mgr.add_jobs(all_task_infos, config_10_1_0,
                              f'ResNet-RTDL-HPO_step-{step_idx}',
                              RandomParamsResnetInterfaceWrapper(model_idx=step_idx),
-                             tags=[tag], rerun=rerun)
+                             tags=['paper_resnet-hpo'], rerun=rerun)
+        if with_mlp_plr:
+            job_mgr.add_jobs(all_task_infos, config_10_1_0,
+                             f'MLP-PLR-HPO_step-{step_idx}',
+                             RandomParamsRTDLMLPInterfaceWrapper(model_idx=step_idx, num_emb_type='plr'),
+                             tags=['paper_mlp-plr-hpo'], rerun=rerun)
+
+        if with_ftt:
+            job_mgr.add_jobs(grinsztajn_task_infos, config_10_1_0,
+                             f'FTT-HPO_step-{step_idx}',
+                             RandomParamsFTTransformerInterfaceWrapper(model_idx=step_idx),
+                             tags=['paper_ftt-hpo'], rerun=rerun)
+
+    job_mgr.run_jobs(scheduler)
+
+
+def run_tabr_tuning_configs(paths: Paths, n_steps: int = 50, rerun: bool = False,
+                            start_split=0, end_split=10):
+    job_mgr = TabBenchJobManager(paths)
+    scheduler = SimpleJobScheduler(RayJobManager())
+    config_10_1_0 = RunConfig(n_tt_splits=end_split, min_split_idx=start_split, n_cv=1, n_refit=0, save_y_pred=True)
+
+    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
+    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
+    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
+    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
+
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
+    train_task_infos = train_class_task_infos + train_reg_task_infos
+    test_task_infos = test_class_task_infos + test_reg_task_infos
+    grinsztajn_task_infos = grinsztajn_class_task_infos + grinsztajn_reg_task_infos
+    all_task_infos = class_task_infos + reg_task_infos
+    all_train_task_infos = train_class_task_infos + train_reg_task_infos
+
+    for step_idx in range(n_steps):
+        job_mgr.add_jobs(grinsztajn_task_infos, config_10_1_0,
+                         f'TabR-HPO_step-{step_idx}',
+                         RandomParamsTabRInterfaceWrapper(model_idx=step_idx),
+                         tags=['paper_tabr-hpo'], rerun=rerun)
+        job_mgr.add_jobs(grinsztajn_task_infos, config_10_1_0,
+                         f'RealTabR-HPO_step-{step_idx}',
+                         RandomParamsTabRInterfaceWrapper(model_idx=step_idx, hpo_space_name='realtabr'),
+                         tags=['paper_realtabr-hpo'], rerun=rerun)
 
     job_mgr.run_jobs(scheduler)
 
@@ -330,9 +331,11 @@ def run_td_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -386,7 +389,7 @@ def run_td_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     job_mgr.run_jobs(scheduler)
 
 
-def run_additional_configs(paths: Paths, tag: str = 'paper_additional', rerun: bool = False):
+def run_default_ce_configs(paths: Paths, tag: str = 'paper_val_ce', rerun: bool = False):
     # this took around 17h24m
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
@@ -396,69 +399,11 @@ def run_additional_configs(paths: Paths, tag: str = 'paper_additional', rerun: b
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
-    train_task_infos = train_class_task_infos + train_reg_task_infos
-    test_task_infos = test_class_task_infos + test_reg_task_infos
-    all_task_infos = class_task_infos + reg_task_infos
-
-    # run class-on-reg and reg-on-class
-
-    job_mgr.add_jobs(train_reg_task_infos, config_10_1_0,
-                     'RealMLP-TD-class-on-reg',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_CLASS,
-                                                            dict(use_ls=False, ls_eps=0.0, normalize_output=True,
-                                                                 clamp_output=True))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(train_class_task_infos, config_10_1_0,
-                     'RealMLP-TD-reg-on-class',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_REG,
-                                                            dict(use_ls=True, ls_eps=0.1, normalize_output=False,
-                                                                 clamp_output=False))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(train_reg_task_infos, config_10_1_0,
-                     'RealMLP-TD-S-class-on-reg',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_S_CLASS,
-                                                            dict(use_ls=False, ls_eps=0.0, normalize_output=True))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(train_class_task_infos, config_10_1_0,
-                     'RealMLP-TD-S-reg-on-class',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_S_REG,
-                                                            dict(use_ls=True, ls_eps=0.1, normalize_output=False))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(class_task_infos, config_10_1_0,
-                     'RealMLP-TD-class_only-one-hot',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_CLASS,
-                                                            dict(max_one_hot_cat_size=-1))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(reg_task_infos, config_10_1_0,
-                     'RealMLP-TD-reg_only-one-hot',
-                     NNInterfaceWrapper(**utils.update_dict(DefaultParams.RealMLP_TD_REG,
-                                                            dict(max_one_hot_cat_size=-1))),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.run_jobs(scheduler)
-
-
-def run_td_ce_configs(paths: Paths, tag: str = 'paper_val_ce', rerun: bool = False):
-    # this took around 17h24m
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
-    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
-
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -533,23 +478,48 @@ def run_td_ce_configs(paths: Paths, tag: str = 'paper_val_ce', rerun: bool = Fal
                                             dict(val_metric_name='cross_entropy'))),
                      tags=[tag], rerun=rerun)
     job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                     'MLP-PLR-D-class_val-ce',
+                     MLPRTDLInterfaceWrapper(
+                         **utils.join_dicts(DefaultParams.MLP_PLR_D_CLASS,
+                                            dict(val_metric_name='cross_entropy'))),
+                     tags=[tag], rerun=rerun)
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
                      'ResNet-RTDL-D-class_val-ce',
                      ResNetRTDLInterfaceWrapper(
                          **utils.join_dicts(DefaultParams.RESNET_RTDL_D_CLASS_TabZilla,
                                             dict(val_metric_name='cross_entropy'))),
                      tags=[tag], rerun=rerun)
 
-    job_mgr.add_jobs(train_class_task_infos, config_10_1_0,
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
                      'TabR-S-D-class_val-ce',
                      TabRInterfaceWrapper(
                          **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
+                                            dict(val_metric_name='cross_entropy'))),
+                     tags=[tag], rerun=rerun)
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                     'RealTabR-D-class_val-ce',
+                     TabRInterfaceWrapper(
+                         **utils.join_dicts(DefaultParams.RealTABR_D_CLASS,
+                                            dict(val_metric_name='cross_entropy'))),
+                     tags=[tag], rerun=rerun)
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                     'RealTabR-D-class_val-ce_no-ls',
+                     TabRInterfaceWrapper(
+                         **utils.join_dicts(DefaultParams.RealTABR_D_CLASS,
+                                            dict(ls_eps=0.0, val_metric_name='cross_entropy'))),
+                     tags=[tag], rerun=rerun)
+
+    job_mgr.add_jobs(grinsztajn_class_task_infos + train_class_task_infos, config_10_1_0,
+                     'FTT-D-class_val-ce',
+                     FTTransformerInterfaceWrapper(
+                         **utils.join_dicts(DefaultParams.FTT_D_CLASS,
                                             dict(val_metric_name='cross_entropy'))),
                      tags=[tag], rerun=rerun)
 
     job_mgr.run_jobs(scheduler)
 
 
-def run_mlp_no_ls(paths: Paths, tag: str = 'paper', rerun: bool = False):
+def run_nns_no_ls(paths: Paths, tag: str = 'paper', rerun: bool = False):
     # this took around 48m
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
@@ -559,9 +529,11 @@ def run_mlp_no_ls(paths: Paths, tag: str = 'paper', rerun: bool = False):
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -579,12 +551,17 @@ def run_mlp_no_ls(paths: Paths, tag: str = 'paper', rerun: bool = False):
                                             dict(use_ls=False, ls_eps=0.0))),
                      tags=[tag], rerun=rerun)
 
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                     'RealTabR-D-class_no-ls',
+                     TabRInterfaceWrapper(
+                         **utils.join_dicts(DefaultParams.RealTABR_D_CLASS,
+                                            dict(ls_eps=0.0))),
+                     tags=[tag], rerun=rerun)
+
     job_mgr.run_jobs(scheduler)
 
 
-
 def run_tabr_configs(paths: Paths, rerun: bool = False):
-    # this took around 4d12h and some (less expensive) experiments were already completed
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
     config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
@@ -593,41 +570,36 @@ def run_tabr_configs(paths: Paths, rerun: bool = False):
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
 
-    class_task_infos_not_dionis = [ti for ti in class_task_infos if ti.task_desc.task_name != 'dionis']
-    dionis = [ti for ti in class_task_infos if ti.task_desc.task_name == 'dionis']
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                     'RealTabR-D-class',
+                     TabRInterfaceWrapper(**DefaultParams.RealTABR_D_CLASS),
+                     tags=['paper'], rerun=rerun)
 
-    job_mgr.add_jobs(class_task_infos_not_dionis, config_10_1_0,
+    job_mgr.add_jobs(reg_task_infos, config_10_1_0,
+                     'RealTabR-D-reg',
+                     TabRInterfaceWrapper(**DefaultParams.RealTABR_D_REG),
+                     tags=['paper'], rerun=rerun)
+
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
                      'TabR-S-D-class_val-ce',
                      TabRInterfaceWrapper(
                          **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
                                             dict(val_metric_name='cross_entropy'))),
                      tags=['paper_val_ce'], rerun=rerun)
-    job_mgr.add_jobs(dionis, config_10_1_0,
-                     'TabR-S-D-class_val-ce',
-                     TabRInterfaceWrapper(
-                         **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
-                                            dict(val_metric_name='cross_entropy',
-                                                 freeze_contexts_after_n_epochs=4))),
-                     tags=['paper_val_ce'], rerun=rerun)
-    job_mgr.add_jobs(class_task_infos_not_dionis, config_10_1_0,
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
                      'TabR-S-D-class_rssc',
                      TabRInterfaceWrapper(
                          **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
                                             dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
-                     tags=['paper'], rerun=rerun)
-    job_mgr.add_jobs(dionis, config_10_1_0,
-                     'TabR-S-D-class_rssc',
-                     TabRInterfaceWrapper(
-                         **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
-                                            dict(tfms=['median_center', 'robust_scale', 'smooth_clip'],
-                                                 freeze_contexts_after_n_epochs=4))),
                      tags=['paper'], rerun=rerun)
     job_mgr.add_jobs(reg_task_infos, config_10_1_0,
                      'TabR-S-D-reg_rssc',
@@ -635,17 +607,11 @@ def run_tabr_configs(paths: Paths, rerun: bool = False):
                          **utils.join_dicts(DefaultParams.TABR_S_D_REG,
                                             dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
                      tags=['paper'], rerun=rerun)
-    job_mgr.add_jobs(class_task_infos_not_dionis, config_10_1_0,
+    job_mgr.add_jobs(class_task_infos, config_10_1_0,
                      'TabR-S-D-class',
                      TabRInterfaceWrapper(
                          **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
                                             dict())),
-                     tags=['paper'], rerun=rerun)
-    job_mgr.add_jobs(dionis, config_10_1_0,
-                     'TabR-S-D-class',
-                     TabRInterfaceWrapper(
-                         **utils.join_dicts(DefaultParams.TABR_S_D_CLASS,
-                                            dict(freeze_contexts_after_n_epochs=4))),
                      tags=['paper'], rerun=rerun)
     job_mgr.add_jobs(reg_task_infos, config_10_1_0,
                      'TabR-S-D-reg',
@@ -790,36 +756,6 @@ def run_cross_entropy_stopping_configs(paths: Paths, tag: str = 'paper_early_sto
     job_mgr.run_jobs(scheduler)
 
 
-def run_seed_opt_configs(paths: Paths, random_seed_offset: int, tag: str = 'paper', rerun: bool = False):
-    # this took around 17h24m
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
-    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
-
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
-    train_task_infos = train_class_task_infos + train_reg_task_infos
-    test_task_infos = test_class_task_infos + test_reg_task_infos
-    all_task_infos = class_task_infos + reg_task_infos
-
-    job_mgr.add_jobs(train_class_task_infos, config_10_1_0,
-                     f'RealMLP-TD-class_alt-seed-{random_seed_offset}',
-                     NNInterfaceWrapper(**DefaultParams.RealMLP_TD_CLASS, random_seed_offset=random_seed_offset),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.add_jobs(train_reg_task_infos, config_10_1_0,
-                     f'RealMLP-TD-reg_alt-seed-{random_seed_offset}',
-                     NNInterfaceWrapper(**DefaultParams.RealMLP_TD_REG, random_seed_offset=random_seed_offset),
-                     tags=[tag], rerun=rerun)
-
-    job_mgr.run_jobs(scheduler)
-
-
 def run_ensemble_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     # around 20 minutes or so
     job_mgr = TabBenchJobManager(paths)
@@ -830,9 +766,11 @@ def run_ensemble_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -846,7 +784,7 @@ def run_ensemble_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     job_mgr.run_jobs(scheduler)
 
 
-def run_mlp_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
+def run_realmlp_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager(max_n_threads=32))
     config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
@@ -855,23 +793,26 @@ def run_mlp_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper'
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
 
     alg_names = [f'RealMLP-HPO_step-{i}' for i in range(n_hpo_steps)]
-    job_mgr.add_jobs(all_task_infos, config_10_1_0, f'RealMLP-HPO',
-                     AlgorithmSelectionWrapper([LoadResultsWrapper(alg_name) for alg_name in alg_names]),
-                     tags=[tag], rerun=rerun)
-    job_mgr.add_jobs(class_task_infos, config_10_1_0, f'RealMLP-HPO_best-1-auc-ovr',
-                     AlgorithmSelectionWrapper([LoadResultsWrapper(alg_name) for alg_name in alg_names],
-                                                   alg_sel_metric_name='1-auc_ovr'),
-                     tags=[tag], rerun=True)
 
-    job_mgr.run_jobs(scheduler)
+    for task_infos, val_metric_name in [(reg_task_infos, 'rmse'), (class_task_infos, 'class_error')]:
+        run_alg_selection(paths, config_10_1_0, task_infos, f'RealMLP-HPO', alg_names, val_metric_name)
+
+    run_alg_selection(paths, config_10_1_0, class_task_infos, f'RealMLP-HPO_best-1-auc-ovr', alg_names, '1-auc_ovr')
+
+    msd_alg_names = [f'RealMLP-HPO-moresigmadim_step-{i}' for i in range(n_hpo_steps)]
+    for task_infos, val_metric_name in [(train_reg_task_infos, 'rmse'), (train_class_task_infos, 'class_error')]:
+        run_alg_selection(paths, config_10_1_0, task_infos, f'RealMLP-HPO-moresigmadim', msd_alg_names, val_metric_name,
+                          tags=[tag])
 
 
 def run_rtdl_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
@@ -883,23 +824,70 @@ def run_rtdl_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
 
     alg_names = [f'MLP-RTDL-HPO_step-{i}' for i in range(n_hpo_steps)]
-    job_mgr.add_jobs(all_task_infos, config_10_1_0, f'MLP-RTDL-HPO',
-                     AlgorithmSelectionWrapper([LoadResultsWrapper(alg_name) for alg_name in alg_names]),
-                     tags=[tag], rerun=rerun)
-    job_mgr.add_jobs(class_task_infos, config_10_1_0, f'MLP-RTDL-HPO_best-1-auc-ovr',
-                     AlgorithmSelectionWrapper([LoadResultsWrapper(alg_name) for alg_name in alg_names],
-                                                   alg_sel_metric_name='1-auc_ovr'),
-                     tags=[tag], rerun=rerun)
+    plr_alg_names = [f'MLP-PLR-HPO_step-{i}' for i in range(n_hpo_steps)]
+    resnet_alg_names = [f'ResNet-RTDL-HPO_step-{i}' for i in range(n_hpo_steps)]
+    ftt_alg_names = [f'FTT-HPO_step-{i}' for i in range(n_hpo_steps)]
 
-    job_mgr.run_jobs(scheduler)
+    for task_infos, val_metric_name in [(reg_task_infos, 'rmse'), (class_task_infos, 'class_error')]:
+        run_alg_selection(paths, config_10_1_0, task_infos, f'MLP-RTDL-HPO', alg_names, val_metric_name)
+        run_alg_selection(paths, config_10_1_0, task_infos, f'MLP-PLR-HPO', plr_alg_names, val_metric_name)
+        run_alg_selection(paths, config_10_1_0, task_infos, f'ResNet-RTDL-HPO', resnet_alg_names, val_metric_name)
+
+    for task_infos, val_metric_name in [(grinsztajn_reg_task_infos, 'rmse'), (grinsztajn_class_task_infos, 'class_error')]:
+        run_alg_selection(paths, config_10_1_0, task_infos, f'FTT-HPO', ftt_alg_names, val_metric_name)
+
+    run_alg_selection(paths, config_10_1_0, class_task_infos, f'MLP-RTDL-HPO_best-1-auc-ovr', alg_names, '1-auc_ovr')
+    run_alg_selection(paths, config_10_1_0, class_task_infos, f'MLP-PLR-HPO_best-1-auc-ovr', plr_alg_names, '1-auc_ovr')
+    run_alg_selection(paths, config_10_1_0, class_task_infos, f'ResNet-RTDL-HPO_best-1-auc-ovr', resnet_alg_names,
+                      '1-auc_ovr')
+    run_alg_selection(paths, config_10_1_0, grinsztajn_class_task_infos, f'FTT-HPO_best-1-auc-ovr', ftt_alg_names,
+                      '1-auc_ovr')
+
+
+def run_tabr_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
+    job_mgr = TabBenchJobManager(paths)
+    scheduler = SimpleJobScheduler(RayJobManager(max_n_threads=32))
+    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
+
+    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
+    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
+    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
+    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
+
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
+    train_task_infos = train_class_task_infos + train_reg_task_infos
+    test_task_infos = test_class_task_infos + test_reg_task_infos
+    all_task_infos = class_task_infos + reg_task_infos
+
+    alg_names = [f'TabR-HPO_step-{i}' for i in range(n_hpo_steps)]
+    realtabr_alg_names = [f'RealTabR-HPO_step-{i}' for i in range(n_hpo_steps)]
+
+    for task_infos, val_metric_name in [(grinsztajn_reg_task_infos, 'rmse'),
+                                        (grinsztajn_class_task_infos, 'class_error')]:
+        run_alg_selection(paths, config_10_1_0, task_infos, f'TabR-HPO', alg_names, val_metric_name, tags=[tag],
+                          rerun=rerun)
+        run_alg_selection(paths, config_10_1_0, task_infos, f'RealTabR-HPO', realtabr_alg_names, val_metric_name,
+                          tags=[tag],
+                          rerun=rerun)
+
+    run_alg_selection(paths, config_10_1_0, grinsztajn_class_task_infos, f'TabR-HPO_best-1-auc-ovr', alg_names,
+                      '1-auc_ovr', tags=[tag], rerun=rerun)
+    run_alg_selection(paths, config_10_1_0, grinsztajn_class_task_infos, f'RealTabR-HPO_best-1-auc-ovr',
+                      realtabr_alg_names,
+                      '1-auc_ovr', tags=[tag], rerun=rerun)
 
 
 def run_gbdt_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
@@ -911,9 +899,11 @@ def run_gbdt_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -931,9 +921,38 @@ def run_gbdt_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper
     job_mgr.run_jobs(scheduler)
 
 
+def run_rf_hpo_alg_selection(paths: Paths, n_hpo_steps: int, tag: str = 'paper', rerun: bool = False):
+    job_mgr = TabBenchJobManager(paths)
+    scheduler = SimpleJobScheduler(RayJobManager(max_n_threads=16))
+    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
+
+    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
+    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
+    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
+    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
+
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
+    train_task_infos = train_class_task_infos + train_reg_task_infos
+    test_task_infos = test_class_task_infos + test_reg_task_infos
+    all_task_infos = class_task_infos + reg_task_infos
+
+    for task_infos, val_metric_name in [(grinsztajn_reg_task_infos, 'rmse'),
+                                        (grinsztajn_class_task_infos, 'class_error')]:
+        alg_names = [f'RF-HPO_step-{i}' for i in range(n_hpo_steps)]
+        run_alg_selection(paths, config_10_1_0, task_infos, f'RF-HPO', alg_names, val_metric_name, tags=[tag],
+                          rerun=rerun)
+    run_alg_selection(paths, config_10_1_0, task_infos, f'RF-HPO_best-1-auc-ovr', alg_names, '1-auc_ovr', tags=[tag],
+                      rerun=rerun)
+
+    job_mgr.run_jobs(scheduler)
+
+
 def run_rtdl_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = False, with_mlp: bool = True,
                              with_resnet: bool = True, only_meta_train: bool = False, only_meta_test: bool = False,
-                             tabzilla_defaults: bool = False):
+                             tabzilla_defaults: bool = True, with_plr: bool = True, with_ftt: bool = True):
     # ca 50 min for meta-train-reg
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
@@ -943,9 +962,11 @@ def run_rtdl_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = Fal
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -962,14 +983,14 @@ def run_rtdl_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = Fal
                          'ResNet-RTDL-D-class_grinsztajn' if not tabzilla_defaults else
                          'ResNet-RTDL-D-class',
                          ResNetRTDLInterfaceWrapper(
-                             **DefaultParams.RESNET_RTDL_D_CLASS if not tabzilla_defaults else
+                             **DefaultParams.RESNET_RTDL_D_CLASS_Grinsztajn if not tabzilla_defaults else
                              DefaultParams.RESNET_RTDL_D_CLASS_TabZilla),
                          tags=[tag], rerun=rerun)
         job_mgr.add_jobs(reg_task_infos, config_10_1_0,
                          'ResNet-RTDL-D-reg_grinsztajn' if not tabzilla_defaults else
                          'ResNet-RTDL-D-reg',
                          ResNetRTDLInterfaceWrapper(
-                             **DefaultParams.RESNET_RTDL_D_REG if not tabzilla_defaults else
+                             **DefaultParams.RESNET_RTDL_D_REG_Grinsztajn if not tabzilla_defaults else
                              DefaultParams.RESNET_RTDL_D_REG_TabZilla),
                          tags=[tag], rerun=rerun)
 
@@ -978,24 +999,49 @@ def run_rtdl_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = Fal
                          'MLP-RTDL-D-class_grinsztajn' if not tabzilla_defaults else
                          'MLP-RTDL-D-class',
                          MLPRTDLInterfaceWrapper(
-                             **DefaultParams.MLP_RTDL_D_CLASS if not tabzilla_defaults else
+                             **DefaultParams.MLP_RTDL_D_CLASS_Grinsztajn if not tabzilla_defaults else
                              DefaultParams.MLP_RTDL_D_CLASS_TabZilla),
                          tags=[tag], rerun=rerun)
         job_mgr.add_jobs(reg_task_infos, config_10_1_0,
                          'MLP-RTDL-D-reg_grinsztajn' if not tabzilla_defaults else
                          'MLP-RTDL-D-reg',
                          MLPRTDLInterfaceWrapper(
-                             **DefaultParams.MLP_RTDL_D_REG if not tabzilla_defaults else
+                             **DefaultParams.MLP_RTDL_D_REG_Grinsztajn if not tabzilla_defaults else
                              DefaultParams.MLP_RTDL_D_REG_TabZilla),
+                         tags=[tag], rerun=rerun)
+
+    if with_plr:
+        job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                         'MLP-PLR-D-class',
+                         MLPRTDLInterfaceWrapper(
+                             **DefaultParams.MLP_PLR_D_CLASS),
+                         tags=[tag], rerun=rerun)
+        job_mgr.add_jobs(reg_task_infos, config_10_1_0,
+                         'MLP-PLR-D-reg',
+                         MLPRTDLInterfaceWrapper(
+                             **DefaultParams.MLP_PLR_D_REG),
+                         tags=[tag], rerun=rerun)
+
+    if with_ftt:
+        job_mgr.add_jobs(grinsztajn_class_task_infos + train_class_task_infos, config_10_1_0,
+                         'FTT-D-class',
+                         FTTransformerInterfaceWrapper(
+                             **DefaultParams.FTT_D_CLASS),
+                         tags=[tag], rerun=rerun)
+        job_mgr.add_jobs(grinsztajn_reg_task_infos + train_reg_task_infos, config_10_1_0,
+                         'FTT-D-reg',
+                         FTTransformerInterfaceWrapper(
+                             **DefaultParams.FTT_D_REG),
                          tags=[tag], rerun=rerun)
 
     job_mgr.run_jobs(scheduler)
 
 
 def run_rtdl_rssc_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = False, with_mlp: bool = True,
-                                  with_resnet: bool = True, with_tabr: bool = True,
+                                  with_resnet: bool = True, with_plr: bool = True, with_tabr: bool = True, with_ftt: bool = True,
                                   only_meta_train: bool = False, only_meta_test: bool = False):
-    # ca 50 min for meta-train-reg
+    # ca 50 min for meta-train-reg (without TabR/FTT)
+    # ca 8h30m for FTT (on meta-train + grinsztajn)
     job_mgr = TabBenchJobManager(paths)
     scheduler = SimpleJobScheduler(RayJobManager())
     config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
@@ -1004,9 +1050,11 @@ def run_rtdl_rssc_default_configs(paths: Paths, tag: str = 'paper', rerun: bool 
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -1046,6 +1094,20 @@ def run_rtdl_rssc_default_configs(paths: Paths, tag: str = 'paper', rerun: bool 
                                                 dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
                          tags=[tag], rerun=rerun)
 
+    if with_plr:
+        job_mgr.add_jobs(class_task_infos, config_10_1_0,
+                         'MLP-PLR-D-class_rssc',
+                         MLPRTDLInterfaceWrapper(
+                             **utils.join_dicts(DefaultParams.MLP_PLR_D_CLASS,
+                                                dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
+                         tags=[tag], rerun=rerun)
+        job_mgr.add_jobs(reg_task_infos, config_10_1_0,
+                         'MLP-PLR-D-reg_rssc',
+                         MLPRTDLInterfaceWrapper(
+                             **utils.join_dicts(DefaultParams.MLP_PLR_D_REG,
+                                                dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
+                         tags=[tag], rerun=rerun)
+
     if with_tabr:
         job_mgr.add_jobs(class_task_infos, config_10_1_0,
                          'TabR-S-D-class_rssc',
@@ -1057,6 +1119,20 @@ def run_rtdl_rssc_default_configs(paths: Paths, tag: str = 'paper', rerun: bool 
                          'TabR-S-D-reg_rssc',
                          TabRInterfaceWrapper(
                              **utils.join_dicts(DefaultParams.TABR_S_D_REG,
+                                                dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
+                         tags=[tag], rerun=rerun)
+
+    if with_ftt:
+        job_mgr.add_jobs(grinsztajn_class_task_infos + train_class_task_infos, config_10_1_0,
+                         'FTT-D-class_rssc',
+                         FTTransformerInterfaceWrapper(
+                             **utils.join_dicts(DefaultParams.FTT_D_CLASS,
+                                                dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
+                         tags=[tag], rerun=rerun)
+        job_mgr.add_jobs(grinsztajn_reg_task_infos + train_reg_task_infos, config_10_1_0,
+                         'FTT-D-reg_rssc',
+                         FTTransformerInterfaceWrapper(
+                             **utils.join_dicts(DefaultParams.FTT_D_REG,
                                                 dict(tfms=['median_center', 'robust_scale', 'smooth_clip']))),
                          tags=[tag], rerun=rerun)
 
@@ -1075,9 +1151,11 @@ def run_tabr_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = Fal
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -1113,9 +1191,11 @@ def run_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
@@ -1132,10 +1212,11 @@ def run_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
                      CatBoostInterfaceWrapper(**DefaultParams.CB_D),
                      tags=[tag], rerun=rerun)
 
-    job_mgr.add_jobs(all_task_infos, config_10_1_0,
-                     'MLP-SKL-D',
-                     SklearnMLPInterfaceWrapper(tfms=['mean_center', 'l2_normalize', 'one_hot']),
-                     tags=[tag], rerun=rerun)
+    # it was too bad to include in the plots
+    # job_mgr.add_jobs(all_task_infos, config_10_1_0,
+    #                  'MLP-SKL-D',
+    #                  SklearnMLPInterfaceWrapper(tfms=['mean_center', 'l2_normalize', 'one_hot']),
+    #                  tags=[tag], rerun=rerun)
 
     job_mgr.add_jobs(all_task_infos, config_10_1_0,
                      'RF-SKL-D',
@@ -1154,8 +1235,8 @@ def run_default_configs(paths: Paths, tag: str = 'paper', rerun: bool = False):
     job_mgr.run_jobs(scheduler)
 
 
-def run_gbdts_hpo(paths: Paths, n_estimators: int = 1000, early_stopping_rounds: int = 300,
-                  tag: str = 'paper'):
+def run_gbdts_hpo_tpe(paths: Paths, n_estimators: int = 1000, early_stopping_rounds: int = 300,
+                      tag: str = 'paper'):
     # this generates about 10GB of data
     # took 7h17m for n_estimators=2
     # took about 6h30m for n_estimators=1  (but slightly more tasks were run for that because of the rerun=True)
@@ -1168,25 +1249,27 @@ def run_gbdts_hpo(paths: Paths, n_estimators: int = 1000, early_stopping_rounds:
     train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
     test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
     test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
+    grinsztajn_class_task_infos = TaskCollection.from_name('grinsztajn-class', paths).load_infos(paths)
+    grinsztajn_reg_task_infos = TaskCollection.from_name('grinsztajn-reg', paths).load_infos(paths)
 
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
+    class_task_infos = train_class_task_infos + test_class_task_infos + grinsztajn_class_task_infos
+    reg_task_infos = train_reg_task_infos + test_reg_task_infos + grinsztajn_reg_task_infos
     train_task_infos = train_class_task_infos + train_reg_task_infos
     test_task_infos = test_class_task_infos + test_reg_task_infos
     all_task_infos = class_task_infos + reg_task_infos
 
     for task_infos, config in [(train_task_infos, config_10_1_0), (test_task_infos, config_10_1_0)]:
-        job_mgr.add_jobs(task_infos, config, f'XGB-HPO',
+        job_mgr.add_jobs(task_infos, config, f'XGB-HPO-TPE',
                          XGBHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
                                                      early_stopping_rounds=early_stopping_rounds,
                                                      tree_method='hist', space='grinsztajn'),
                          tags=[tag])
-        job_mgr.add_jobs(task_infos, config, f'CatBoost-HPO',
+        job_mgr.add_jobs(task_infos, config, f'CatBoost-HPO-TPE',
                          CatBoostHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
                                                           early_stopping_rounds=early_stopping_rounds,
                                                           space='shwartz-ziv'),
                          tags=[tag])
-        job_mgr.add_jobs(task_infos, config, f'LGBM-HPO',
+        job_mgr.add_jobs(task_infos, config, f'LGBM-HPO-TPE',
                          LGBMHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
                                                       early_stopping_rounds=early_stopping_rounds,
                                                       space='catboost_quality_benchmarks'),
@@ -1246,75 +1329,6 @@ def run_preprocessing_experiments(paths: Paths, tag: str = 'paper_preprocessing'
                              max_n_vectorized=1,
                          ))),
                          [tag])
-
-    job_mgr.run_jobs(scheduler)
-
-
-def run_trees_custom(paths: Paths, n_estimators: int, tag: str = 'paper', with_defaults: bool = True):
-    # only for speed-testing
-    # this generates about 10GB of data
-    # took 7h17m for n_estimators=2
-    # took about 6h30m for n_estimators=1  (but slightly more tasks were run for that because of the rerun=True)
-    # the large main overhead is probably mainly for evaluating the metrics
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=True)
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-    test_class_task_infos = TaskCollection.from_name('meta-test-class', paths).load_infos(paths)
-    test_reg_task_infos = TaskCollection.from_name('meta-test-reg', paths).load_infos(paths)
-
-    class_task_infos = train_class_task_infos + test_class_task_infos
-    reg_task_infos = train_reg_task_infos + test_reg_task_infos
-    all_task_infos = class_task_infos + reg_task_infos
-
-    job_mgr.add_jobs(all_task_infos, config_10_1_0, f'XGB_hyperopt-50_grinsztajn_nest-{n_estimators}',
-                     XGBHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
-                                                 tree_method='hist', space='grinsztajn'),
-                     tags=[tag], rerun=True)
-    job_mgr.add_jobs(all_task_infos, config_10_1_0, f'CatBoost_hyperopt-50_shwartz-ziv_nest-{n_estimators}',
-                     CatBoostHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
-                                                      space='shwartz-ziv'),
-                     tags=[tag], rerun=True)
-    job_mgr.add_jobs(all_task_infos, config_10_1_0, f'LGBM_hyperopt-50_cqb_nest-{n_estimators}',
-                     LGBMHyperoptInterfaceWrapper(n_estimators=n_estimators, n_hyperopt_steps=50,
-                                                  space='catboost_quality_benchmarks'), rerun=True)
-
-    if with_defaults:
-        # optimized default parameters
-        # classification
-        job_mgr.add_jobs(class_task_infos, config_10_1_0, f'LGBM-TD-class_nest-{n_estimators}',
-                         LGBMInterfaceWrapper(**utils.update_dict(DefaultParams.LGBM_TD_CLASS,
-                                                                  dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
-        job_mgr.add_jobs(class_task_infos, config_10_1_0,
-                         f'XGB-TD-class_nest-{n_estimators}',
-                         XGBInterfaceWrapper(**utils.update_dict(DefaultParams.XGB_TD_CLASS,
-                                                                 dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
-        job_mgr.add_jobs(class_task_infos, config_10_1_0,
-                         f'CatBoost-TD-class_nest-{n_estimators}',
-                         CatBoostInterfaceWrapper(**utils.update_dict(DefaultParams.CB_TD_CLASS,
-                                                                      dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
-
-        # regression
-        job_mgr.add_jobs(reg_task_infos, config_10_1_0,
-                         f'LGBM-TD-reg_nest-{n_estimators}',
-                         LGBMInterfaceWrapper(**utils.update_dict(DefaultParams.LGBM_TD_REG,
-                                                                  dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
-        job_mgr.add_jobs(reg_task_infos, config_10_1_0,
-                         f'XGB-TD-reg_nest-{n_estimators}',
-                         XGBInterfaceWrapper(**utils.update_dict(DefaultParams.XGB_TD_REG,
-                                                                 dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
-        job_mgr.add_jobs(reg_task_infos, config_10_1_0,
-                         f'CatBoost-TD-reg_nest-{n_estimators}',
-                         CatBoostInterfaceWrapper(**utils.update_dict(DefaultParams.CB_TD_REG,
-                                                                      dict(n_estimators=n_estimators))),
-                         tags=[tag], rerun=True)
 
     job_mgr.run_jobs(scheduler)
 
@@ -1502,118 +1516,6 @@ def run_architecture_ablations(paths: Paths, tag: str = 'paper', rerun: bool = F
     job_mgr.run_jobs(scheduler)
 
 
-def run_cumulative_ablations(paths: Paths, tag: str = 'paper_cumulative_ablations', rerun: bool = False):
-    job_mgr = TabBenchJobManager(paths)
-    scheduler = SimpleJobScheduler(RayJobManager())
-    config_10_1_0 = RunConfig(n_tt_splits=10, n_cv=1, n_refit=0, save_y_pred=False)  # todo: it's false
-
-    train_class_task_infos = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    train_reg_task_infos = TaskCollection.from_name('meta-train-reg', paths).load_infos(paths)
-
-    # lr_grid_ntp = [0.01, 0.015, 0.025, 0.04, 0.07, 0.1, 0.2, 0.3, 0.4]
-    # lr_grid_std = [4e-4, 7e-4, 1e-3, 1.5e-3, 2.5e-3, 4e-3, 7e-3, 1e-2, 2e-2]
-    lr_grid_std = [2e-3, 4e-3]
-    lr_grid_ntp = [0.04, 0.2]
-
-    config_class = dict()
-    config_reg = dict()
-    ablation_counter = 1
-
-    def add_config(name: str, lr_grid: List[float],
-                   add: Optional[Dict[str, Any]] = None, add_class: Optional[Dict[str, Any]] = None,
-                   add_reg: Optional[Dict[str, Any]] = None, run_this: bool = True):
-        nonlocal ablation_counter
-        nonlocal config_class
-        nonlocal config_reg
-
-        if add is not None:
-            config_class = utils.join_dicts(config_class, add)
-            config_reg = utils.join_dicts(config_reg, add)
-        if add_class is not None:
-            config_class = utils.join_dicts(config_class, add_class)
-        if add_reg is not None:
-            config_reg = utils.join_dicts(config_reg, add_reg)
-
-        if run_this:
-            for lr in lr_grid:
-                for task_infos, task_type_name, config in [(train_class_task_infos, 'class', config_class),
-                                                           (train_reg_task_infos, 'reg', config_reg)]:
-                    job_mgr.add_jobs(task_infos, config_10_1_0,
-                                     f'MLP-cumul-abl-{ablation_counter}-{task_type_name}_{name}_lr-{lr:g}',
-                                     NNInterfaceWrapper(**utils.update_dict(config, dict(lr=lr))),
-                                     tags=[tag], rerun=rerun)
-
-        ablation_counter += 1
-
-    mlp_rtdl_repr_config_class = dict(
-        hidden_sizes=[128, 256, 128],
-        p_drop=0.1,
-        block_str='w-b-a-d',
-        lr=1e-3,  # will be overridden by the lrs from the grid anyway
-        opt='adam',
-        tfms=['quantile_tabr', 'embedding'],
-        embedding_size=8,
-        batch_size=128,
-        n_epochs=1000,
-        use_early_stopping=True,
-        early_stopping_multiplicative_patience=1,
-        early_stopping_additive_patience=20,
-        act='relu',
-        weight_param='standard',
-        weight_init_mode='uniform',
-        weight_init_gain=1. / np.sqrt(3.),
-        bias_init_mode='pytorch-default',
-        max_n_vectorized=1,
-        use_last_best_epoch=False,
-        emb_init_mode='kaiming-uniform-t',
-    )
-
-    # for reproducing: weight decay
-    # initialize missing embeddings to zero
-    # have a different early stopping tolerance threshold
-
-    # MLP-RTDL also uses the two-output + cross-entropy thing
-    # hard to reproduce: handling unknown classes with different embedding category initialized to zero
-
-    # todo: include all lr factors etc.
-
-    add_config('rtdl-d-reprod', [1e-3], add=mlp_rtdl_repr_config_class,
-               add_reg=dict(normalize_output=True), run_this=True)
-    add_config('tune-lr', lr_grid_std)
-    add_config('max-epochs-256', lr_grid_std, dict(n_epochs=256))
-    add_config('batch-size-256', lr_grid_std, dict(batch_size=256))
-    add_config('hidden-256x3', lr_grid_std, dict(hidden_sizes=[256] * 3))
-    add_config('normal-emb-init', lr_grid_std, dict(emb_init_mode='normal'))
-    add_config('one-hot-small-cat', lr_grid_std, dict(tfms=['quantile_tabr', 'one_hot', 'embedding'],
-                                                      max_one_hot_cat_size=9))
-    # quantile_tabr was not well-suited for vectorization, now we can vectorize
-    add_config('robust-scale-smooth-clip', lr_grid_std,
-               dict(tfms=['one_hot', 'median_center', 'robust_scale', 'smooth_clip', 'embedding'],
-                    max_n_vectorized=50))
-    add_config('no-early-stop', lr_grid_std, dict(use_early_stopping=False))
-    add_config('last-best-epoch', lr_grid_std, dict(use_last_best_epoch=True))
-    add_config('lr-multi-cycle', lr_grid_std, dict(lr_sched='coslog4'))
-    add_config('beta2-0.95', lr_grid_std, dict(sq_mom=0.95))
-    add_config('label-smoothing', lr_grid_std, add_class=dict(use_ls=True, ls_eps=0.1))
-    add_config('output-clipping', lr_grid_std, add_reg=dict(clamp_output=True))
-    add_config('ntp', lr_grid_ntp, dict(weight_param='ntk', bias_lr_factor=0.1))
-    add_config('weight-init-std', lr_grid_ntp, dict(weight_init_mode='std', weight_init_gain=1.0))
-    add_config('bias-init-he+5', lr_grid_ntp, dict(bias_init_mode='he+5'))
-    add_config('different-act', lr_grid_ntp, add_class=dict(act='selu'), add_reg=dict(act='mish'))
-    add_config('param-act', lr_grid_ntp, dict(use_parametric_act=True, act_lr_factor=0.1))
-    add_config('front-scale', lr_grid_ntp, dict(add_front_scale=True, scale_lr_factor=6.0))
-    add_config('num-emb-pl', lr_grid_ntp,
-               dict(num_emb_type='pl', plr_sigma=0.1, plr_hidden_1=16, plr_hidden_2=4, plr_lr_factor=0.1))
-    add_config('num-emb-pbld', lr_grid_ntp, dict(num_emb_type='pbld'))
-    add_config('pdrop-0.15', lr_grid_ntp, dict(p_drop=0.15))
-    add_config('pdrop-flat-cos', lr_grid_ntp, dict(p_drop_sched='flat_cos'))
-    add_config('wd-0.02', lr_grid_ntp, dict(wd=0.02, bias_wd_factor=0.0))
-    add_config('wd-flat-cos', lr_grid_ntp, dict(wd_sched='flat_cos'), run_this=True)
-
-    job_mgr.run_jobs(scheduler)
-    pass
-
-
 def run_cumulative_ablations_new(paths: Paths, n_lrs: int = -1, tag: str = 'paper_cumulative_ablations_new',
                                  rerun: bool = False):
     job_mgr = TabBenchJobManager(paths)
@@ -1710,7 +1612,7 @@ def run_cumulative_ablations_new(paths: Paths, n_lrs: int = -1, tag: str = 'pape
     add_config('alt-wd-0.02', lr_grid_ntp, dict(wd=0.02, bias_wd_factor=0.0))
     add_config('alt-wd-flat-cos', lr_grid_ntp, dict(wd_sched='flat_cos'))
     add_config('alt-bias-init-he+5', lr_grid_ntp, dict(bias_init_mode='he+5'))
-    # add_config('alt-weight-init-std', lr_grid_ntp, dict(weight_init_mode='std', weight_init_gain=1.0))
+    add_config('alt-weight-init-std', lr_grid_ntp, dict(weight_init_mode='std', weight_init_gain=1.0))
 
     # add_config('bias-init-he+5', lr_grid_ntp, dict(bias_init_mode='he+5'))
     # add_config('weight-init-std', lr_grid_ntp, dict(weight_init_mode='std', weight_init_gain=1.0))
@@ -1725,38 +1627,45 @@ def run_cumulative_ablations_new(paths: Paths, n_lrs: int = -1, tag: str = 'pape
 
 if __name__ == '__main__':
     paths = Paths.from_env_variables()
+
+    # run_td_configs(paths, tag='paper', rerun=False)
+    # run_default_configs(paths, tag='paper', rerun=False)
+    # run_rtdl_default_configs(paths, tag='paper', tabzilla_defaults=True)
+    # run_tabr_configs(paths)
+
+    # run_gbdt_rs_configs()
+    # run_rf_rs_configs()
+    # for i in range(50):
+    #     if (i + 1) % 10 == 0:
+    #         run_rtdl_tuning_configs(paths, n_steps=i + 1, with_resnet=True, only_meta_train=False)
+    # for i in range(50):
+    #     if (i + 1) % 10 == 0:
+    #         run_realmlp_tuning_configs(paths, n_steps=i + 1, tag='paper_mlp-hpo', rerun=False)
+    # for n_steps in [1, 2, 5, 10, 20, 30, 40, 50]:
+    #     run_tabr_tuning_configs(paths, n_steps=n_steps)
+
+    # run_rtdl_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    # run_gbdt_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    # run_rf_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    # run_realmlp_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper', rerun=False)
+    # run_tabr_hpo_alg_selection(paths, n_hpo_steps=50)
+    # run_ensemble_configs(paths, tag='paper')
+
+    # ----- ablations (mostly for the appendix) -----
+
+    # for n_lrs in [10]:  # range(1, 10):
+    #     run_cumulative_ablations_new(paths, n_lrs=n_lrs)
+
+    run_rtdl_rssc_default_configs(paths, tag='paper')
+    # run_default_ce_configs(paths)
+    # run_nns_no_ls(paths)
+
     # run_all_ablations(paths)
+    # run_architecture_ablations(paths)
     # run_preprocessing_experiments(paths)
     # run_refit_configs(paths, tag='paper', rerun=False)
-    # run_td_configs(paths, tag='paper', rerun=False)
     # run_early_stopping_configs(paths)
     # run_brier_stopping_configs(paths)
     # run_cross_entropy_stopping_configs(paths)
-    # for n_steps in range(1, 51):
-    #     run_mlp_tuning_configs(paths, n_steps=n_steps, tag='paper_mlp-hpo', rerun=False)
-    # run_mlp_random_configs(paths, n_steps=50)
-    # run_mlp_random_seed_configs(paths, n_steps=20)
-    # run_mlp_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper', rerun=False)
-    # run_default_configs(paths, tag='paper', rerun=False)
-    # run_rtdl_default_configs(paths, tag='paper', rerun=False, with_resnet=False, tabzilla_defaults=True)
-    # run_rtdl_default_configs(paths, tag='paper', rerun=False, with_mlp=False, tabzilla_defaults=True)
-    # run_rtdl_default_configs(paths, tag='paper', rerun=False, with_resnet=False, only_meta_test=True)
-    # run_rtdl_default_configs(paths, tag='paper', rerun=False, with_mlp=False, only_meta_train=True)
-    # run_rtdl_default_configs(paths, tag='paper', rerun=False, with_mlp=False, only_meta_test=True)
     # run_refit_configs(paths, tag='paper', rerun=False)
-    # run_seed_opt_configs(paths, random_seed_offset=1, tag='paper_seeds')
-    # run_cumulative_ablations(paths)
-    # run_td_ce_configs(paths)
-    # run_cumulative_ablations_new(paths)
-    # for n_lrs in range(1, 10):
-    #     run_cumulative_ablations_new(paths, n_lrs=n_lrs)
-    # run_additional_configs(paths)
-    # run_rtdl_rssc_default_configs(paths, tag='paper', rerun=False, with_tabr=True, only_meta_train=False)
-    # run_gbdt_rs_configs(paths, n_steps=2, rerun=False, with_lgbm=True, with_xgb=False, with_cb=False, only_meta_train=True)
-    # run_tabr_configs(paths)
-    # run_gbdt_rs_configs()
-    # run_gbdt_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
-    # run_rtdl_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
-    # run_architecture_ablations(paths)
-    # run_ensemble_configs(paths, tag='paper', rerun=True)
-    run_mlp_no_ls(paths)
+

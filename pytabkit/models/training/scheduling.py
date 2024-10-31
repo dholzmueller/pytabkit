@@ -273,6 +273,14 @@ class CoslogFunc:
         return 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2 ** self.n_cycles - 1) * t)))
 
 
+class AltCoslogFunc:
+    def __init__(self, n_cycles: int):
+        self.n_cycles = n_cycles
+
+    def __call__(self, t):
+        return 0.5 * (1 - np.cos(2 * np.pi * np.log2(np.sqrt(2) + (2 ** self.n_cycles - np.sqrt(2)) * t)))
+
+
 def cos_func(x):
     return 0.5 * (1.0 - math.cos(math.pi * x))
 
@@ -285,14 +293,16 @@ def lin_func(x):
     return 1 - x
 
 
-def get_schedule(sched_name: str):
+def get_schedule(sched_name: str) -> Schedule:
     sched_type = sched_name
     base_sched = None
 
-    cos_sched = FunctionSchedule(cos_func)
+    cos_sched = FunctionSchedule(cos_func)  # from 0 to 1
     # id_sched = FunctionSchedule(identity_func)
-    lin_sched = FunctionSchedule(lin_func)
+    lin_sched = FunctionSchedule(lin_func)  # from 1 to 0
     cos_warm_sched = FunctionSchedule(cos_warm_func)
+    identity_sched = FunctionSchedule(identity_func)
+    constant_sched = ConstantSchedule(1.0)
 
     one_cycle_lr_sched = combine_scheds([0.25, 0.75], [cos_sched.scaled(0.04, 1.), cos_sched.scaled(1., 1e-5)])
     fastai1_lr_sched = combine_scheds([0.3, 0.7], [cos_sched.scaled(0.04, 1.), cos_sched.scaled(1., 4e-6)])
@@ -400,6 +410,10 @@ def get_schedule(sched_name: str):
         base_sched = cos_sched.scaled(1., 0.)
     elif sched_type == 'cos_increasing':
         base_sched = cos_sched.scaled(0., 1.)
+    elif sched_type == 'quad':
+        base_sched = FunctionSchedule(lambda t: (1-t)**2)
+    elif sched_type == 'cubic':
+        base_sched = FunctionSchedule(lambda t: (1 - t) ** 3)
     elif sched_type == 'lin_cos_log_15':
         base_sched = FunctionSchedule(lambda t: 2 * t * 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + 15 * t))))
     elif sched_type == 'lin2_cos_log_15':
@@ -413,10 +427,42 @@ def get_schedule(sched_name: str):
     elif sched_type == 'warmup_0.05_cos':
         base_sched = connect_cos_scheds([0.0, 0.05, 1.0],
                                         [0.0, 1.0, 0.0])
+    elif sched_type == 'expm4t':
+        base_sched = FunctionSchedule(lambda t: np.exp(-4*t))
+    elif sched_type == 'expm3t':
+        base_sched = FunctionSchedule(lambda t: np.exp(-3*t))
+    elif sched_type == 'expm5t':
+        base_sched = FunctionSchedule(lambda t: np.exp(-5*t))
+    elif sched_type == 'expm6t':
+        base_sched = FunctionSchedule(lambda t: np.exp(-6*t))
+    elif sched_type == 'expm8t':
+        base_sched = FunctionSchedule(lambda t: np.exp(-8 * t))
+    elif sched_type == 'invp1e-2':
+        base_sched = FunctionSchedule(lambda t: 1e-2 / (t + 1e-2))
+    elif sched_type == 'invsqrtp1e-3':
+        base_sched = FunctionSchedule(lambda t: np.sqrt(1e-3) / np.sqrt(t + 1e-3))
+    elif sched_type == 'quartic':
+        base_sched = FunctionSchedule(lambda t: (1.-t)**4)
+    elif sched_type == 'pow5':
+        base_sched = FunctionSchedule(lambda t: (1.-t)**5)
+    elif sched_type == 'pow6':
+        base_sched = FunctionSchedule(lambda t: (1.-t)**6)
+    elif sched_type == 'linwarm.05eps':
+        base_sched = combine_scheds([0.05, 0.95], [identity_sched.scaled(1e-3, 1.0), constant_sched])
+    elif isinstance(sched_type, str) and sched_type.startswith('altcoslog'):
+        n_cycles = int(sched_type[len('altcoslog')])
+        base_sched = FunctionSchedule(AltCoslogFunc(n_cycles))
+        # base_sched = FunctionSchedule(lambda t: 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2**n_cycles-1) * t))))
+    elif isinstance(sched_type, str) and sched_type.startswith('altquadcyc'):
+        n_cycles = int(sched_type[len('altquadcyc')])
+        single_cycle = FunctionSchedule(lambda t: 4 * (t-0.5)**2)
+        cycle_sched = single_cycle
+        for i in range(n_cycles-1):
+            cycle_sched = combine_scheds([0.5, 0.5], [cycle_sched, single_cycle])
+        cycle_sched = cycle_sched.scaled(tmax=0.75)
+        base_sched = cycle_sched
+        # base_sched = FunctionSchedule(lambda t: 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2**n_cycles-1) * t))))
 
     if base_sched is None:
         raise ValueError(f'Unknown schedule type "{sched_type}"')
     return base_sched
-
-
-

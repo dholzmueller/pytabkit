@@ -9,7 +9,8 @@ from pytabkit.bench.data.common import SplitType
 from pytabkit.bench.data.paths import Paths
 from pytabkit.bench.data.tasks import TaskDescription, TaskCollection
 from pytabkit.bench.eval.analysis import get_opt_groups
-from pytabkit.bench.eval.evaluation import MultiResultsTable, DefaultEvalModeSelector, MeanTableAnalyzer, alg_results_str, \
+from pytabkit.bench.eval.evaluation import MultiResultsTable, DefaultEvalModeSelector, MeanTableAnalyzer, \
+    alg_results_str, \
     alg_comparison_str, WinsTableAnalyzer, RankTableAnalyzer, NormalizedLossTableAnalyzer, \
     GreedyAlgSelectionTableAnalyzer
 
@@ -18,7 +19,8 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
               val_metric_name: str = None, metric_name: str = None, split_type: str = SplitType.RANDOM,
               use_task_weighting: Optional[bool] = None, shift_eps: float = 0.01,
               data_path: Optional[str] = None, alg_name: Optional[str] = None,
-              alg_name_2: Optional[str] = None, tag: Optional[str] = None, max_n_splits: Optional[int] = None):
+              alg_name_2: Optional[str] = None, tag: Optional[str] = None, max_n_splits: Optional[int] = None,
+              max_n_algs: Optional[int] = None, show_val_results: bool = False, show_train_results: bool = False):
     """
     Prints evaluation tables on the selected datasets/algorithms.
     The following aggregate statistics will be printed, all of which are
@@ -53,6 +55,10 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     :param alg_name_2: Second algorithm for which results on individual datasets should be printed.
     :param tag: If specified, only print algorithms whose tags include the given tag.
     :param max_n_splits: If specified, only evaluate the given number of train-test splits.
+    :param max_n_algs: Maximum number of methods that should be processed and displayed.
+    This does not contain groups of methods (e.g. "all algs") that will be added on top later.
+    :param show_val_results: Whether to show validation errors instead of test errors.
+    :param show_train_results: Whether to show training errors instead of test errors.
     :return:
     """
     print('start show eval')
@@ -75,7 +81,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
         show_tags = tag.split(',') if isinstance(tag, str) else list(
             tag)  # commas are converted to tuples in the command line, apparently
         alg_filter = lambda an, tags, config: np.any([show_tag in tags for show_tag in show_tags])
-    table = MultiResultsTable.load(task_collection, n_cv=n_cv, paths=paths,
+    table = MultiResultsTable.load(task_collection, n_cv=n_cv, paths=paths, max_n_algs=max_n_algs,
                                    split_type=split_type, alg_filter=alg_filter, max_n_splits=max_n_splits)
     print('process table')
     # alg_group_dict = {'all algs': (lambda an, tags, config: True)} if show_alg_groups else None
@@ -92,7 +98,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
                                            np.any([g.startswith(an) for g in grp]))
 
     val_test_groups = {f'HPO-on-BestModel-TD-{task_type_name}': {f'{family}-TD-{task_type_name}': f'{family}-HPO'
-                                               for family in ['XGB', 'LGBM', 'CatBoost', 'MLP']}
+                                                                 for family in ['XGB', 'LGBM', 'CatBoost', 'MLP']}
                        for task_type_name in ['class', 'reg']}
 
     if val_metric_name is None:
@@ -100,24 +106,29 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
 
     test_table = table.get_test_results_table(DefaultEvalModeSelector(), alg_group_dict=alg_group_dict,
                                               test_metric_name=metric_name, val_metric_name=val_metric_name,
-                                              val_test_groups=val_test_groups)
+                                              val_test_groups=val_test_groups, use_validation_errors=show_val_results,
+                                              use_train_errors=show_train_results)
     val_table_single = table.get_test_results_table(DefaultEvalModeSelector(), alg_group_dict=dict(),
-                                              test_metric_name=metric_name, val_metric_name=val_metric_name,
-                                              val_test_groups=val_test_groups, use_validation_errors=True)
-    test_table_single = table.get_test_results_table(DefaultEvalModeSelector(), alg_group_dict=dict(),
                                                     test_metric_name=metric_name, val_metric_name=val_metric_name,
-                                                    val_test_groups=val_test_groups, use_validation_errors=False)
+                                                    val_test_groups=val_test_groups, use_validation_errors=True)
+    test_table_single = table.get_test_results_table(DefaultEvalModeSelector(), alg_group_dict=dict(),
+                                                     test_metric_name=metric_name, val_metric_name=val_metric_name,
+                                                     val_test_groups=val_test_groups,
+                                                     use_validation_errors=show_val_results,
+                                                     use_train_errors=show_train_results)
 
     if len(test_table.alg_task_results) == 0:
         print(f'No results found')
         return
+
+    subset = 'train' if show_train_results else ('val' if show_val_results else 'test')
 
     if use_task_weighting is None:
         use_task_weighting = coll_name.startswith('meta-train') or coll_name.startswith('uci')
     separate_task_names = ['facebook_comment_volume', 'facebook_live_sellers_thailand_shares']
     if n_cv == 1:
         # fails for n_cv > 1 because proper selection on the validation set is not implemented
-        print(f'Greedy algorithm selection cumulative best log shifted geometric mean (err+{shift_eps:g}) test error:')
+        print(f'Greedy algorithm selection cumulative best log shifted geometric mean (err+{shift_eps:g}) {subset} error:')
         analyzer = GreedyAlgSelectionTableAnalyzer(use_weighting=use_task_weighting,
                                                    separate_task_names=separate_task_names,
                                                    f=lambda x: np.log(x + shift_eps))
@@ -131,23 +142,23 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     analyzer = RankTableAnalyzer(use_weighting=use_task_weighting, separate_task_names=separate_task_names)
     analyzer.print_analysis(test_table)
     print()
-    print('Arithmetic mean normalized test metric:')
+    print(f'Arithmetic mean normalized {subset} metric:')
     analyzer = NormalizedLossTableAnalyzer(use_weighting=use_task_weighting, separate_task_names=separate_task_names)
     analyzer.print_analysis(test_table)
     print()
-    print('Arithmetic mean test metric:')
+    print(f'Arithmetic mean {subset} metric:')
     analyzer = MeanTableAnalyzer(use_weighting=use_task_weighting, separate_task_names=separate_task_names)
     analyzer.print_analysis(test_table)
     print()
-    print(f'Log shifted geometric mean (err+{shift_eps:g}) test metric:')
-    analyzer = MeanTableAnalyzer(f=lambda x: np.log(x + shift_eps), use_weighting=use_task_weighting,
-                                 separate_task_names=separate_task_names)
-    analyzer.print_analysis(test_table)
-    print()
-    print(f'Shifted geometric mean (err+{shift_eps:g}) test metric:')
+    print(f'Shifted geometric mean (err+{shift_eps:g}) {subset} metric:')
     analyzer = MeanTableAnalyzer(f=lambda x: np.log(x + shift_eps), use_weighting=use_task_weighting,
                                  separate_task_names=separate_task_names,
                                  post_f=lambda x: np.exp(x))
+    analyzer.print_analysis(test_table)
+    print()
+    print(f'Log shifted geometric mean (err+{shift_eps:g}) {subset} metric:')
+    analyzer = MeanTableAnalyzer(f=lambda x: np.log(x + shift_eps), use_weighting=use_task_weighting,
+                                 separate_task_names=separate_task_names)
     analyzer.print_analysis(test_table)
     print()
     # print('Mean modlog test error:')  # todo: name modlog is suboptimal, people could associate mod with modulo

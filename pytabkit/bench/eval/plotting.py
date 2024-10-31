@@ -5,9 +5,11 @@ from typing import List, Dict, Optional, Tuple, Callable
 import matplotlib
 import numpy as np
 import pandas as pd
+from matplotlib.pyplot import arrow
 
 from pytabkit.bench.eval.analysis import get_opt_groups, get_simplified_name, ResultsTables, \
     get_benchmark_results, get_display_name
+from pytabkit.bench.eval.colors import more_percep_uniform_hue
 
 matplotlib.use('agg')
 # matplotlib.use('pdf')
@@ -29,6 +31,8 @@ matplotlib.rcParams.update(fontsizes.icml2022())
 matplotlib.rcParams['text.latex.preamble'] = matplotlib.rcParams['text.latex.preamble'] + r'\usepackage{xcolor}'
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib import patches as mpatches
 
 import seaborn as sns
 from adjustText import adjust_text
@@ -49,23 +53,36 @@ from pytabkit.models.training.scheduling import get_schedule
 
 
 def get_plot_color_idx(alg_name: str):
-    prefixes = ['BestModel', 'Ensemble', 'MLP-RTDL', 'RealMLP', 'ResNet', 'FT-Transformer', 'TabR', 'SAINT',
-                'XGB', 'LGBM', 'CatBoost', 'GBT', 'RF']
-    for i, prefix in enumerate(prefixes):
-        if alg_name.startswith(prefix):
-            return i
+    parts = ['BestModel', 'Ensemble', 'MLP-RTDL', 'MLP-PLR', 'RealMLP', 'ResNet', 'FTT',
+             ['TabR', 'RealTabR'],
+             # 'SAINT',
+             'XGB', 'LGBM', 'CatBoost',
+             # 'GBT',
+             'RF']
+
+    # don't use prefixes and reverse to get better colors for BestModel_FTT-D_prep etc.
+    for i, part_or_list in reversed(list(enumerate(parts))):
+        lst = part_or_list if isinstance(part_or_list, list) else [part_or_list]
+        for part in lst:
+            if part in alg_name:
+                return i
     raise ValueError(f'Unknown method: {alg_name}')
 
 
 def gg_color_hue(n: int, saturation: float = 1.0, value: float = 0.65):
-    hues = np.linspace(15, 375, num=n + 1)[:-1]  # exclude the last element to avoid a duplicate of the first color
-    return [tuple(matplotlib.colors.hsv_to_rgb((h / 360.0, saturation, value)).tolist()) for h in hues]
+    # hues = np.linspace(13, 375, num=n + 1)[:-1]  # exclude the last element to avoid a duplicate of the first color
+    # return [tuple(matplotlib.colors.hsv_to_rgb((h / 360.0, saturation, value)).tolist()) for h in hues]
+    hues = np.linspace(0.0, 1.0, n + 1)[:-1]
+    hues = [more_percep_uniform_hue(hue) for hue in hues]
+    return [tuple(matplotlib.colors.hsv_to_rgb((h, saturation, value)).tolist()) for h in hues]
 
 
 def get_plot_color(alg_name: str):
     idx = get_plot_color_idx(alg_name)
-    special = ('rssc' in alg_name or 'TPE' in alg_name)
-    colors = gg_color_hue(13, saturation=0.5 if special else 1.0, value=0.9 if special else 0.65)
+    special = ('rssc' in alg_name or 'TPE' in alg_name or 'no-ls' in alg_name)
+    half_special = '_prep' in alg_name
+    colors = gg_color_hue(12, saturation=0.6 if special else (0.8 if half_special else 1.0),
+                          value=0.9 if special else (0.775 if half_special else 0.65))
     return colors[idx]
 
 
@@ -82,6 +99,10 @@ def coll_name_to_title(coll_name: str) -> str:
         title = r'$\mathcal{B}^{\mathrm{test}}_{\mathrm{class}}$ without missing value datasets'
     elif coll_name == 'meta-test-reg-no-missing':
         title = r'$\mathcal{B}^{\mathrm{test}}_{\mathrm{reg}}$ without missing value datasets'
+    elif coll_name == 'grinsztajn-class-filtered':
+        title = r'Grinsztajn et al.\ (2022) classification benchmark'
+    elif coll_name == 'grinsztajn-reg':
+        title = r'Grinsztajn et al.\ (2022) regression benchmark'
     else:
         title = coll_name
     title = r'\textbf{' + title + r'}'
@@ -372,7 +393,7 @@ def plot_scatter_ax(paths: Paths, tables: ResultsTables, ax: matplotlib.axes.Axe
 
         if test_metric_name is not None:
             raise NotImplementedError(f'Correct label for custom test metric name is not implemented')
-        metric = 'Classification error' if task_type_name == 'class' else 'RMSE'
+        metric = 'Classification error' if task_type_name == 'class' else 'nRMSE'
         ax.set_xlabel(f'{metric} for {display_name_1}' + r' ($\downarrow$)')
         ax.set_ylabel(f'{metric} for {display_name_2}' + r' ($\downarrow$)')
         ax.set_title(coll_name_to_title(coll_name))
@@ -400,9 +421,9 @@ def plot_scatter(paths: Paths, filename: str, tables: ResultsTables, coll_names:
                  test_metric_name: Optional[str] = None, val_metric_name: Optional[str] = None,
                  use_validation_errors: bool = False):
     print(f'Creating scatterplot: {filename}')
-    assert len(coll_names) in [1, 2, 4]
     context_mgr = plt.rc_context(figsizes.icml2022_half(height_to_width_ratio=1)) if len(coll_names) == 1 \
-        else plt.rc_context(figsizes.icml2022_full(height_to_width_ratio=2 if len(coll_names) == 4 else 0.5))
+        else plt.rc_context(figsizes.icml2022_full(
+        height_to_width_ratio=3 if len(coll_names) == 6 else (2 if len(coll_names) == 4 else 0.5)))
     with context_mgr:
         if len(coll_names) == 1:
             fig, ax = plt.subplots(1, 1)
@@ -410,9 +431,14 @@ def plot_scatter(paths: Paths, filename: str, tables: ResultsTables, coll_names:
         elif len(coll_names) == 2:
             fig, axs = plt.subplots(1, 2)
             axs_list = [axs[0], axs[1]]
-        else:
+        elif len(coll_names) == 4:
             fig, axs = plt.subplots(2, 2)
             axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1]]
+        elif len(coll_names) == 6:
+            fig, axs = plt.subplots(3, 2)
+            axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1], axs[2, 0], axs[2, 1]]
+        else:
+            raise ValueError(f'{len(coll_names)=} is not in [1, 2, 4, 6]')
 
         for coll_name, ax in zip(coll_names, axs_list):
             plot_scatter_ax(ax=ax, paths=paths, tables=tables, coll_name=coll_name,
@@ -431,7 +457,8 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
                               ax: matplotlib.axes.Axes,
                               xlabel: str, ylabel: str, title: Optional[str] = None,
                               name_tfm_func: Optional[Callable[[str], str]] = None,
-                              plot_pareto_frontier: bool = True):
+                              plot_pareto_frontier: bool = True,
+                              arrow_alg_names: Optional[List[Tuple[str, str]]] = None):
     # First, convert dictionaries to a format suitable for seaborn
     # take shared models
     models = list(set(x_dict.keys()).intersection(set(y_dict.keys())))
@@ -457,8 +484,8 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
             return 'HPO'
         elif '-TD' in alg_name:
             return 'TD'
-        elif '-PBB-D' in alg_name:
-            return 'PBB-D'
+        # elif '-PBB-D' in alg_name:
+        #     return 'PBB-D'
         elif '-D' in alg_name:
             return 'D'
         else:
@@ -472,6 +499,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
     # fig = plt.figure(figsize=(10, 10))
     # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     # sns.set_theme(style="whitegrid", font_scale=2)
+    print(f'{df=}')
 
     color_mapping = {color: color for color in df['color'].unique()}
 
@@ -484,6 +512,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
         data=df,
         s=400,  # size of the points
         palette=color_mapping,
+        markers={'D': 'o', 'TD': 's', 'HPO': 'X', 'PBB-D': 'P'},
         # palette='tab10',  # palette can be changed as needed
         legend=False,  # No need to draw legend at this point
         ax=ax,
@@ -500,7 +529,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
         y_errors_arr = np.stack([np.array(y_vals) - y_intervals_arr[:, 0],
                                  y_intervals_arr[:, 1] - np.array(y_vals)], axis=1)
         for x, y, errors, color in zip(x_vals, y_vals, y_errors_arr, point_colors):
-            ax.errorbar(x, y, elinewidth=3, yerr=errors[:, None], fmt='none', color=color)
+            ax.errorbar(x, y, elinewidth=4, yerr=errors[:, None], fmt='none', color=color)
 
     # Prepare to annotate the points
     texts = []
@@ -512,7 +541,11 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
         display_name = model_name
         if name_tfm_func is not None:
             display_name = name_tfm_func(display_name)
-        # print(f'{model_name=}, {display_name=}')
+        # bold if it's an arrow end
+        is_arrow_end = False if arrow_alg_names is None else any(
+            model_name == end_name for _, end_name in arrow_alg_names)
+        if is_arrow_end:
+            display_name = rf'\textbf{{{display_name}}}'
         text = ax.text(x, y, display_name, color=text_color, fontsize=20, ha='center', va='center')
         text.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
         texts.append(text)
@@ -542,7 +575,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
     ax.text(text_x, text_y, "better",
             ha="center", va="center", rotation=45, size=30,
             bbox=dict(boxstyle="larrow,pad=0.5",
-                      fc="lightgreen", ec="forestgreen", lw=4), zorder=1)
+                      fc="lightgreen", ec="forestgreen", lw=4), zorder=50)
 
     # Set arrow coordinates based on the plot limits
     # arrow_x = x_min ** 0.1 * x_max ** 0.9  # Adjust 0.1 as needed
@@ -575,6 +608,26 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
 
         ax.plot(xs_pareto, ys_pareto, '--', color='k', linewidth=2, zorder=0.8)
 
+    if arrow_alg_names is not None:
+        # arrow_head_length =
+        for first, second in arrow_alg_names:
+            x1 = x_dict[first]
+            y1 = y_dict[first]
+            x2 = x_dict[second]
+            y2 = y_dict[second]
+            # plt.arrow(x1, y1, x2-x1, y2-y1, length_includes_head=True,
+            #           head_width=0.08, head_length=0.00002)
+            color = get_plot_color(second)
+            color = tuple(list(color) + [0.5])  # add alpha channel
+            # color = tuple(0.5 + 0.5*v for v in color)
+
+            ax.annotate("", xy=(x2, y2), xytext=(x1, y1), zorder=5,
+                        # arrowprops=dict(arrowstyle="->"),
+                        arrowprops=dict(  # facecolor='#444444',
+                            facecolor=color,
+                            # width=3.0, headwidth=10.0, headlength=8.0,
+                            shrink=0.01, edgecolor='none'))
+
     # Set the axis labels
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -590,13 +643,24 @@ def extend_runtimes(times: Dict[str, float], task_type_name: str, keep_gpu: bool
     # for device in ['CPU', 'GPU']:
     for device in ['CPU']:
         # compute HPO times
-        for method_name in ['RealMLP', 'MLP-RTDL', 'XGB', 'LGBM', 'CatBoost']:
+        for method_name in ['RealMLP', 'MLP-RTDL', 'MLP-PLR', 'ResNet-RTDL', 'XGB', 'LGBM', 'CatBoost', 'TabR',
+                            'RF', 'FTT']:
             if f'{method_name}-HPO-2_{device}' in times:
                 times[f'{method_name}-HPO_{device}'] = (50. / 2.) * times[f'{method_name}-HPO-2_{device}']
+            elif f'{method_name}-HPO-1_{device}' in times:
+                times[f'{method_name}-HPO_{device}'] = 50. * times[f'{method_name}-HPO-1_{device}']
             elif f'{method_name}-TD_{device}' in times:
                 # simple surrogate time
                 print(f'Warning: Guessing HPO time for {method_name} on device {device} from TD time')
                 times[f'{method_name}-HPO_{device}'] = 50 * times[f'{method_name}-TD_{device}']
+            elif f'{method_name}-S-D_{device}' in times:
+                # simple surrogate time
+                print(f'Warning: Guessing HPO time for {method_name} on device {device} from S-D time')
+                times[f'{method_name}-HPO_{device}'] = 50 * times[f'{method_name}-S-D_{device}']
+            elif f'{method_name}-D_{device}' in times:
+                # simple surrogate time
+                print(f'Warning: Guessing HPO time for {method_name} on device {device} from D time')
+                times[f'{method_name}-HPO_{device}'] = 50 * times[f'{method_name}-D_{device}']
 
             if f'{method_name}-HPO_{device}' in times:
                 times[f'{method_name}-HPO_best-1-auc-ovr_{device}'] = times[f'{method_name}-HPO_{device}']
@@ -611,8 +675,17 @@ def extend_runtimes(times: Dict[str, float], task_type_name: str, keep_gpu: bool
                 print(f'Warning: Guessing HPO time for {model} on device {device} from TD time')
                 times[f'{model}-HPO_{device}'] = 50 * times[f'{model}-TD_{device}']
 
+        # raw_names = list(set('_'.join(name.split('_')[:-1]) for name in times))
+        # print(f'Warning: Guessing additional times')
+        # for name in raw_names:
+        #     for new_suffix in ['_no-ls', '_val-ce', '_val-ce_no-ls', '_rssc']:
+        #         old_name = f'{name}_CPU'
+        #         new_name = f'{name}{new_suffix}_CPU'
+        #         if new_name not in times and old_name in times:
+        #             times[new_name] = times[old_name]
+
         for group_name, alg_names in opt_groups.items():
-            if group_name not in ['-D', '-TD', '-HPO', '-D_val-ce', '-TD_val-ce']:
+            if group_name not in ['-D', '-TD', '-HPO', '-D_val-ce', '-TD_val-ce'] and not group_name.endswith('_prep'):
                 continue  # exclude the other ones for now
             alg_names = [
                 alg_name.replace('-class', '').replace('-reg', '')
@@ -622,15 +695,6 @@ def extend_runtimes(times: Dict[str, float], task_type_name: str, keep_gpu: bool
                 sum_time = sum([times[alg_device_name] for alg_device_name in alg_device_names])
                 times[f'BestModel{group_name}_{device}'] = sum_time
                 times[f'Ensemble{group_name}_{device}'] = sum_time
-
-    # raw_names = list(set('_'.join(name.split('_')[:-1]) for name in times))
-    # print(f'Warning: Guessing additional times')
-    # for name in raw_names:
-    #     for new_suffix in ['_no-ls', '_val-ce', '_val-ce_no-ls', '_rssc']:
-    #         old_name = f'{name}_CPU'
-    #         new_name = f'{name}{new_suffix}_CPU'
-    #         if new_name not in times and old_name in times:
-    #             times[new_name] = times[old_name]
 
     if not keep_gpu:
         times = {key: value for key, value in times.items() if not 'GPU' in key}
@@ -644,8 +708,17 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
                    alg_names: List[str],
                    val_metric_name: Optional[str] = None, test_metric_name: Optional[str] = None,
                    use_ranks: bool = False, use_normalized_errors: bool = False, tag: Optional[str] = None,
-                   use_geometric_mean: bool = True, shift_eps: float = 1e-2, use_validation_errors: bool = False):
+                   use_geometric_mean: bool = True, use_grinnorm_errors: bool = False,
+                   shift_eps: float = 1e-2, use_validation_errors: bool = False,
+                   arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True):
     print(f'Creating plot for {coll_name}')
+    is_reg = TaskCollection.from_name(coll_name, paths).load_infos(paths)[0].tensor_infos[
+                 'y'].get_cat_size_product() == 0
+    default_metric_name = ('1-r2' if use_grinnorm_errors else 'nrmse') if is_reg else 'class_error'
+    if val_metric_name is None:
+        val_metric_name = default_metric_name
+    if test_metric_name is None:
+        test_metric_name = default_metric_name
     table = tables.get(coll_name, n_cv=1, tag=tag or 'paper')
     rel_means_dict, rel_intervals_dict = get_benchmark_results(paths, table=table, coll_name=coll_name,
                                                                use_relative_score=False,
@@ -654,6 +727,7 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
                                                                test_metric_name=test_metric_name,
                                                                use_ranks=use_ranks,
                                                                use_normalized_errors=use_normalized_errors,
+                                                               use_grinnorm_errors=use_grinnorm_errors,
                                                                filter_alg_names_list=alg_names,
                                                                use_geometric_mean=use_geometric_mean,
                                                                shift_eps=shift_eps,
@@ -666,11 +740,6 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
     # get runtimes
     avg_train_times = get_avg_train_times(paths, time_coll_name, per_1k_samples=True)
     # print(f'{avg_train_times=}')
-    # todo: temporarily copied
-    # avg_train_times = {'CatBoost-D_CPU': 9.239700636393588, 'MLP-TD-S_CPU': 37.412806366530944,
-    #                    'MLP-TD_CPU': 84.24195643881677, 'CatBoost-TD_CPU': 6.388166625734786,
-    #                    'LGBM-D_CPU': 2.7881638029931297, 'XGB-D_CPU': 1.2699909143044914,
-    #                    'LGBM-TD_CPU': 18.457738130864964, 'XGB-TD_CPU': 7.5444652127548}
     avg_train_times = extend_runtimes(avg_train_times, task_type_name=task_type_name, keep_gpu=False)
 
     # print(f'After extending: {avg_train_times=}')
@@ -730,17 +799,26 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
     else:
         if use_normalized_errors:
             ylabel = ylabel + r'\textbf{normalized} '
+        elif use_grinnorm_errors:
+            ylabel = ylabel + r'\textbf{custom-normalized} '
         if task_type_name == 'class':
-            if val_metric_name is None or val_metric_name == 'class_error':
+            if test_metric_name is None or test_metric_name == 'class_error':
                 ylabel = ylabel + r'\textbf{classification errors}'
-            elif val_metric_name == '1-auc_ovr':
+            elif test_metric_name == '1-auc_ovr':
                 ylabel = ylabel + r'\textbf{1-AUC(one-vs-rest)}'
-            elif val_metric_name == 'cross_entropy':
+            elif test_metric_name == 'cross_entropy':
                 ylabel = ylabel + r'\textbf{cross-entropies}'
             else:
-                raise ValueError(f'Val metric {val_metric_name} not implemented')
+                raise ValueError(f'Test metric {test_metric_name} not implemented')
         else:
-            ylabel = ylabel + r'\textbf{RMSEs}'
+            if test_metric_name is None or test_metric_name == 'rmse':
+                ylabel = ylabel + r'\textbf{RMSEs}'
+            elif test_metric_name == 'nrmse':
+                ylabel = ylabel + r'\textbf{nRMSEs}'
+            elif test_metric_name == '1-r2':
+                ylabel = ylabel + r'$1-R^2$'
+            else:
+                raise ValueError(f'Test metric {test_metric_name} not implemented')
     _plot_scatter_with_labels(avg_train_times, extended_means_dict,
                               y_intervals=extended_intervals_dict,
                               xlabel=r'Average training \textbf{time (CPU)} per 1K samples [s]',
@@ -749,19 +827,30 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
                               ax=ax,
                               title=title,
                               name_tfm_func=get_display_name,
+                              arrow_alg_names=arrow_alg_names,
+                              plot_pareto_frontier=plot_pareto_frontier,
                               # ylabel=r'Benchmark score relative to best model',
                               # ylabel=r'Error increase in \% vs best ($\downarrow$)',
                               # title=f'Benchmark scores on {coll_name_latex} vs train time',
                               )
 
 
+def shorten_coll_names(coll_names: List[str]) -> List[str]:
+    coll_name_dict = {'meta-train-class': 'mtrc', 'meta-train-reg': 'mtrr',
+                      'meta-test-class': 'mtec', 'meta-test-reg': 'mter',
+                      'grinsztajn-class-filtered': 'gcf', 'grinsztajn-reg': 'gr'}
+    short_coll_names = [coll_name if coll_name not in coll_name_dict else coll_name_dict[coll_name] for coll_name in
+                        coll_names]
+    return short_coll_names
+
+
 def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_names: List[str],
                 val_metric_name: Optional[str] = None, test_metric_name: Optional[str] = None,
                 use_ranks: bool = False, use_normalized_errors: bool = False, filename: Optional[str] = None,
-                tag: Optional[str] = None,
-                use_geometric_mean: bool = True, shift_eps: float = 1e-2, use_validation_errors: bool = False):
+                tag: Optional[str] = None, use_grinnorm_errors: bool = False,
+                use_geometric_mean: bool = True, shift_eps: float = 1e-2, use_validation_errors: bool = False,
+                arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True):
     print(f'Plotting pareto plot for {coll_names}')
-    assert len(coll_names) in [1, 2, 4]
     sns.set_theme(style="whitegrid", font_scale=2)
     if len(coll_names) == 1:
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
@@ -769,23 +858,37 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
     elif len(coll_names) == 2:
         fig, axs = plt.subplots(1, 2, figsize=(20, 10))
         axs_list = [axs[0], axs[1]]
-    else:
+    elif len(coll_names) == 3:
+        fig, axs = plt.subplots(1, 3, figsize=(30, 10))
+        axs_list = [axs[0], axs[1], axs[2]]
+    elif len(coll_names) == 4:
         fig, axs = plt.subplots(2, 2, figsize=(20, 20))
         axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1]]
+    elif len(coll_names) == 6:
+        fig, axs = plt.subplots(3, 2, figsize=(20, 30))
+        axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1], axs[2, 0], axs[2, 1]]
+    else:
+        raise ValueError(f'{len(coll_names)=} is not in [1, 2, 3, 4, 6]')
 
     for coll_name, ax in zip(coll_names, axs_list):
+        # print(f'{val_metric_name=}, {test_metric_name=}, {coll_name=}')
         plot_pareto_ax(ax=ax, paths=paths, tables=tables, coll_name=coll_name, alg_names=alg_names,
                        val_metric_name=val_metric_name, test_metric_name=test_metric_name,
                        use_ranks=use_ranks, use_normalized_errors=use_normalized_errors, tag=tag,
+                       use_grinnorm_errors=use_grinnorm_errors,
                        use_geometric_mean=use_geometric_mean, shift_eps=shift_eps,
-                       use_validation_errors=use_validation_errors)
+                       use_validation_errors=use_validation_errors,
+                       arrow_alg_names=arrow_alg_names, plot_pareto_frontier=plot_pareto_frontier)
 
     mean_name = f'geometric_eps-{shift_eps:g}' if use_geometric_mean else 'arithmetic'
     if use_ranks:
         mean_name = 'ranks_' + mean_name
     elif use_normalized_errors:
         mean_name = 'normerrors_' + mean_name
-    name_parts = coll_names + [mean_name]
+    elif use_grinnorm_errors:
+        mean_name = 'grinnormerrors_' + mean_name
+
+    name_parts = shorten_coll_names(coll_names) + [mean_name]
     if use_validation_errors:
         name_parts = ['validation'] + name_parts
     if filename is None:
@@ -793,7 +896,7 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
     else:
         file_path = paths.plots() / filename
 
-    if len(coll_names) == 4:
+    if len(coll_names) in [4, 6]:
         labels = ['D = defaults {} {} {} {} {} TD = tuned defaults {} {} {} {} {} HPO = hyperparameter optimization',
                   'Best/Ensemble: out of XGB, LGBM, CatBoost, (Real)MLP']
         r = matplotlib.patches.Rectangle((0, 0), 1, 1, fill=False, edgecolor='none',
@@ -858,9 +961,10 @@ def plot_winrates(paths: Paths, tables: ResultsTables, coll_name: str, alg_names
     # with matplotlib.rc_context():
     # Create a heatmap using seaborn
     fig = plt.figure(figsize=(10, 8))
-    sns.set_theme(style="whitegrid", font_scale=0.6)
+    sns.set_theme(style="white", font_scale=0.6)
+    mask = np.eye(win_percentage_matrix.shape[0], dtype=bool)
     heatmap = sns.heatmap(win_percentage_matrix, annot=True, fmt=".1f", cmap="YlGnBu",
-                          vmin=0, vmax=100, linewidths=.5,
+                          vmin=0, vmax=100, linewidths=0.5, mask=mask,
                           square=True, cbar_kws={"shrink": 0.8})
 
     display_alg_names = [get_display_name(an) for an in alg_names]
@@ -966,6 +1070,18 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
                            improv_groups: List[str]):
     n_benchmarks = len(benchmark_results)
 
+    n_improvements = len(list(benchmark_results.values())[0])
+    start_color = mcolors.to_rgb('tab:blue')  # Color for vanilla MLP
+    end_color = mcolors.to_rgb('tab:green')  # Color for final MLP
+    gradient_colors = [mcolors.to_hex(c) for c in np.linspace(start_color, end_color, n_improvements)]
+
+    start_alpha = 0.3
+    end_alpha = 0.6
+    alpha_cumulative_list = np.linspace(start_alpha, end_alpha, n_improvements)
+    start_alpha_improvement = 0.65
+    end_alpha_improvement = 1.
+    alpha_improvement_list = np.linspace(start_alpha_improvement, end_alpha_improvement, n_improvements)
+
     with plt.rc_context(figsizes.icml2022_half(height_to_width_ratio=1.5)):
         # Plotting
         fig, axs = plt.subplots(nrows=1, ncols=n_benchmarks, sharey=True)
@@ -999,17 +1115,30 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
             rel_intervals = intervals - non_empty_values
             errors = np.array([-rel_intervals[0], rel_intervals[1]])  # turn them into (absolute) errors
 
-            # ax.barh(non_empty_bar_positions, non_empty_values, align='edge', color=colors[:len(non_empty_bar_positions)], alpha=0.8, height=bar_height)
-            ax.barh(non_empty_bar_positions, non_empty_values, align='edge',
-                    color=[colors[j] for j in non_empty_indices],
-                    alpha=0.8, height=bar_height)
-            # ax.errorbar(non_empty_values, non_empty_bar_positions + 0.5 * bar_height,
-            #             xerr=errors, fmt='none', color='black')
+            for j in range(len(non_empty_values)):
+                value = non_empty_values[j]
+                last_value = value if j == 0 else non_empty_values[j - 1]
+                ax.barh(non_empty_bar_positions[j], min(value, last_value), align='edge', color=gradient_colors[j],
+                        alpha=alpha_cumulative_list[j],
+                        height=bar_height)
+                if value > last_value:
+                    ax.barh(non_empty_bar_positions[j], value - last_value, left=last_value, align='edge',
+                            color=gradient_colors[j],
+                            alpha=alpha_improvement_list[j], height=bar_height)
+                elif value < last_value:
+                    ax.barh(non_empty_bar_positions[j], last_value - value, left=value, align='edge',
+                            color=gradient_colors[j],
+                            # color='white', edgecolor='red', hatch='/', linewidth=2,
+                            # color='red', fill=False,
+                            # color='white',
+                            edgecolor='tab:green', hatch='//' * 3,
+                            facecolor='none',
+                            linewidth=0,
+                            alpha=alpha_improvement_list[j], height=bar_height)
             ax.errorbar(non_empty_values, non_empty_bar_positions + 0.5 * bar_height,
                         xerr=errors, fmt='none', color='gray', linewidth=0.8)
 
             # Add method names on the y-axis
-            # ax.invert_yaxis()  # Invert y-axis to have Method A on top
             ax.tick_params(left=False)
             ax.set_yticks(bar_positions + 0.5 * bar_height)
             # Get the default font size for y-tick labels
@@ -1030,7 +1159,7 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
             ax.xaxis.set_ticks_position('bottom')
 
             # Highlight x=0 tick and corresponding gridline
-            # ax.axvline(x=-0.09, color='black', linewidth=1.5) #FIXME it'd be better but right now it's a bit off comapred to the grid lines
+            # ax.axvline(x=-0.09, color='black', linewidth=1.5) #FIXME it'd be better but right now it's a bit off compared to the grid lines
 
             color_map = {'New': '#ff7f0e', 'Unusual': '#2ca02c',
                          'default': (0.35, 0.35, 0.35)}
@@ -1038,6 +1167,7 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
 
             for label, color in zip(ax.get_yticklabels(), colors_contrib):
                 label.set_color(color)
+
         max_value = max(max(results.values()) for results in benchmark_results.values())
         for ax in axs:
             ax.set_xlim(0, max_value * 1.1)  # Add some padding
@@ -1058,10 +1188,10 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
         for group, indices_ in group_indices.items():
             # add 1 to the indices to take into account the first bar
             indices = [i + 1 for i in indices_]
-            start_pos = non_empty_bar_positions[min(indices)]
+            start_pos = non_empty_bar_positions[min(indices)] - 0.0
             end_pos = non_empty_bar_positions[max(indices)]
-            bracket_positions[group] = (start_pos + end_pos) / 2 + bar_height / 2
-            bracket_widths[group] = start_pos - end_pos + bar_height - 0.4
+            bracket_positions[group] = (start_pos + end_pos) / 2 + bar_height / 2 + 0.0
+            bracket_widths[group] = (start_pos - end_pos) * 0.9 + bar_height - 0.4
 
         # Call the draw_bracket function for each unique group
         text_offset = 0.3  # Offset for the text annotation from the bracket
@@ -1081,7 +1211,7 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
                             font_properties={'family': 'sans-serif', 'size': default_fontsize - 1})
 
         # make a legend
-        legend_elements = [matplotlib.patches.Patch(facecolor=color_map[key], edgecolor='black', label=key) for key in color_map \
+        legend_elements = [mpatches.Patch(facecolor=color_map[key], edgecolor='black', label=key) for key in color_map \
                            if key != "default"]
         font_properties = {'family': 'sans-serif', 'size': default_fontsize}
         fig.legend(handles=legend_elements, loc='lower left', bbox_to_anchor=(0.09, 0.00),
@@ -1092,7 +1222,7 @@ def _create_cumul_abl_plot(file_path: Path, benchmark_results: Dict[str, Dict[st
         # fig.suptitle('Method Performance Comparison', y=1.05)
         # plt.show()
         # plt.tight_layout() # break the annotations
-        utils.ensureDir(file_path)
+        # utils.ensureDir(file_path)
         plt.savefig(file_path)
         plt.close(fig)
 
@@ -1103,7 +1233,7 @@ def plot_cumulative_ablations(paths: Paths, tables: ResultsTables, filename: str
     print(f'Creating cumulative ablations plot')
 
     improvements = {
-        'vanilla': ('Vanilla MLP', 'default'),
+        'vanilla': (r'\textbf{Vanilla MLP}', 'default'),
         'robust-scale-smooth-clip': ('Robust scale + smooth clip', 'New', "Preprocessing"),
         'one-hot-small-cat': ('One-hot for small cat.', 'default', "Preprocessing"),
         'no-early-stop': ('No early stopping', 'default', "Hyperparameters"),
@@ -1117,13 +1247,14 @@ def plot_cumulative_ablations(paths: Paths, tables: ResultsTables, filename: str
         'param-act': (r'Parametric act. fn.', 'Unusual', "Architecture"),
         'front-scale': (r'Scaling layer', 'New', "Architecture"),
         'num-emb-pl': (r'Num. embeddings: PL', 'default', "Architecture"),
-        'num-emb-pbld': (r'Num. embeddings: PBLD', 'New', "Architecture"),
+        'num-emb-pbld': (r'PL emb.\ $\to$ PBLD emb.', 'New', "Architecture"),
         'alt-pdrop-0.15': (r'Dropout $p=0.15$', 'default', "Regularization"),
         'alt-pdrop-flat-cos': (r'Dropout sched: $\mathrm{flat\_cos}$', 'New', "Regularization"),
         'alt-wd-0.02': (r'Weight decay wd $= 0.02$', 'default', "Regularization"),
         'alt-wd-flat-cos': (r'wd sched: $\mathrm{flat\_cos}$', 'New', "Regularization"),
         'alt-bias-init-he+5': (r'Bias init: he+5', 'Unusual', "Initialization"),
-        'wd-flat-cos': (r'Weight init: data-driven', 'New', "Initialization"),
+        'alt-weight-init-std': (r'Weight init: data-driven', 'New', "Initialization"),
+        'final': (r'\textbf{= RealMLP}', "default")
     }
 
     group_labels = {key: value[0] for key, value in improvements.items()}
@@ -1177,6 +1308,12 @@ def plot_cumulative_ablations(paths: Paths, tables: ResultsTables, filename: str
         benchmark_results[coll_name] = rel_means_dict_group
         benchmark_intervals[coll_name] = rel_intervals_dict_group
 
+    for coll_name in coll_names:
+        for mydict in [benchmark_results, benchmark_intervals]:
+            # copy the last result because we need it twice but we can't have the same dictionary key twice
+            print(f'{list(mydict[coll_name].keys())=}')
+            mydict[coll_name]['final'] = mydict[coll_name]['alt-weight-init-std']
+
     # change keys to descriptions
     def map_keys(f: Dict, to_be_mapped: Dict):
         return {f[key]: value for key, value in to_be_mapped.items()}
@@ -1197,122 +1334,6 @@ def plot_cumulative_ablations(paths: Paths, tables: ResultsTables, filename: str
     _create_cumul_abl_plot(file_path=file_path, benchmark_results=benchmark_results,
                            benchmark_intervals=benchmark_intervals, alg_names=alg_names,
                            colors=colors, contribs=contribs, improv_groups=improv_groups)
-
-
-# def plot_cumulative_ablations_old(paths: Paths, tables: ResultsTables, filename: str = None,
-#                               val_metric_name: Optional[str] = None, test_metric_name: Optional[str] = None,
-#                               use_geometric_mean: bool = True, shift_eps: float = 1e-2):
-#     print(f'Creating cumulative ablations plot')
-#     benchmark_results = {}
-#     benchmark_intervals = {}
-#
-#     coll_names = ['meta-train-class', 'meta-train-reg']
-#
-#     def color_new(inp: str) -> str:
-#         return inp
-#         # return r'\textcolor{blue!50!black}{' + inp + '}'
-#
-#     def color_unusual(inp: str) -> str:
-#         return inp
-#         # return r'\textcolor{green!50!black}{' + inp + '}'
-#
-#     group_labels = {
-#         'vanilla': 'Vanilla MLP',
-#         'robust-scale-smooth-clip': color_new('Robust scale + smooth clip'),
-#         'one-hot-small-cat': 'One-hot for small cat.',
-#         'no-early-stop': 'No early stopping',
-#         'last-best-epoch': color_unusual('Last best epoch'),
-#         'lr-multi-cycle': color_unusual(r'$\mathrm{coslog}_4$ lr sched'),
-#         'beta2-0.95': color_unusual(r'Adam $\beta_2 = 0.95$'),
-#         'label-smoothing': color_unusual(r'Label smoothing (class.)'),
-#         'output-clipping': color_unusual(r'Output clipping (reg.)'),
-#         'ntp': color_unusual(r'NT parametrization'),
-#         'different-act': r'Act. fn. SELU / Mish',
-#         'param-act': color_unusual(r'Parametric act. fn.'),
-#         'front-scale': color_new(r'Scaling layer'),
-#         'num-emb-pl': r'Num. embeddings: PL',
-#         'num-emb-pbld': color_new(r'Num. embeddings: PBLD'),
-#         # 'bias-init-he+5': color_unusual(r'Bias init: he+5'),
-#         # 'weight-init-std': color_new(r'Weight init: data-driven'),
-#         # 'pdrop-0.15': r'Dropout $p=0.15$',
-#         # 'pdrop-flat-cos': r'Dropout sched: $\mathrm{flat\_cos}$',
-#         # 'wd-0.02': r'Weight decay wd $= 0.02$',
-#         # 'wd-flat-cos': r'wd sched: $\mathrm{flat\_cos}$',
-#         'alt-pdrop-0.15': r'Dropout $p=0.15$',
-#         'alt-pdrop-flat-cos': r'Dropout sched: $\mathrm{flat\_cos}$',
-#         'alt-wd-0.02': r'Weight decay wd $= 0.02$',
-#         'alt-wd-flat-cos': r'wd sched: $\mathrm{flat\_cos}$',
-#         'alt-bias-init-he+5': color_unusual(r'Bias init: he+5'),
-#         'wd-flat-cos': color_new(r'Weight init: data-driven'),  # todo: rename in results
-#     }
-#
-#     for coll_name in coll_names:
-#         table = tables.get(coll_name, tag='paper_cumulative_ablations_new')
-#         rel_means_dict, rel_intervals_dict = get_benchmark_results(paths, table=table, coll_name=coll_name,
-#                                                                    val_metric_name=val_metric_name,
-#                                                                    test_metric_name=test_metric_name,
-#                                                                    use_relative_score=False, return_percentages=False,
-#                                                                    use_geometric_mean=use_geometric_mean,
-#                                                                    shift_eps=shift_eps)
-#
-#         alg_names = list(rel_means_dict.keys())
-#         vanilla_alg_names = [alg_name for alg_name in alg_names if 'vanilla' in alg_name]
-#         vanilla_alg_results = [rel_means_dict[alg_name] for alg_name in vanilla_alg_names]
-#         best_vanilla_alg_name = vanilla_alg_names[np.argmin(vanilla_alg_results)]
-#
-#         # get the results again, but now relative to the best vanilla alg, in percent
-#         rel_means_dict, rel_intervals_dict = get_benchmark_results(paths, table=table, coll_name=coll_name,
-#                                                                    val_metric_name=val_metric_name,
-#                                                                    test_metric_name=test_metric_name,
-#                                                                    rel_alg_name=best_vanilla_alg_name,
-#                                                                    use_geometric_mean=use_geometric_mean,
-#                                                                    shift_eps=shift_eps)
-#
-#         # group different lr values together
-#         alg_group_names = [alg_name.split('_')[-2] if len(alg_name.split('_')) >= 2 else '' for alg_name in alg_names]
-#         # alg_group_names_unique = list(set(alg_group_names))
-#
-#         rel_means_dict_group = dict()
-#         rel_intervals_dict_group = dict()
-#         for alg_group_name, display_name in group_labels.items():
-#             # alg names in this group
-#             group_alg_names = [an for an, agn in zip(alg_names, alg_group_names) if agn == alg_group_name]
-#             if len(group_alg_names) == 0:
-#                 print(f'No algs for group {alg_group_name}')
-#                 continue
-#             best_alg_name = group_alg_names[np.argmin([rel_means_dict[an] for an in group_alg_names])]
-#             print(f'best lr: {best_alg_name.split("_")[-1]} for {alg_group_name}')
-#             rel_means_dict_group[alg_group_name] = -rel_means_dict[best_alg_name]
-#             low, high = rel_intervals_dict[best_alg_name]
-#             rel_intervals_dict_group[alg_group_name] = -high, -low
-#
-#         benchmark_results[coll_name] = rel_means_dict_group
-#         benchmark_intervals[coll_name] = rel_intervals_dict_group
-#
-#     print(f'{repr(benchmark_results)=}')
-#     print(f'{repr(benchmark_intervals)=}')
-#
-#     def map_keys(f: Dict, to_be_mapped: Dict):
-#         return {f[key]: value for key, value in to_be_mapped.items()}
-#
-#     for coll_name in benchmark_results:
-#         benchmark_results[coll_name] = map_keys(group_labels, benchmark_results[coll_name])
-#         benchmark_intervals[coll_name] = map_keys(group_labels, benchmark_intervals[coll_name])
-#
-#     # alg_names = [val for val in group_labels.values()]
-#     alg_names = list(benchmark_results['meta-train-class'].keys())
-#
-#     if filename is None:
-#         filename = f'cumulative_ablations.pdf'
-#     file_path = paths.plots() / filename
-#
-#     # colors = ['b'] * len(alg_names)
-#     colors = get_equidistant_blue_colors(len(list(group_labels.keys())))
-#     # colors = ['tab:blue'] * len(list(group_labels.keys()))
-#
-#     _create_cumul_abl_plot(file_path=file_path, benchmark_results=benchmark_results,
-#                            benchmark_intervals=benchmark_intervals, alg_names=alg_names,
-#                            colors=colors)
 
 
 def plot_cdd_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables, coll_name: str,
@@ -1355,7 +1376,7 @@ def plot_cdd_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables, c
     result = autorank(data, alpha=0.05, verbose=False, order='ascending', force_mode='nonparametric')
     plot_stats(result, ax=ax, allow_insignificant=True)
     print(create_report(result))
-    ax.set_title(coll_name)
+    ax.set_title('grinsztajn-class' if coll_name == 'grinsztajn-class-filtered' else coll_name)
 
 
 def plot_cdd(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_names: List[str],
@@ -1366,23 +1387,26 @@ def plot_cdd(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_nam
     print(f'Plotting pareto plot for {coll_names}')
     old_value = plt.rcParams['text.usetex']
     plt.rcParams['text.usetex'] = False  # apparently doesn't work with the cdd plot package (autorank)
-    assert len(coll_names) in [1, 2, 4]
+    assert len(coll_names) in [1, 2, 4, 6]
     if len(coll_names) == 1:
         fig, ax = plt.subplots(1, 1, figsize=(6, 4))
         axs_list = [ax]
     elif len(coll_names) == 2:
         fig, axs = plt.subplots(1, 2, figsize=(12, 4))
         axs_list = [axs[0], axs[1]]
-    else:
+    elif len(coll_names) == 4:
         fig, axs = plt.subplots(2, 2, figsize=(12, 8))
         axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1]]
+    else:
+        fig, axs = plt.subplots(3, 2, figsize=(12, 12))
+        axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1], axs[2, 0], axs[2, 1]]
 
     for coll_name, ax in zip(coll_names, axs_list):
         plot_cdd_ax(ax=ax, paths=paths, tables=tables, coll_name=coll_name, alg_names=alg_names,
                     val_metric_name=val_metric_name, test_metric_name=test_metric_name, tag=tag,
                     use_validation_errors=use_validation_errors)
 
-    name_parts = coll_names
+    name_parts = shorten_coll_names(coll_names)
     if use_validation_errors:
         name_parts = ['validation'] + name_parts
     if filename is None:

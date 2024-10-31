@@ -21,7 +21,7 @@ from pytabkit.models.training.metrics import pinball_loss
 
 
 def get_resource_features(config: Dict, ds: DictDataset, n_cv: int, n_refit: int,
-                          n_splits: int) -> Dict[str, float]:
+                          n_splits: int, **extra_params) -> Dict[str, float]:
     """
     Extracts features that can be used in a linear model for predicting resource usage.
     """
@@ -37,6 +37,9 @@ def get_resource_features(config: Dict, ds: DictDataset, n_cv: int, n_refit: int
                       if key in ['x_cont', 'x_cat']])
     ds_prep = DictDataset(tensors=None, tensor_infos=out_tensor_infos, device=ds.device, n_samples=n_samples)
     ds_onehot = DictDataset(tensors=None, tensor_infos=onehot_tensor_infos, device=ds.device, n_samples=n_samples)
+    cat_size_sum = 0 if 'x_cat' not in out_tensor_infos else out_tensor_infos['x_cat'].get_cat_sizes().sum().item()
+    n_classes = ds.tensor_infos['y'].get_cat_size_product()
+    n_cat = ds.tensor_infos['x_cat'].get_n_features()
 
     ds_size_gb = ds.get_size_gb()
     ds_prep_size_gb = ds_prep.get_size_gb()
@@ -54,10 +57,15 @@ def get_resource_features(config: Dict, ds: DictDataset, n_cv: int, n_refit: int
     features['n_tree_repeats'] = n_tree_repeats
     features['n_cv_refit'] = n_cv + n_refit
     features['n_splits'] = n_splits
-    features['2_power_maxdepth'] = 2 ** config.get('max_depth', 6)
+    max_depth = config.get('max_depth', 6)
+    if isinstance(max_depth, int):
+        features['2_power_maxdepth'] = 2 ** max_depth
     features['log_num_leaves'] = np.log(max(1, config.get('num_leaves', 31)))
+    features['cat_size_sum'] = cat_size_sum
+    features['n_classes'] = n_classes
+    features['n_cat'] = n_cat
 
-    return utils.join_dicts(config, features)
+    return utils.join_dicts(config, features, extra_params)
 
 
 def process_resource_features(raw_features: Dict[str, Any], feature_spec: List[str]):
@@ -322,7 +330,7 @@ class ResourcePredictor:
         self.n_gpus = n_gpus
         self.gpu_usage = gpu_usage
 
-    def get_required_resources(self, ds: DictDataset) -> RequiredResources:
+    def get_required_resources(self, ds: DictDataset, **extra_params) -> RequiredResources:
         """
         Function that provides an estimate of the required resources
         :param ds: Dataset (does not need to contain the tensors, just the n_samples and tensor_infos)
@@ -336,7 +344,7 @@ class ResourcePredictor:
         n_classes = ds.tensor_infos['y'].get_cat_sizes()[0].item()
 
         ds = DictDataset(tensors=None, tensor_infos=ds.tensor_infos, device='cpu', n_samples=ds.n_samples)
-        raw_features_prelim = get_resource_features(self.config, ds, n_cv=1, n_refit=0, n_splits=1)
+        raw_features_prelim = get_resource_features(self.config, ds, n_cv=1, n_refit=0, n_splits=1, **extra_params)
         n_features = raw_features_prelim['n_features']
 
         if 'n_threads' in self.config:
@@ -351,14 +359,14 @@ class ResourcePredictor:
             n_threads = 1 + int(ds_complexity / thresh)
 
             config = utils.update_dict(self.config, dict(n_threads=n_threads))
-            raw_features = get_resource_features(config, ds, n_cv=1, n_refit=0, n_splits=1)
+            raw_features = get_resource_features(config, ds, n_cv=1, n_refit=0, n_splits=1, **extra_params)
             cpu_ram_gb = eval_linear_product_model(raw_features, self.cpu_ram_params)
 
             min_threads_per_gb = self.config.get('min_threads_per_gb', 0.3)
             n_threads = min(self.config.get('max_n_threads', 8), max(n_threads, int(min_threads_per_gb * cpu_ram_gb)))
 
         config = utils.update_dict(self.config, dict(n_threads=n_threads))
-        raw_features = get_resource_features(config, ds, n_cv=1, n_refit=0, n_splits=1)
+        raw_features = get_resource_features(config, ds, n_cv=1, n_refit=0, n_splits=1, **extra_params)
         time_s = eval_linear_product_model(raw_features, self.time_params)
         cpu_ram_gb = eval_linear_product_model(raw_features, self.cpu_ram_params)
         gpu_ram_gb = 0.0 if self.gpu_ram_params is None \

@@ -116,10 +116,11 @@ class AlgTaskTable:
 
 
 class MultiResultsTable:
-    def __init__(self, val_table: AlgTaskTable, test_table: AlgTaskTable,
+    def __init__(self, train_table: AlgTaskTable, val_table: AlgTaskTable, test_table: AlgTaskTable,
                  alg_tags: List[List[str]], alg_configs: List[Dict[str, Any]]):
         # val_table.alg_task_table and test_table.alg_task_table are indexed by
         # [alg_idx][task_idx][split_idx]['cv'/'refit'][str(n_models)][str(start_idx)][metric_name]
+        self.train_table = train_table
         self.val_table = val_table
         self.test_table = test_table
         self.alg_tags = alg_tags
@@ -129,7 +130,8 @@ class MultiResultsTable:
                                test_metric_name: Optional[str] = None,
                                alg_group_dict: Optional[Dict[str, AlgFilter]] = None,
                                val_test_groups: Optional[Dict[str, Dict[str, str]]] = None,
-                               use_validation_errors: bool = False) \
+                               use_validation_errors: bool = False,
+                               use_train_errors: bool = False) \
             -> AlgTaskTable:
         """
         :param eval_mode_selector:
@@ -147,19 +149,27 @@ class MultiResultsTable:
             the best validation error among the keys of pairs will be determined,
             and then the test score of the value associated to this best key will be returned.
         :param use_validation_errors: If True, use validation errors instead of test errors.
+        :param use_train_errors: If True, use train errors instead of test errors.
         :return:
         """
         # the selector assigns new alg names (e.g. with [ens-5] for an ensemble)
         # but the alg_group selects based on configs and new names
+        assert not (use_train_errors and use_validation_errors)
 
         # extract only default metric values from self.val_table
-        val_metric_name = val_metric_name or Metrics.default_metric_name(self.val_table.task_infos[0].task_type)
-        test_metric_name = test_metric_name or Metrics.default_metric_name(self.val_table.task_infos[0].task_type)
+        val_metric_name = val_metric_name or Metrics.default_eval_metric_name(self.val_table.task_infos[0].task_type)
+        test_metric_name = test_metric_name or Metrics.default_eval_metric_name(self.val_table.task_infos[0].task_type)
 
-        # tables indexed by [alg_idx][task_idx][split_idx]['cv'/'refit'][str(n_models)][str(start_idx)]
+        if '1-r2' in [val_metric_name, test_metric_name]:
+            for table in [self.val_table, self.test_table, self.train_table]:
+                table.alg_task_results = utils.map_nested(table.alg_task_results, lambda metrics_dict: utils.join_dicts(metrics_dict, {'1-r2': metrics_dict['nrmse']**2}), dim=6)
+
+        # tables indexed by [alg_idx][task_idx][split_idx]['cv'/'refit'][str(n_models)][str(start_idx)][metric_name]
         val_results = utils.select_nested(self.val_table.alg_task_results, val_metric_name, dim=6)
         if use_validation_errors:
             test_results = val_results
+        elif use_train_errors:
+            test_results = utils.select_nested(self.train_table.alg_task_results, val_metric_name, dim=6)
         else:
             test_results = utils.select_nested(self.test_table.alg_task_results, test_metric_name, dim=6)
 
@@ -269,7 +279,7 @@ class MultiResultsTable:
 
     @staticmethod
     def load(task_collection: TaskCollection, n_cv: int, paths: Paths, alg_filter: Optional[AlgFilter] = None,
-             split_type=SplitType.RANDOM, max_n_splits: Optional[int] = None):
+             split_type=SplitType.RANDOM, max_n_splits: Optional[int] = None, max_n_algs: Optional[int] = None):
         # load only summaries (faster)
         alg_names = [alg_path.name for alg_path in paths.result_summaries().iterdir()]
         # now only keep algs where all tasks from task_collection have been evaluated
@@ -287,6 +297,8 @@ class MultiResultsTable:
 
         alg_dict = {an: (tags, config) for an, tags, config in zip(alg_names, alg_tags, alg_configs)
                     if alg_filter(an, tags, config)}
+        if max_n_algs is not None and max_n_algs >= 0:
+            alg_dict = {key: value for i, (key, value) in enumerate(alg_dict.items()) if i < max_n_algs}
         alg_names = list(alg_dict.keys())
         alg_tags = [alg_dict[an][0] for an in alg_names]
         alg_configs = [alg_dict[an][1] for an in alg_names]
@@ -314,20 +326,20 @@ class MultiResultsTable:
             # helper function because for the 'refit' results,
             # we have to take the validation results from the 'cv' part
             # because 'refit' did not have a validation set
-            if name == 'test':
-                return {key: value['test'] for key, value in dct.items()}
+            if name != 'val':
+                return {key: value[name] for key, value in dct.items()}
             else:
                 return {key: dct['cv']['val'] for key in dct}
 
-        tables = [AlgTaskTable(alg_names=alg_names, task_infos=task_infos,
+        tables = {name: AlgTaskTable(alg_names=alg_names, task_infos=task_infos,
                                alg_task_results=utils.map_nested(alg_task_results,
                                                                  lambda dct: select_valtest(dct, name), dim=3))
-                  for name in ['val', 'test']]
+                  for name in ['train', 'val', 'test']}
         # does not work since 'refit' does not have 'val'
         # tables = [AlgTaskTable(alg_names=alg_names, task_infos=task_infos,
         #                        alg_task_results=utils.select_nested(alg_task_results, name, dim=4))
         #           for name in ['val', 'test']]
-        return MultiResultsTable(val_table=tables[0], test_table=tables[1],
+        return MultiResultsTable(train_table=tables['train'], val_table=tables['val'], test_table=tables['test'],
                                  alg_tags=alg_tags, alg_configs=alg_configs)
 
 
@@ -568,6 +580,8 @@ class GreedyAlgSelectionTableAnalyzer(ArrayTableAnalyzer):
 
 def alg_results_str(alg_task_table: AlgTaskTable, alg_name: str):
     alg_task_results = alg_task_table.alg_task_results
+    if alg_name not in alg_task_table.alg_names:
+        alg_name = alg_name + ' [bag-1]'
     # todo: could throw an exception
     alg_idx = alg_task_table.alg_names.index(alg_name)
     task_results = alg_task_results[alg_idx]
@@ -582,6 +596,7 @@ def alg_results_str(alg_task_table: AlgTaskTable, alg_name: str):
 
 def alg_comparison_str(alg_task_table: AlgTaskTable, alg_names: List[str]):
     alg_task_results = alg_task_table.alg_task_results
+    alg_names = [an if an in alg_task_table.alg_names else an + ' [bag-1]' for an in alg_names]
     # todo: could throw an exception
     alg_idxs = [alg_task_table.alg_names.index(alg_name) for alg_name in alg_names]
     means = [[np.mean(splits) for splits in alg_task_results[alg_idx]] for alg_idx in alg_idxs]

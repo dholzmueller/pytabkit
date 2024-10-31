@@ -63,11 +63,13 @@ def generate_ds_table(paths: Paths, task_collection: TaskCollection, include_ope
 
 def generate_collections_table(paths: Paths):
     print(f'Creating collections table')
-    coll_names = ['meta-train-class', 'meta-test-class', 'meta-train-reg', 'meta-test-reg']
     coll_display_names = {'meta-train-class': r'$\mathcal{B}^{\operatorname{train}}_{\mathrm{class}}$',
                           'meta-test-class': r'$\mathcal{B}^{\operatorname{test}}_{\mathrm{class}}$',
+                          'grinsztajn-class-filtered': r'$\mathcal{B}^{\operatorname{Grinsztajn}}_{\mathrm{class}}$',
                           'meta-train-reg': r'$\mathcal{B}^{\operatorname{train}}_{\mathrm{reg}}$',
-                          'meta-test-reg': r'$\mathcal{B}^{\operatorname{test}}_{\mathrm{reg}}$'}
+                          'meta-test-reg': r'$\mathcal{B}^{\operatorname{test}}_{\mathrm{reg}}$',
+                          'grinsztajn-reg': r'$\mathcal{B}^{\operatorname{Grinsztajn}}_{\mathrm{reg}}$'}
+    coll_names = list(coll_display_names.keys())
 
     # todo: number of distinct data sets
     rows = [r'\#datasets', r'\#dataset groups', r'min \#samples', r'max \#samples', r'max \#classes', r'max \#features',
@@ -134,11 +136,16 @@ def generate_individual_results_table(paths: Paths, tables: ResultsTables, filen
                                              test_metric_name=test_metric_name, val_metric_name=val_metric_name,
                                              return_percentages=False, use_task_mean=False, use_geometric_mean=False)
 
+    alg_names = [an for an in alg_names if an in means]
+
     table_head = [['Dataset'] + [get_display_name(an) for an in alg_names]]
     table_body = []
 
     enumerated_task_infos = list(enumerate(table.test_table.task_infos))
     enumerated_task_infos.sort(key=lambda tup: tup[1].task_desc.task_name.lower())
+
+    print(f'{coll_name=}')
+    print(f'{list(means.keys())=}')
 
     for task_idx, task_info in enumerated_task_infos:
         row_scores = [means[alg_name][task_idx] for alg_name in alg_names]

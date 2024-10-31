@@ -120,6 +120,8 @@ class PreprocessingFactory(FitterFactory):
             elif tfm == "quantile_tabr":
                 tfm = TabrQuantileTransformer()
                 tfm_factories.append(SklearnTransformFactory(tfm))
+            else:
+                raise NotImplementedError(f"Transformation '{tfm}' is not implemented.")
 
         # old interface, using 'tfms' is preferred
         if self.config.get('use_one_hot', False):

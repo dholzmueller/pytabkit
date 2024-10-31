@@ -1,10 +1,14 @@
 import shutil
+import traceback
 from typing import List, Optional
 
+import numpy as np
+
 from pytabkit.bench.alg_wrappers.general import AlgWrapper
+from pytabkit.bench.data.common import SplitType
 from pytabkit.bench.data.paths import Paths
 from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
-from pytabkit.bench.run.results import ResultManager, save_summaries
+from pytabkit.bench.run.results import save_summaries, ResultManager
 from pytabkit.bench.scheduling.schedulers import BaseJobScheduler
 from pytabkit.models import utils
 from pytabkit.models.training.logging import StdoutLogger
@@ -20,6 +24,7 @@ class TabBenchJob(AbstractJob):
     """
     Internal helper class implementing AbstractJob for running tabular benchmarking jobs with our scheduling code.
     """
+
     def __init__(self, alg_name: str, alg_wrapper: AlgWrapper, task_package: TaskPackage, paths: Paths):
         """
         :param alg_name: Unique name of the method (for saving results).
@@ -96,6 +101,7 @@ class RunConfig:
     """
     This class stores some benchmark settings that a method can be run with.
     """
+
     def __init__(self, n_tt_splits: int, n_cv: int = 1, n_refit: int = 0, use_default_split: bool = False,
                  trainval_fraction: float = 0.8,
                  save_y_pred: bool = False, min_split_idx: int = 0):
@@ -125,6 +131,7 @@ class TabBenchJobManager:
     """
     This class can be used to add and run jobs for tabular benchmarks.
     """
+
     def __init__(self, paths: Paths):
         """
         :param paths: Data path configuration.
@@ -216,8 +223,64 @@ class TabBenchJobManager:
         After all jobs are done, creates the result summaries for faster loading of results.
         :param scheduler: Scheduler for running the jobs.
         """
+        print(f'Starting scheduler')
         scheduler.add_jobs(self.jobs)
         scheduler.run()
 
         for args in self.save_args:
-            save_summaries(*args)
+            try:
+                save_summaries(*args)
+            except Exception as e:
+                traceback.print_exc()
+
+
+def run_alg_selection(paths: Paths, config: RunConfig, task_infos: List[TaskInfo],
+                      target_alg_name: str, alg_names: List[str], val_metric_name: str, tags: List[str] = ['paper'],
+                      rerun: bool = False):
+    n_cv = config.n_cv
+    split_type = SplitType.DEFAULT if config.use_default_split else SplitType.RANDOM
+    assert n_cv == 1  # not implemented otherwise
+    assert len(alg_names) > 0
+    assert config.n_refit == 0  # not implemented otherwise
+
+    for task_info in task_infos:
+        task_desc = task_info.task_desc
+        for split_id in range(config.n_tt_splits):
+            target_path = paths.results_alg_task_split(task_desc, target_alg_name, n_cv, split_type, split_id)
+            if utils.existsFile(target_path / 'metrics.yaml') and not rerun:
+                continue
+
+            print(f'Running algorithm selection for {target_alg_name} on split {split_id} of task {task_desc}')
+            best_alg_name = None
+            best_val_score = np.Inf
+            best_alg_idx = None
+
+            # find best alg
+            for i, alg_name in enumerate(alg_names):
+                rm = ResultManager.load(paths.results_alg_task_split(task_desc, alg_name, n_cv, split_type, split_id),
+                                        only_metrics=True)
+                val_score = rm.metrics_dict['cv']['val']['1']['0'][val_metric_name]
+
+                if val_score < best_val_score or best_alg_name is None:
+                    best_val_score = val_score
+                    best_alg_name = alg_name
+                    best_alg_idx = best_alg_idx
+
+            # load full results of best alg and save them to target directory
+            rm = ResultManager.load(paths.results_alg_task_split(task_desc, best_alg_name, n_cv, split_type, split_id))
+            rm.other_dict['cv']['fit_params'] = dict(best_alg_idx=best_alg_idx,
+                                                     sub_fit_params=rm.other_dict['cv']['fit_params'])
+            rm.save(target_path)
+
+    # save alg in algs folder
+    py_files = glob.glob('scripts/*.py') + glob.glob('pytabkit/**/*.py', recursive=True)
+    # utils.serialize(paths.algs() / target_alg_name / 'wrapper.pkl', alg_wrapper)
+    extended_config = dict(sub_algs=alg_names)
+    utils.serialize(paths.algs() / target_alg_name / 'extended_config.yaml', extended_config, use_yaml=True)
+    utils.serialize(paths.algs() / target_alg_name / 'tags.yaml', tags, use_yaml=True)
+    for py_file in py_files:
+        utils.copyFile(py_file, paths.algs() / target_alg_name / 'src' / py_file)
+
+    # save summaries
+    print(f'Saving summaries')
+    save_summaries(paths, task_infos, target_alg_name, n_cv=n_cv, rerun=True)

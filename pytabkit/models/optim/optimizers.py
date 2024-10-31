@@ -1,3 +1,5 @@
+from typing import Optional, Dict, Any
+
 import torch
 import torch.optim as optim
 
@@ -28,7 +30,7 @@ class OptimizerBase(torch.optim.Optimizer):
             value *= param.hyper_factors[name]
         return value
 
-    def step(self, closure=None):
+    def step(self, closure=None, loss: Optional[torch.Tensor] = None):
         unhandled_mappings = []
         for names, opt_name, defaults in self.hyper_mappings:
             if opt_name is None:
@@ -57,7 +59,28 @@ class OptimizerBase(torch.optim.Optimizer):
             else:
                 raise RuntimeError('Could not understand mapping {}'.format((names, opt_name, defaults)))
 
+        self._opt_step_with_loss(loss)
+
+    def train(self):
+        if hasattr(self.opt, 'train') and callable(self.opt.train):
+            # print('opt train')
+            self.opt.train()
+
+    def eval(self):
+        if hasattr(self.opt, 'eval') and callable(self.opt.eval):
+            # print('opt eval')
+            self.opt.eval()
+
+    def _opt_step_with_loss(self, loss: Optional[torch.Tensor]):
         self.opt.step()
+
+    def __getstate__(self) -> Dict[str, Any]:
+        # override the pickling method since otherwise self.opt is not restored
+        return {'__dict__': self.__dict__}
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        # override the pickling method since otherwise self.opt is not restored
+        self.__dict__ = state['__dict__']
 
 
 class AdamOptimizer(OptimizerBase):
@@ -98,6 +121,28 @@ class SGDOptimizer(OptimizerBase):
                                                                   ('wd', None, 0.0)],
                          hp_manager=hp_manager)
 
+class SFAdamOptimizer(OptimizerBase):
+    def __init__(self, param_groups, hp_manager: HyperparamManager):
+        from schedulefree import AdamWScheduleFree
+        super().__init__(AdamWScheduleFree(param_groups),
+                         hyper_mappings=[('lr', 'lr', 1e-3), (('mom', 'sq_mom'), 'betas', (0.9, 0.999)),
+                                         ('opt_eps', 'eps', 1e-8), ('wd', None, 0.0),
+                                         ('weight_decay', 'weight_decay', 0.0),
+                                         ('warmup_steps', 'warmup_steps', 0)],
+                         hp_manager=hp_manager)
+
+
+class MoMoAdamOptimizer(OptimizerBase):
+    def __init__(self, param_groups, hp_manager: HyperparamManager):
+        from momo import MomoAdam
+        super().__init__(MomoAdam(param_groups),
+                         hyper_mappings=[('lr', 'lr', 1e-3), (('mom', 'sq_mom'), 'betas', (0.9, 0.999)),
+                                         ('opt_eps', 'eps', 1e-8), ('wd', None, 0.0)],
+                         hp_manager=hp_manager)
+
+    def _opt_step_with_loss(self, loss: Optional[torch.Tensor]):
+        self.opt.step(loss=loss)
+
 
 
 def get_opt_class(opt_name):
@@ -111,3 +156,9 @@ def get_opt_class(opt_name):
         return AMSGradOptimizer
     elif opt_name == 'sched_adam':
         return SchedulingAdamOptimizer
+    elif opt_name == 'sfadam':
+        return SFAdamOptimizer
+    elif opt_name == 'momoadam':
+        return MoMoAdamOptimizer
+    else:
+        raise ValueError(f'Unknown optimizer "{opt_name}"')

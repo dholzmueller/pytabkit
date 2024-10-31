@@ -11,63 +11,77 @@ requires-python = ">=3.9"
 license = "Apache-2.0"
 keywords = ['tabular data', 'scikit-learn', 'deep learning', 'gradient boosting', 'RealMLP']
 authors = [
-    { name = "David Holzmüller"}, #, email = "a@b.org" },
-    { name = "Léo Grinsztajn"}, #, email = "a@b.org" },
+    { name = "David Holzmüller" }, #, email = "a@b.org" },
+    { name = "Léo Grinsztajn" }, #, email = "a@b.org" },
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
-  "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-  "torch>=2.0",
-  "numpy>=1.25,<2.0",
-  "dill",
-  "scikit-learn>=1.3",
-  "xgboost>=2.0",
-  "catboost>=1.2",
-  "lightgbm>=4.1",
-  "torchmetrics>=1.2",
-  "pyyaml>=5.0",
-  "hyperopt>=0.2",
-  "smac>=2.0",
-  "ConfigSpace>=0.7",
-  "pytorch_lightning>=2.0",
-  "msgpack>=1.0",
-  "msgpack_numpy>=0.4",
-  "kditransform>=0.2",
-  "skorch>=0.15",
-  "dask[dataframe]>=2023",
-  "packaging",
+    "torch>=2.0",
+    "numpy>=1.25,<2.0",
+    "dill",
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "catboost>=1.2",
+    "lightgbm>=4.1",
+    # older versions of torchmetrics (<1.2.1) have a bug that makes certain metrics used in tabr slow:
+    # https://github.com/Lightning-AI/torchmetrics/pull/2184
+    "torchmetrics>=1.2.1",
+    "pyyaml>=5.0",
+    "pytorch_lightning>=2.0",
+    "msgpack>=1.0",
+    "msgpack_numpy>=0.4",  # apparently fixed some bug in using numpy arrays in msgpack?
+    "skorch>=0.15",  # for rtdl models
+    "dask[dataframe]>=2023",  # this is here because of a pandas warning:
+    # "Dask dataframe query planning is disabled because dask-expr is not installed"
+    # "packaging",  # unclear why this is here?
 ]
 
 [project.optional-dependencies]
-full = [
-  "matplotlib>=3.0",
-  "fire",
-  "ray>=2.8",
-  "pynvml>=11.0",
-  "psutil>=5.0",
-  "openml>=0.14",
-  "requests>=2.0",
-  "patool>=1.0",
-  "openpyxl>=3.0",
-  "xlrd>=2.0",
-  "tueplots>=0.0.12",
-  "seaborn>=0.0.13",
-  "adjustText>=1.0",
-  "autorank>=1.0",
-  "pytest>=7.0",
-  "pytest-cov>=4.0",
-  "sphinx>=7.0",
-  "myst_parser>=3.0",
-  "sphinx_rtd_theme>=2.0"
+autogluon = [
+    "autogluon.tabular[all]>=1.0",
+    "autogluon.multimodal>=1.0",
+]
+extra = [
+    "kditransform>=0.2",
+]
+hpo = [
+    "ConfigSpace>=0.7",
+    "smac>=2.0",
+    "hyperopt>=0.2",
+]
+bench = [
+    "matplotlib>=3.0",
+    "fire",
+    "ray>=2.8",
+    "pynvml>=11.0",
+    "psutil>=5.0",
+    "openml>=0.14",
+    "requests>=2.0",
+    "patool>=1.0",
+    "openpyxl>=3.0",
+    "xlrd>=2.0",
+    "tueplots>=0.0.12",
+    "seaborn>=0.0.13",
+    "adjustText>=1.0",
+    "autorank>=1.0",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "sphinx>=7.0",
+    "myst_parser>=3.0",
+    "sphinx_rtd_theme>=2.0",
+    "ConfigSpace>=0.7",
+    "smac>=2.0",
+    "hyperopt>=0.2",
 ]
 
 [tool.hatch.version]
@@ -75,7 +89,7 @@ path = "pytabkit/__about__.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
-features = ["full"]
+features = ["bench"]
 
 [tool.hatch.envs.hatch-test]
 installer = "uv"
@@ -96,7 +110,7 @@ Source = "https://github.com/dholzmueller/pytabkit"
 
 [tool.hatch.envs.types]
 extra-dependencies = [
-  "mypy>=1.0.0",
+    "mypy>=1.0.0",
 ]
 [tool.hatch.envs.types.scripts]
 check = "mypy --install-types --non-interactive {args:pytabkit tests}"
@@ -106,7 +120,7 @@ source_pkgs = ["pytabkit", "tests"]
 branch = true
 parallel = true
 omit = [
-  "pytabkit/__about__.py",
+    "pytabkit/__about__.py",
 ]
 
 [tool.coverage.paths]
@@ -116,7 +130,7 @@ tests = ["tests", "*/pytabkit/tests"]
 
 [tool.coverage.report]
 exclude_lines = [
-  "no cov",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
 ]

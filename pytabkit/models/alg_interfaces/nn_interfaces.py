@@ -120,7 +120,7 @@ class NNAlgInterface(AlgInterface):
         return y_pred
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         tensor_infos = ds.tensor_infos
         factory = self.config.get('factory', None)
         if factory is None:
@@ -147,16 +147,16 @@ class NNAlgInterface(AlgInterface):
         # print(f'{pass_memory=}, {param_memory=}')
 
         # max memory that would be used if the dataset wasn't used
-        init_ram_gb_full = n_forward * ds.n_samples * 8
-        init_ram_gb_max = 1.5  # todo: rough estimate, a bit larger than what is allowed in fit_transform_subsample()
+        init_ram_gb_full = n_forward * ds.n_samples * 8 / (1024**3)
+        init_ram_gb_max = 1.2  # todo: rough estimate, a bit larger than what is allowed in fit_transform_subsample()
         init_ram_gb = min(init_ram_gb_max, init_ram_gb_full)
         # init_ram_gb = 1.5
 
-        factor = 1.5  # to go safe on ram
+        factor = 1.2  # to go safe on ram
         gpu_ram_gb = fixed_ram_gb + ds_ram_gb + max(init_ram_gb,
                                                     factor * (n_parallel * (pass_memory + param_memory)) / (1024 ** 3))
 
-        gpu_usage = min(1.0, n_parallel / 100)  # rather underestimate it and use up all the ram on the gpu
+        gpu_usage = min(1.0, n_parallel / 200)  # rather underestimate it and use up all the ram on the gpu
         # go somewhat safe, should be small anyway
         cpu_ram_gb = 0.3 + ds_ram_gb + 1.3 * (pass_memory + param_memory) / (1024 ** 3)
 
@@ -279,8 +279,8 @@ class NNHyperoptAlgInterface(OptAlgInterface):
         return NNAlgInterface(**config)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
-        required_resources = super().get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds)
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        required_resources = super().get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)
 
         # add n_steps * model_ram_gb to required resources, because these will be stored
         alg_interface = NNAlgInterface(**self.max_resource_config)
@@ -290,10 +290,13 @@ class NNHyperoptAlgInterface(OptAlgInterface):
 
 
 class RealMLPParamSampler:
-    def __init__(self, is_classification: bool):
+    def __init__(self, is_classification: bool, hpo_space_name: str = 'default', **config):
         self.is_classification = is_classification
+        self.hpo_space_name = hpo_space_name
 
     def sample_params(self, seed: int) -> Dict[str, Any]:
+        assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
+                                       'moresigmadimsize', 'moresigmadimlr']
         rng = np.random.default_rng(seed=seed)
 
         hidden_size_options = [[256] * 3, [64] * 5, [512]]
@@ -310,6 +313,34 @@ class RealMLPParamSampler:
         if self.is_classification:
             params['ls_eps'] = rng.choice([0.0, 0.1], p=[0.3, 0.7])
 
+        if self.hpo_space_name == 'clr':
+            params['lr'] = np.exp(rng.uniform(np.log(2e-3), np.log(3e-1)))
+            params['lr_sched'] = 'constant'
+            params['use_early_stopping'] = True
+            params['early_stopping_multiplicative_patience'] = 1
+            params['early_stopping_additive_patience'] = 16
+        elif self.hpo_space_name == 'moresigma':
+            params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
+        elif self.hpo_space_name == 'moresigmadim':
+            params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
+            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
+        elif self.hpo_space_name == 'moresigmadimreg':
+            params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
+            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
+            params['p_drop'] = rng.choice([0.0, rng.uniform(0.0, 0.5)])
+            params['wd'] = np.exp(rng.uniform(np.log(1e-5), np.log(4e-2)))
+        elif self.hpo_space_name == 'moresigmadimsize':
+            params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
+            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
+            params['hidden_sizes'] = [rng.choice(np.arange(8, 513))] * rng.choice(np.arange(1, 6))
+        elif self.hpo_space_name == 'moresigmadimlr':
+            params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
+            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
+            params['lr'] = np.exp(rng.uniform(np.log(5e-3), np.log(5e-1)))
         # print(f'{params=}')
 
         default_params = DefaultParams.RealMLP_TD_CLASS if self.is_classification else DefaultParams.RealMLP_TD_REG
@@ -334,7 +365,7 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
         if self.fit_params is None:
             hparam_seed = utils.combine_seeds(seed, self.model_idx)
             is_classification = not ds.tensor_infos['y'].is_cont()
-            self.fit_params = [RealMLPParamSampler(is_classification).sample_params(hparam_seed)]
+            self.fit_params = [RealMLPParamSampler(is_classification, **self.config).sample_params(hparam_seed)]
         # todo: need epoch for refit
         return NNAlgInterface(fit_params=None, **utils.update_dict(self.config, self.fit_params[0]))
 
@@ -342,16 +373,17 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
         assert len(idxs_list) == 1
         self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed)
+        logger.log(1, f'{self.fit_params=}')
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         return self.alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert len(split_seeds) == 1
         alg_interface = self._create_sub_interface(ds, split_seeds[0])
-        return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds)
+        return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)
 
 
 # class NNHyperoptAlgInterface(OptAlgInterface):

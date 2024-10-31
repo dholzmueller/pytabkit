@@ -3,8 +3,6 @@ from pathlib import Path
 from typing import Callable, Tuple, Any, Dict, Union
 
 import numpy as np
-from ConfigSpace import Configuration
-from smac.initial_design import SobolInitialDesign
 
 from pytabkit.models import utils
 from pytabkit.models.training.logging import Logger
@@ -169,7 +167,8 @@ class SMACOptimizer(HyperOptimizer):
             self.f = f
             self.fixed_params = fixed_params
 
-        def __call__(self, params: Configuration, seed: int = 0):
+        def __call__(self, params, seed: int = 0):
+            # params should be of type ConfigSpace.Configuration
             params = params.get_dictionary()
             params = utils.join_dicts(params, self.fixed_params)
             loss, additional_info = self.f(params)
@@ -198,6 +197,7 @@ class SMACOptimizer(HyperOptimizer):
             max_ratio = self.config['n_initial_design'] / self.n_hyperopt_steps
             n_configs_per_hyperparameter = self.config['n_initial_design']
 
+        from smac.initial_design import SobolInitialDesign
         initial_design = SobolInitialDesign(
             scenario=scenario,
             n_configs=None,

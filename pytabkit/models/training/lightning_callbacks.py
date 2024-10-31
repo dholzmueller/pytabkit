@@ -110,12 +110,17 @@ class ModelCheckpointCallback(Callback):
                         self.ckpt.save(tt_split_idx, tv_split_idx, pl_module.model)
 
     def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        # print(f'Before restore: {list(pl_module.model.parameters())[-1]}')
         # restore best params
+        for key, state in pl_module.optimizers().opt.state.items():
+            # lightning automatically moves the model to the CPU after training,
+            # so we have to do the same for the optimizer state
+            # for sfadam
+            if 'z' in state:
+                state['z'] = state['z'].cpu()
+        pl_module.optimizers().eval()  # todo: bit of a hack because ideally the optimizer state should also be restored
         if not self.restore_best:
             raise RuntimeError('ValidationCallback: Cannot restore best params when using save_best_params=False')
         self.ckpt.restore_all(pl_module.model)
-        # print(f'After restore: {list(pl_module.model.parameters())[-1]}')
 
 
 class StopAtEpochsCallback(Callback):

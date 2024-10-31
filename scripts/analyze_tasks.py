@@ -96,6 +96,7 @@ if __name__ == '__main__':
     paths = Paths.from_env_variables()
 
     coll_names = ['meta-train-class', 'meta-train-reg', 'meta-test-class', 'meta-test-reg',
+                  'grinsztajn-class', 'grinsztajn-reg',
                   # 'grinsztajn-cat-class', 'grinsztajn-num-class', 'grinsztajn-cat-reg', 'grinsztajn-num-reg',
                   # 'grinsztajn-cat-class-15k', 'grinsztajn-num-class-15k', 'grinsztajn-cat-reg-15k',
                   # 'grinsztajn-num-reg-15k'

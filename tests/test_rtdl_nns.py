@@ -4,7 +4,7 @@ from sklearn.utils.estimator_checks import check_estimator
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, r2_score
 from pytabkit.models.sklearn.sklearn_interfaces import Resnet_RTDL_D_Classifier, Resnet_RTDL_D_Regressor, \
-    MLP_RTDL_D_Classifier, MLP_RTDL_D_Regressor, FTTransformer_D_Classifier, FTTransformer_D_Regressor
+    MLP_RTDL_D_Classifier, MLP_RTDL_D_Regressor, FTT_D_Classifier, FTT_D_Regressor
 from sklearn.datasets import make_classification, make_regression
 import pytest
 import torch
@@ -30,7 +30,7 @@ def test_numerical_data(n_classes, model_name):
     elif model_name == "mlp":
         clf = MLP_RTDL_D_Classifier(device="cpu")
     elif model_name == "ft_transformer":
-        clf = FTTransformer_D_Classifier(device="cpu")
+        clf = FTT_D_Classifier(device="cpu")
     clf.fit(X_train, y_train, cat_indicator=[False] * 20)  # Assuming no categorical features
 
     # Predict and evaluate
@@ -57,7 +57,7 @@ def test_categorical_data(n_classes, model_name):
     elif model_name == "mlp":
         clf = MLP_RTDL_D_Classifier(device="cpu")
     elif model_name == "ft_transformer":
-        clf = FTTransformer_D_Classifier(device="cpu")
+        clf = FTT_D_Classifier(device="cpu")
     clf.fit(X_train, y_train, cat_indicator=[False] * 20 + [True])
 
     # Predict and evaluate
@@ -88,7 +88,7 @@ def test_regressor_numerical_categorical(tranformed_target, model_name):
     elif model_name == "mlp":
         regressor = MLP_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
     elif model_name == "ft_transformer":
-        regressor = FTTransformer_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
+        regressor = FTT_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
     regressor.fit(X_train, y_train, cat_indicator=cat_features)
     predictions = regressor.predict(X_test)
 
@@ -108,7 +108,7 @@ def create_model(regression, model_name, **kwargs):
     elif model_name == "mlp":
         model = MLP_RTDL_D_Regressor(device="cpu", **kwargs) if regression else MLP_RTDL_D_Classifier(device="cpu", **kwargs)
     elif model_name == "ft_transformer":
-        model = FTTransformer_D_Regressor(device="cpu", **kwargs) if regression else FTTransformer_D_Classifier(device="cpu", **kwargs)
+        model = FTT_D_Regressor(device="cpu", **kwargs) if regression else FTT_D_Classifier(device="cpu", **kwargs)
     return model
 
 

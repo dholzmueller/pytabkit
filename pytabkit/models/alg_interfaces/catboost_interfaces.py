@@ -11,7 +11,8 @@ from pytabkit.models.alg_interfaces.resource_computation import ResourcePredicto
 from pytabkit.models.alg_interfaces.resource_params import ResourceParams
 from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.base import RequiredResources
-from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSplitInterface, SingleSplitWrapperAlgInterface, \
+from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSplitInterface, \
+    SingleSplitWrapperAlgInterface, \
     SklearnSubSplitInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer
@@ -56,7 +57,7 @@ class CatBoostSklearnSubSplitInterface(SklearnSubSplitInterface):
             return CatBoostRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -70,10 +71,12 @@ class CatBoostCustomMetric:
     # see https://stackoverflow.com/questions/65462220/how-to-create-custom-eval-metric-for-catboost
     # and https://catboost.ai/en/docs/concepts/python-usages-examples
 
-    def __init__(self, metric_name: str, is_classification: bool, is_higher_better: bool = False):
+    def __init__(self, metric_name: str, is_classification: bool, is_higher_better: bool = False,
+                 select_pred_col: Optional[int] = None):
         self.metric_name = metric_name
         self.is_classification = is_classification
         self.is_higher_better = is_higher_better
+        self.select_pred_col = select_pred_col
 
     def is_max_optimal(self):
         return self.is_higher_better
@@ -89,10 +92,13 @@ class CatBoostCustomMetric:
         y_pred = torch.as_tensor(np.array(approxes), dtype=torch.float32).t()
         # CatBoost already provides logits in approxes
 
+        if self.select_pred_col is not None:
+            y_pred = y_pred[:, self.select_pred_col, None]
+
         if self.is_classification and y_pred.shape[1] == 1:
             # binary classification, CatBoost provides logits of the class 1
             p = torch.sigmoid(y_pred)
-            y_pred_probs = torch.cat([1.-p, p], dim=1)
+            y_pred_probs = torch.cat([1. - p, p], dim=1)
             y_pred = torch.log(y_pred_probs + 1e-30)
 
         # print(f'{y.shape=}, {y_pred.shape=}')
@@ -130,7 +136,8 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
                          ('used_ram_limit', None),
                          ('od_type', 'Iter'),
                          ('od_pval', None),
-                         ('od_wait', ['od_wait', 'early_stopping_rounds'], None)
+                         ('od_wait', ['od_wait', 'early_stopping_rounds'], None),
+                         ('sampling_frequency', None),
                          ]
 
         params = utils.extract_params(self.config, params_config)
@@ -147,7 +154,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
                 return 'RMSE'
             else:
                 return CatBoostCustomMetric(metric_name=val_metric_name,
-                                            is_classification=n_classes>0,
+                                            is_classification=n_classes > 0,
                                             is_higher_better=False)
             # else:
             #     raise ValueError(f'Validation metric "{val_metric_name}" is currently not implemented for CatBoost')
@@ -162,7 +169,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
                 return 'BrierScore'
             else:
                 return CatBoostCustomMetric(metric_name=val_metric_name,
-                                            is_classification=n_classes>0,
+                                            is_classification=n_classes > 0,
                                             is_higher_better=False)
             # else:
             #     raise ValueError(f'Validation metric "{val_metric_name}" is currently not implemented for CatBoost')
@@ -254,7 +261,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
         return y_pred
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -352,7 +359,7 @@ class CatBoostHyperoptAlgInterface(OptAlgInterface):
 
 
 class RandomParamsCatBoostAlgInterface(RandomParamsAlgInterface):
-    def _sample_params(self, is_classification: bool, seed: int):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
         # adapted from Shwartz-Ziv et al.
         space = {

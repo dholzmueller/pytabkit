@@ -8,7 +8,7 @@ from pytabkit.bench.data.paths import Paths
 from pytabkit.models import utils
 
 
-def rename_alg(old_name: str, new_name: str, copy: bool = False):
+def rename_alg(old_name: str, new_name: str, copy: bool = False, rename_prefixes: bool = False):
     # what to rename:
     # results folder
     # result_summaries folder
@@ -16,6 +16,13 @@ def rename_alg(old_name: str, new_name: str, copy: bool = False):
     # cannot realistically change the code in src/
     # maybe change alg_name in algs/alg_name/wrapper.pkl (if it can be loaded)
     paths = Paths.from_env_variables()
+
+    if rename_prefixes:
+        alg_names = [path.name for path in paths.algs().iterdir()]
+        for alg_name in alg_names:
+            if alg_name.startswith(old_name):
+                rename_alg(alg_name, new_name + alg_name[len(old_name):], copy=copy, rename_prefixes=False)
+        return
 
     if utils.existsDir(paths.algs() / new_name):
         raise ValueError(f'Directory for new name {new_name} already exists')

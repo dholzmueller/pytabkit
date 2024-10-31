@@ -97,7 +97,7 @@ The plots without missing value datasets require running
 ```commandline
 python3 scripts/check_missing_values.py
 ```
-beforehand.
+once beforehand.
 
 ## Single-task experiments
 

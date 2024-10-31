@@ -113,11 +113,11 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
         return torch.cat([s.predict(ds) for s in self.sub_split_interfaces], dim=0)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_splits == 1
         assert n_cv == len(self.sub_split_interfaces)
         # todo: this is ignoring the refit stage
-        single_resources = [ssi.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=1, split_seeds=[split_seed])
+        single_resources = [ssi.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=1, split_seeds=[split_seed], n_train=n_train)
                             for ssi, split_seed in zip(self.sub_split_interfaces, split_seeds)]
         return RequiredResources.combine_sequential(single_resources)
 
@@ -138,6 +138,9 @@ class SklearnSubSplitInterface(SingleSplitAlgInterface):  # todo: have another b
         List[List[List[Tuple[Dict, float]]]]]:
         assert len(idxs_list) == 1
         assert idxs_list[0].n_trainval_splits == 1
+
+        print(f'fit(): {torch.cuda.is_initialized()=}')
+
         # return List[Tuple[Dict, float]]], i.e., validation scores for every hyperparameter combination
         # (could be number of trees, early stopping epoch, or hyperparameters from hyperparameter optimization)
         # if hyperparams is not None, use these and maybe only return one list element?
@@ -163,6 +166,7 @@ class SklearnSubSplitInterface(SingleSplitAlgInterface):  # todo: have another b
         self.train_ds = ds.get_sub_dataset(idxs_list[0].train_idxs[0])
 
         self.config["tmp_folder"] = tmp_folders[0]
+        self.config['interface_resources'] = interface_resources
 
         # create preprocessing factory
         factory = self.config.get('factory', None)
@@ -302,7 +306,10 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
         if val_errors is None:
             return None
         else:
-            self.fit_params = [dict(n_estimators=utils.reverse_argmin(val_errors) + 1)]
+            if self.config.get('use_best_checkpoint', True):
+                self.fit_params = [dict(n_estimators=utils.reverse_argmin(val_errors) + 1)]
+            else:
+                self.fit_params = [dict(n_estimators=len(val_errors))]
             return [[[(dict(n_estimators=i + 1), err) for i, err in enumerate(val_errors)]]]
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
@@ -322,3 +329,5 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
 
     def _get_params(self) -> Dict[str, Any]:
         raise NotImplementedError()
+
+

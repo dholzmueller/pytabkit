@@ -91,7 +91,7 @@ class XGBSklearnSubSplitInterface(SklearnSubSplitInterface):
             return XGBRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -238,7 +238,7 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
         return y_pred
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -385,7 +385,7 @@ class XGBHyperoptAlgInterface(OptAlgInterface):
 
 
 class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
-    def _sample_params(self, is_classification: bool, seed: int):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
         # adapted from Grinsztajn et al. (2022)
         space = {

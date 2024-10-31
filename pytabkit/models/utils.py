@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import os.path
 import heapq
@@ -17,6 +18,8 @@ import json
 
 import msgpack
 import msgpack_numpy as m
+import psutil
+
 m.patch()
 
 import yaml
@@ -454,3 +457,40 @@ class TabrQuantileTransformer(BaseEstimator, TransformerMixin):
         noise_std = self.noise / np.maximum(stds, self.noise)
         rng = np.random.default_rng(self.random_state)
         return X + noise_std * rng.standard_normal(X.shape)
+
+
+class FunctionRunner:
+    def __init__(self, dill_f_args_kwargs, result_queue):
+        self.dill_f_args_kwargs = dill_f_args_kwargs
+        self.result_queue = result_queue
+
+    def __call__(self):
+        f, args, kwargs = dill.loads(self.dill_f_args_kwargs)
+        result = f(*args, **kwargs)
+        self.result_queue.put(result)
+        self.result_queue.join()
+
+
+class FunctionProcess:
+    """
+    Helper class to run a single function in a separate process.
+    """
+    def __init__(self, f, *args, **kwargs):
+        self.result_queue = mp.JoinableQueue()
+        self.process = mp.Process(target=FunctionRunner(dill.dumps((f, args, kwargs)), self.result_queue))
+
+    def start(self) -> 'FunctionProcess':
+        self.process.start()
+        return self
+
+    def is_done(self) -> bool:
+        return not self.result_queue.empty()
+
+    def get_ram_usage_gb(self) -> float:
+        return psutil.Process(self.process.pid).memory_info().rss / 1024 ** 3
+
+    def pop_result(self) -> Any:
+        result = self.result_queue.get()
+        self.result_queue.task_done()
+        self.process.terminate()
+        return result

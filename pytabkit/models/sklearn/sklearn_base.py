@@ -5,6 +5,7 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+import scipy.sparse
 import sklearn
 import torch
 import multiprocessing as mp
@@ -37,6 +38,14 @@ def to_normal_type(x) -> Any:
     if isinstance(x, pd.DataFrame) or isinstance(x, list) or isinstance(x, np.ndarray) or isinstance(x, pd.Series):
         return x
     return np.asarray(x)
+
+
+def concat_arrays(x1, x2) -> Any:
+    if type(x1) != type(x2):
+        raise ValueError(f'Arrays must have the same type, but got {type(x1)=} and {type(x2)=}')
+    if isinstance(x1, pd.DataFrame) or isinstance(x1, pd.Series):
+        return pd.concat([x1, x2], axis=0, ignore_index=True)
+    return np.concatenate([x1, x2], axis=0)
 
 
 class AlgInterfaceEstimator(BaseEstimator):
@@ -87,30 +96,66 @@ class AlgInterfaceEstimator(BaseEstimator):
         # remove None values
         return {key: value for key, value in params.items() if value is not None}
 
-    def fit(self, X, y, val_idxs: Optional[np.ndarray] = None,
-            cat_features: Optional[Union[List[bool], np.ndarray]] = None) -> BaseEstimator:
+    def fit(self, X, y, X_val: Optional = None, y_val: Optional = None, val_idxs: Optional[np.ndarray] = None,
+            cat_indicator: Optional[Union[List[bool], np.ndarray]] = None, cat_col_names: Optional[List[str]] = None) -> BaseEstimator:
         """
         Fit the estimator.
 
         :param X: Inputs (covariates). pandas DataFrame, numpy array, or similar array-like.
         :param y: Labels (targets, variates). pandas DataFrame/Series, numpy array, or similar array-like.
+        :param X_val: Inputs for validation set. Can only be used if n_cv is not set to a value other than 1,
+            and if val_idxs is not used. If X_val is used, X will be used for the training set only,
+            instead of getting validation data from X.
+        :param y_val: Labels for the validation set.
         :param val_idxs: Indices of validation set elements within X and y (optional).
             Can be an array of shape (n_val_samples,) or (n_val_splits,n_val_samples_per_split).
             In the latter case, the results of the models on the validation splits will be ensembled.
-        :param cat_features: Which features/columns are categorical, specified as a list or array of booleans.
+        :param cat_indicator: Which features/columns are categorical, specified as a list or array of booleans.
             If this is not specified, all columns with category/string/object dtypes are interpreted as categorical
             and all others as numerical.
+        :param cat_col_names: List of column names that should be treated as categorical (if X is a pd.DataFrame).
+            Can be specified instead of cat_indicator.
         :return: Returns self.
         """
         # Check that X and y have correct shape
         # if isinstance(X, np.ndarray) and isinstance(y, np.ndarray):
         # we don't want to store the converted ones here
 
+        for arr in [X, y, X_val, y_val]:
+            if scipy.sparse.issparse(arr):
+                raise ValueError(f'Sparse arrays are not supported!')
+
         # print(f'{X=}')
         # print(f'{y=}')
-        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
         X = to_normal_type(X)
         y = to_normal_type(y)  # need to convert array-like objects to arrays for self.is_y_1d_
+
+        params = self.get_config()
+        n_cv = params.get('n_cv', 1)
+        # val_fraction is only relevant for n_cv == 1
+        val_fraction = params.get('val_fraction', 0.2)
+        n_refit = params.get('n_refit', 0)
+
+        if X_val is not None and y_val is None:
+            raise ValueError(f'X_val is not None but y_val is None')
+        elif X_val is None and y_val is not None:
+            raise ValueError(f'X_val is None but y_val is not None')
+
+        if X_val is not None and y_val is not None:
+            if val_idxs is not None:
+                raise ValueError(f'both val_idxs and X_val, y_val were provided')
+            if n_cv != 1:
+                raise ValueError(f'X_val can only be specified for n_cv=1, but got {n_cv=}')
+
+            X_val = to_normal_type(X_val)
+            y_val = to_normal_type(y_val)
+
+            val_idxs = np.arange(len(X), len(X)+len(X_val))
+
+            X = concat_arrays(X, X_val)
+            y = concat_arrays(y, y_val)
+
+        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
 
         if self._is_classification():
             # classes_ is overridden later, but this raises an error when y is a regression target, so it is useful
@@ -121,8 +166,6 @@ class AlgInterfaceEstimator(BaseEstimator):
             if len(np.asarray(y).shape) == 1:
                 self.is_y_1d_ = True
 
-        self.x_converter_ = ToDictDatasetConverter(cat_features=cat_features)
-        self.y_encoder_ = OrdinalEncoder(dtype=np.int64)
         # if not (isinstance(y, np.ndarray) or isinstance(y, list)
         #         or isinstance(y, pd.DataFrame) or isinstance(y, pd.Series)):
         #     raise ValueError(f'y has type {type(y)}, but should be one of np.ndarray, list, pd.DataFrame, or pd.Series')
@@ -130,6 +173,14 @@ class AlgInterfaceEstimator(BaseEstimator):
         X_df = to_df(X).copy()
         y_df = to_df(y).copy()
         # self.y_encoder_.fit_transform(y)
+
+        if cat_col_names is not None:
+            if cat_indicator is not None:
+                raise ValueError(f'Specified both cat_col_names and cat_indicator')
+            cat_indicator = [col_name in cat_col_names for col_name in X_df.columns]
+        self.x_converter_ = ToDictDatasetConverter(cat_features=cat_indicator)
+        self.y_encoder_ = OrdinalEncoder(dtype=np.int64)  # only used for classification
+
 
         if not self._supports_single_sample() and len(X_df) == 1:
             raise ValueError('Training with one sample is not supported!')
@@ -196,11 +247,6 @@ class AlgInterfaceEstimator(BaseEstimator):
         # set n_features_in_ as required by https://scikit-learn.org/stable/developers/develop.html
         self.n_features_in_ = ds.tensor_infos['x_cont'].get_n_features() + ds.tensor_infos['x_cat'].get_n_features()
 
-        params = self.get_config()
-        n_cv = params.get('n_cv', 1)
-        # val_fraction is only relevant for n_cv == 1
-        val_fraction = params.get('val_fraction', 0.2)
-        n_refit = params.get('n_refit', 0)
 
         self.cv_alg_interface_ = self._create_alg_interface(n_cv=n_cv)
 

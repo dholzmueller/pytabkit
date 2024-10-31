@@ -104,7 +104,7 @@ class DefaultParams:
 
     # RTDL params
 
-    RESNET_RTDL_D_CLASS = {
+    RESNET_RTDL_D_CLASS_Grinsztajn = {
         "lr_scheduler": False,
         "module__activation": "reglu",
         "module__normalization": "batchnorm",
@@ -126,10 +126,10 @@ class DefaultParams:
         'tfms': ['quantile'],
     }
 
-    RESNET_RTDL_D_REG = {**RESNET_RTDL_D_CLASS,
-                         "transformed_target": True}
+    RESNET_RTDL_D_REG_Grinsztajn = {**RESNET_RTDL_D_CLASS_Grinsztajn,
+                                    "transformed_target": True}
 
-    MLP_RTDL_D_CLASS = {
+    MLP_RTDL_D_CLASS_Grinsztajn = {
         "lr_scheduler": False,
         "module__n_layers": 8,
         "module__d_layers": 256,
@@ -148,9 +148,39 @@ class DefaultParams:
         'tfms': ['quantile'],
     }
 
-    MLP_RTDL_D_REG = {**MLP_RTDL_D_CLASS,
-                      "transformed_target": True}
+    MLP_RTDL_D_REG_Grinsztajn = {**MLP_RTDL_D_CLASS_Grinsztajn,
+                                 "transformed_target": True}
     
+    FTT_D_CLASS = {
+        "lr_scheduler": False,
+        "module__d_token": 192,
+        "module__d_ffn_factor": 4. / 3.,
+        "module__n_layers": 3,
+        "module__n_heads": 8,
+        "module__activation": "reglu",
+        "module__token_bias": True,
+        "module__attention_dropout": 0.2,
+        "module__initialization": "kaiming",
+        "module__ffn_dropout": 0.1,
+        "module__residual_dropout": 0.0,
+        "module__prenormalization": True,
+        "module__kv_compression": None,
+        "module__kv_compression_sharing": None,
+        "lr": 1e-4,
+        "optimizer": "adamw",
+        "optimizer__weight_decay": 1e-5,
+        "batch_size": 256,  # default in Grinsztajn is 512?
+        "max_epochs": 300,  # todo: keep it?
+        "use_checkpoints": True,
+        "es_patience": 16,  # value from Gorishniy et al.
+        "lr_patience": 30,
+        "verbose": 0,
+        "tfms": ['quantile_tabr'],
+    }
+    
+    FTT_D_REG = {**FTT_D_CLASS,
+                                          "transformed_target": True}
+
     # Default parameters for rtdl models based on https://github.com/naszilla/tabzilla/blob/main/TabZilla/models/rtdl.py
     RESNET_RTDL_D_CLASS_TabZilla = {
         "lr_scheduler": False,
@@ -158,29 +188,55 @@ class DefaultParams:
         "module__normalization": "batchnorm",
         "module__n_layers": 2,
         "module__d": 128,
-        "module__d_first_layer": 128,
-        "module__d_last_layer": 128,
         "module__d_hidden_factor": 2,
-        "module__hidden_dropout": 0.25, #DROPOUT_FIRST
-        "module__residual_dropout": 0.1, #DROPOUT_SECOND
+        "module__hidden_dropout": 0.25,  # DROPOUT_FIRST
+        "module__residual_dropout": 0.1,  # DROPOUT_SECOND
         "lr": 1e-3,
-        "optimizer__weight_decay": 0.01, # for tabzilla they don't set it which means 0.01 (which seems high compared
-                                        # to rtdl hp space?)
+        "optimizer__weight_decay": 0.01,  # for tabzilla they don't set it which means 0.01 (which seems high compared
+        # to rtdl hp space?)
         "optimizer": "adamw",
         "module__d_embedding": 8,
-        "batch_size": 128, # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
-        "max_epochs": 1000, #same
+        "batch_size": 128,
+        # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
+        "max_epochs": 1000,  # same
         "use_checkpoints": True,
-        "es_patience": 20, #same
+        "es_patience": 20,  # same
         "lr_patience": 30,
         "verbose": 0,
         'tfms': ['quantile_tabr'],
     }
 
     RESNET_RTDL_D_REG_TabZilla = {**RESNET_RTDL_D_CLASS_TabZilla,
-                         "transformed_target": True}
+                                  "transformed_target": True}
 
     MLP_RTDL_D_CLASS_TabZilla = {
+        "lr_scheduler": False,
+        "module__n_layers": 3,
+        "module__d_first_layer": 128,  # ignored by the code since d_layers is a list
+        "module__d_last_layer": 128,  # ignored by the code since d_layers is a list
+        "module__d_layers": [128, 256, 128],
+        "module__dropout": 0.1,
+        # module__activation
+        # module__dropout
+        # optimizer__weight_decay
+        "lr": 1e-3,
+        "optimizer": "adamw",
+        "module__d_embedding": 8,
+        "batch_size": 128,
+        # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
+        "max_epochs": 1000,  # same
+        "use_checkpoints": True,
+        "es_patience": 20,  # same
+        "lr_patience": 30,
+        "verbose": 0,
+        'tfms': ['quantile_tabr'],
+    }
+
+    MLP_RTDL_D_REG_TabZilla = {**MLP_RTDL_D_CLASS_TabZilla,
+                               "transformed_target": True}
+
+    MLP_PLR_D_CLASS = {
+        # adapted from TabZilla version of MLP_RTDL_D and the defaults of the rtdl_num_embeddings library
         "lr_scheduler": False,
         "module__n_layers": 3,
         "module__d_first_layer": 128,  # ignored by the code since d_layers is a list
@@ -190,22 +246,28 @@ class DefaultParams:
         "lr": 1e-3,
         "optimizer": "adamw",
         "module__d_embedding": 8,
-        "batch_size": 128, # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
-        "max_epochs": 1000, #same
+        "batch_size": 128,
+        # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
+        "max_epochs": 1000,  # same
         "use_checkpoints": True,
-        "es_patience": 20, #same
+        "es_patience": 20,  # same
         "lr_patience": 30,
         "verbose": 0,
         'tfms': ['quantile_tabr'],
+        "module__num_emb_type": 'plr',
+        "module__num_emb_dim": 24,
+        "module__num_emb_hidden_dim": 48,
+        "module__num_emb_sigma": 0.01,
+        "module__num_emb_lite": False
     }
 
-    MLP_RTDL_D_REG_TabZilla = {**MLP_RTDL_D_CLASS_TabZilla,
-                    "transformed_target": True}
-    
+    MLP_PLR_D_REG = {**MLP_PLR_D_CLASS,
+                     "transformed_target": True}
+
     TABR_S_D_CLASS = {
         "num_embeddings": None,
         "d_main": 265,
-        "context_dropout": 0.38920071545944357, #named mixer_dropout sometimes I think
+        "context_dropout": 0.38920071545944357,  # named mixer_dropout sometimes I think
         "d_multiplier": 2.0,
         "encoder_n_blocks": 0,
         "predictor_n_blocks": 1,
@@ -214,10 +276,10 @@ class DefaultParams:
         "dropout1": 0.0,
         "normalization": "LayerNorm",
         "activation": "ReLU",
-        "batch_size": "auto", # adapt given the dataset size
-        "eval_batch_size": 4096, #TODO: automatically infer given memory
+        "batch_size": "auto",  # adapt given the dataset size
+        "eval_batch_size": 4096,  # TODO: automatically infer given memory
         "patience": 16,
-        "n_epochs": 100_000, #inf in paper
+        "n_epochs": 100_000,  # inf in paper
         "context_size": 96,
         "freeze_contexts_after_n_epochs": None,
         "optimizer": {
@@ -227,10 +289,10 @@ class DefaultParams:
         },
         'tfms': ['quantile_tabr'],
     }
-    
+
     TABR_S_D_REG = {**TABR_S_D_CLASS,
                     "transformed_target": True}
-    
+
     TABR_S_D_CLASS_FREEZE = {
         **TABR_S_D_CLASS,
         "freeze_contexts_after_n_epochs": 4,
@@ -241,6 +303,43 @@ class DefaultParams:
         "freeze_contexts_after_n_epochs": 4,
     }
 
+    RealTABR_D_CLASS = {
+        "d_main": 265,
+        "context_dropout": 0.38920071545944357,  # named mixer_dropout sometimes I think
+        "d_multiplier": 2.0,
+        "encoder_n_blocks": 0,
+        "predictor_n_blocks": 1,
+        "mixer_normalization": "auto",
+        "dropout0": 0.38852797479169876,
+        "dropout1": 0.0,
+        "normalization": "LayerNorm",
+        "activation": "ReLU",
+        "batch_size": "auto",  # adapt given the dataset size
+        "eval_batch_size": 4096,
+        "patience": 16,
+        "n_epochs": 100_000,  # inf in paper
+        "context_size": 96,
+        "freeze_contexts_after_n_epochs": None,
+        'num_embeddings': {
+            'type': "PBLDEmbeddings",
+            'n_frequencies': 8,  # not 16 because of RAM issues on meta-test
+            'd_embedding': 4,
+            'frequency_scale': 0.1,
+        },
+        'tfms': ['median_center', 'robust_scale', 'smooth_clip'],
+        'optimizer': {
+            "type": "AdamW",
+            "lr": 0.0003121273641315169,
+            "weight_decay": 1.2260352006404615e-06,
+            "betas": (0.9, 0.95),
+        },
+        'add_scaling_layer': True,
+        'scale_lr_factor': 96,
+        'ls_eps': 0.1,
+    }
+
+    RealTABR_D_REG = {**RealTABR_D_CLASS,
+                        "transformed_target": True}
 
     # ----- sklearn versions ------
 

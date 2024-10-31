@@ -47,7 +47,8 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
         # train sub-models
         for alg_idx, alg_interface in enumerate(self.alg_interfaces):
-            sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in tmp_folders]
+            sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
+                               tmp_folders]
             alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
 
         if self.fit_params is not None:
@@ -62,7 +63,7 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
                                                         'y'].get_cat_size_product() > 0 else TaskType.REGRESSION
         val_metric_name = self.config.get('ens_weight_metric_name', self.config.get('val_metric_name', None))
         if val_metric_name is None:
-            val_metric_name = Metrics.default_metric_name(task_type=self.task_type)
+            val_metric_name = Metrics.default_val_metric_name(task_type=self.task_type)
 
         n_caruana_steps = self.config.get('n_caruana_steps', 40)  # default value is taken from TaskRepo paper (IIRC)
 
@@ -119,9 +120,10 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
         return wp.predict_for_weights(weights=np.asarray(sparse_weights))
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
-        single_resources = [ssi.get_required_resources(ds, n_cv, n_refit, n_splits=n_splits, split_seeds=split_seeds)
-                            for ssi in self.alg_interfaces]
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        single_resources = [
+            ssi.get_required_resources(ds, n_cv, n_refit, n_splits=n_splits, split_seeds=split_seeds, n_train=n_train)
+            for ssi in self.alg_interfaces]
         return RequiredResources.combine_sequential(single_resources)
 
 
@@ -152,7 +154,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
             sub_tmp_folders = [tmp_folder / str(best_alg_idx) if tmp_folder is not None else None for tmp_folder in
                                tmp_folders]
             self.alg_interfaces[best_alg_idx].fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders,
-                                              name + f'sub-alg-{best_alg_idx}')
+                                                  name + f'sub-alg-{best_alg_idx}')
 
             return
 
@@ -164,7 +166,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
                                                         'y'].get_cat_size_product() > 0 else TaskType.REGRESSION
         val_metric_name = self.config.get('alg_sel_metric_name', self.config.get('val_metric_name', None))
         if val_metric_name is None:
-            val_metric_name = Metrics.default_metric_name(task_type=self.task_type)
+            val_metric_name = Metrics.default_val_metric_name(task_type=self.task_type)
 
         # get out-of-bag labels
         y = ds.tensors['y']
@@ -180,7 +182,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
             y_preds = alg_interface.predict(ds)
             # get out-of-bag predictions
             y_pred_oob = cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
-                                                      for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
+                                           for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
             loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
             if loss < best_alg_loss:
                 best_alg_loss = loss
@@ -196,10 +198,11 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
         return self.alg_interfaces[alg_idx].predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         # too pessimistic for refit...
-        single_resources = [ssi.get_required_resources(ds, n_cv, n_refit, n_splits=n_splits, split_seeds=split_seeds)
-                            for ssi in self.alg_interfaces]
+        single_resources = [
+            ssi.get_required_resources(ds, n_cv, n_refit, n_splits=n_splits, split_seeds=split_seeds, n_train=n_train)
+            for ssi in self.alg_interfaces]
         return RequiredResources.combine_sequential(single_resources)
 
 
@@ -228,5 +231,5 @@ class PrecomputedPredictionsAlgInterface(SingleSplitAlgInterface):
         return self.y_preds_refit if self.is_refit else self.y_preds_cv
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         return RequiredResources(time_s=1e-5 * ds.n_samples, cpu_ram_gb=2.0, n_threads=1)

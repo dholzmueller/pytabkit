@@ -3,52 +3,15 @@ import os
 import time
 import multiprocessing as mp
 import traceback
-from typing import Any, Tuple, Optional, List
+from typing import Tuple, Optional, List
 
 import dill
 import numpy as np
-import psutil
 
 from pytabkit.bench.scheduling.jobs import JobRunner
 from pytabkit.bench.scheduling.resource_manager import ResourceManager, JobInfo
 from pytabkit.bench.scheduling.resources import NodeResources, SystemResources
-
-
-class FunctionRunner:
-    def __init__(self, dill_f_and_args, result_queue):
-        self.dill_f_and_args = dill_f_and_args
-        self.result_queue = result_queue
-
-    def __call__(self):
-        f, args = dill.loads(self.dill_f_and_args)
-        result = f(*args)
-        self.result_queue.put(result)
-        self.result_queue.join()
-
-
-class FunctionProcess:
-    """
-    Helper class to run a single function in a separate process.
-    """
-    def __init__(self, f, *args):
-        self.result_queue = mp.JoinableQueue()
-        self.process = mp.Process(target=FunctionRunner(dill.dumps((f, args)), self.result_queue))
-
-    def start(self) -> 'FunctionProcess':
-        self.process.start()
-        return self
-
-    def is_done(self) -> bool:
-        return not self.result_queue.empty()
-
-    def get_ram_usage_gb(self) -> float:
-        return psutil.Process(self.process.pid).memory_info().rss / 1024 ** 3
-
-    def pop_result(self) -> Any:
-        result = self.result_queue.get()
-        self.result_queue.task_done()
-        self.process.terminate()
-        return result
+from pytabkit.models.utils import FunctionProcess
 
 
 def measure_node_resources(node_id: int) -> Tuple[NodeResources, NodeResources]:

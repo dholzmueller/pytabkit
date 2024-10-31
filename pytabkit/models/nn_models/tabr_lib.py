@@ -4,7 +4,7 @@ import warnings
 import dataclasses
 from typing import Any, Callable, Optional, Union, cast, Iterator, Iterable, List, TypeVar
 
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -52,7 +52,7 @@ def make_trainable_vector(d: int) -> Parameter:
 #         ]
 
 #         return torch.cat(encoded_columns, -1)
-#This is modified to allow to encode unknown categories with zeros
+# This is modified to allow to encode unknown categories with zeros
 class OneHotEncoder(nn.Module):
     cardinalities: torch.Tensor
 
@@ -89,17 +89,17 @@ class CLSEmbedding(nn.Module):
 
 class CatEmbeddings(nn.Module):
     def __init__(
-        self,
-        _cardinalities_and_maybe_dimensions: Union[list[int], list[tuple[int, int]]],
-        d_embedding: Optional[int] = None,
-        *,
-        stack: bool = False,
+            self,
+            _cardinalities_and_maybe_dimensions: Union[list[int], list[tuple[int, int]]],
+            d_embedding: Optional[int] = None,
+            *,
+            stack: bool = False,
     ) -> None:
         assert _cardinalities_and_maybe_dimensions
         spec = _cardinalities_and_maybe_dimensions
         if not (
-            (isinstance(spec[0], tuple) and d_embedding is None)
-            or (isinstance(spec[0], int) and d_embedding is not None)
+                (isinstance(spec[0], tuple) and d_embedding is None)
+                or (isinstance(spec[0], int) and d_embedding is not None)
         ):
             raise ValueError(
                 'Invalid arguments. Valid combinations are:'
@@ -153,7 +153,7 @@ class LinearEmbeddings(nn.Module):
 
 class PeriodicEmbeddings(nn.Module):
     def __init__(
-        self, n_features: int, n_frequencies: int, frequency_scale: float
+            self, n_features: int, n_frequencies: int, frequency_scale: float
     ) -> None:
         super().__init__()
         self.frequencies = Parameter(
@@ -169,7 +169,7 @@ class PeriodicEmbeddings(nn.Module):
 
 class NLinear(nn.Module):
     def __init__(
-        self, n_features: int, d_in: int, d_out: int, bias: bool = True
+            self, n_features: int, d_in: int, d_out: int, bias: bool = True
     ) -> None:
         super().__init__()
         self.weight = Parameter(Tensor(n_features, d_in, d_out))
@@ -206,12 +206,12 @@ class PLREmbeddings(nn.Sequential):
     """  # noqa: E501
 
     def __init__(
-        self,
-        n_features: int,
-        n_frequencies: int,
-        frequency_scale: float,
-        d_embedding: int,
-        lite: bool,
+            self,
+            n_features: int,
+            n_frequencies: int,
+            frequency_scale: float,
+            d_embedding: int,
+            lite: bool,
     ) -> None:
         super().__init__(
             PeriodicEmbeddings(n_features, n_frequencies, frequency_scale),
@@ -224,16 +224,61 @@ class PLREmbeddings(nn.Sequential):
         )
 
 
+class PBLDEmbeddings(nn.Module):
+    def __init__(self, n_features: int,
+                 n_frequencies: int,
+                 frequency_scale: float,
+                 d_embedding: int,
+                 plr_act_name: str = 'linear',
+                 plr_use_densenet: bool = True):
+        super().__init__()
+        print(f'Constructing PBLD embeddings')
+        hidden_2 = d_embedding-1 if plr_use_densenet else d_embedding
+        self.weight_1 = nn.Parameter(frequency_scale * torch.randn(n_features, 1, n_frequencies))
+        self.weight_2 = nn.Parameter((-1 + 2 * torch.rand(n_features, n_frequencies, hidden_2))
+                / np.sqrt(n_frequencies))
+        self.bias_1 = nn.Parameter(np.pi * (-1 + 2 * torch.rand(n_features, 1, n_frequencies)))
+        self.bias_2 = nn.Parameter((-1 + 2 * torch.rand(n_features, 1, hidden_2)) / np.sqrt(n_frequencies))
+        self.plr_act_name = plr_act_name
+        self.plr_use_densenet = plr_use_densenet
+
+    def forward(self, x):
+        # transpose to treat the continuous feature dimension like a batched dimension
+        # then add a new channel dimension
+        # shape will be (vectorized..., n_cont, batch, 1)
+        x_orig = x
+        x = x.transpose(-1, -2).unsqueeze(-1)
+        x = 2 * torch.pi * x.matmul(self.weight_1)  # matmul is automatically batched
+        x = x + self.bias_1
+        # x = torch.sin(x)
+        x = torch.cos(x)
+        x = x.matmul(self.weight_2)  # matmul is automatically batched
+        x = x + self.bias_2
+        if self.plr_act_name == 'relu':
+            x = torch.relu(x)
+        elif self.plr_act_name == 'linear':
+            pass
+        else:
+            raise ValueError(f'Unknown plr_act_name "{self.plr_act_name}"')
+        # bring back n_cont dimension after n_batch
+        # then flatten the last two dimensions
+        x = x.transpose(-2, -3)
+        x = x.reshape(*x.shape[:-2], x.shape[-2] * x.shape[-1])
+        if self.plr_use_densenet:
+            x = torch.cat([x, x_orig], dim=-1)
+        return x
+
+
 class MLP(nn.Module):
     class Block(nn.Module):
         def __init__(
-            self,
-            *,
-            d_in: int,
-            d_out: int,
-            bias: bool,
-            activation: str,
-            dropout: float,
+                self,
+                *,
+                d_in: int,
+                d_out: int,
+                bias: bool,
+                activation: str,
+                dropout: float,
         ) -> None:
             super().__init__()
             self.linear = nn.Linear(d_in, d_out, bias)
@@ -246,14 +291,14 @@ class MLP(nn.Module):
     Head = nn.Linear
 
     def __init__(
-        self,
-        *,
-        d_in: int,
-        d_out: Optional[int],
-        n_blocks: int,
-        d_layer: int,
-        activation: str,
-        dropout: float,
+            self,
+            *,
+            d_in: int,
+            d_out: Optional[int],
+            n_blocks: int,
+            d_layer: int,
+            activation: str,
+            dropout: float,
     ) -> None:
         assert n_blocks > 0
         super().__init__()
@@ -293,6 +338,7 @@ _CUSTOM_MODULES = {
         LinearEmbeddings,
         LREmbeddings,
         PLREmbeddings,
+        PBLDEmbeddings,
         MLP,
     ]
 }
@@ -340,7 +386,7 @@ def get_d_out(n_classes: Optional[int]) -> int:
 # >>> optimization <<<
 # ======================================================================================
 def default_zero_weight_decay_condition(
-    module_name: str, module: nn.Module, parameter_name: str, parameter: Parameter
+        module_name: str, module: nn.Module, parameter_name: str, parameter: Parameter
 ):
     del module_name, parameter
     return parameter_name.endswith('bias') or isinstance(
@@ -356,9 +402,9 @@ def default_zero_weight_decay_condition(
 
 
 def make_parameter_groups(
-    model: nn.Module,
-    zero_weight_decay_condition,
-    custom_groups: dict[tuple[str], dict],  # [(fullnames, options), ...]
+        model: nn.Module,
+        zero_weight_decay_condition,
+        custom_groups: dict[tuple[str], dict],  # [(fullnames, options), ...]
 ) -> list[dict[str, Any]]:
     custom_fullnames = set()
     custom_fullnames.update(*custom_groups)
@@ -394,12 +440,12 @@ def make_parameter_groups(
 
 
 def make_optimizer(
-    module: nn.Module,
-    type: str,
-    *,
-    zero_weight_decay_condition=default_zero_weight_decay_condition,
-    custom_parameter_groups: Optional[dict[tuple[str], dict]] = None,
-    **optimizer_kwargs,
+        module: nn.Module,
+        type: str,
+        *,
+        zero_weight_decay_condition=default_zero_weight_decay_condition,
+        custom_parameter_groups: Optional[dict[tuple[str], dict]] = None,
+        **optimizer_kwargs,
 ) -> torch.optim.Optimizer:
     if custom_parameter_groups is None:
         custom_parameter_groups = {}
@@ -407,6 +453,7 @@ def make_optimizer(
     parameter_groups = make_parameter_groups(
         module, zero_weight_decay_condition, custom_parameter_groups
     )
+    print(f'{optimizer_kwargs=}')
     return Optimizer(parameter_groups, **optimizer_kwargs)
 
 
@@ -472,11 +519,11 @@ class Lambda(torch.nn.Module):
         """
         super().__init__()
         if not callable(fn) or (
-            fn not in vars(torch).values()
-            and (
-                fn not in (member for _, member in inspect.getmembers(torch.Tensor))
-                or inspect.ismethod(fn)  # Check if fn is a @classmethod
-            )
+                fn not in vars(torch).values()
+                and (
+                        fn not in (member for _, member in inspect.getmembers(torch.Tensor))
+                        or inspect.ismethod(fn)  # Check if fn is a @classmethod
+                )
         ):
             warnings.warn(
                 'Passing custom functions to delu.nn.Lambda is deprecated'
@@ -493,10 +540,10 @@ class Lambda(torch.nn.Module):
 
         def is_valid_value(x):
             return (
-                x is None
-                or isinstance(x, (bool, int, float, bytes, str))
-                or isinstance(x, tuple)
-                and all(map(is_valid_value, x))
+                    x is None
+                    or isinstance(x, (bool, int, float, bytes, str))
+                    or isinstance(x, tuple)
+                    and all(map(is_valid_value, x))
             )
 
         for k, v in kwargs.items():
@@ -514,16 +561,17 @@ class Lambda(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Do the forward pass."""
         return self._function(x, **self._function_kwargs)
-    
-#copied from https://github.com/Yura52/delu/blob/5f0015cbdff86f64aff8199123012a9663538fcf/delu/_tensor_ops.py#L339
-    
+
+
+# copied from https://github.com/Yura52/delu/blob/5f0015cbdff86f64aff8199123012a9663538fcf/delu/_tensor_ops.py#L339
+
 def _make_index_batches(
-    x: torch.Tensor,
-    batch_size: int,
-    shuffle: bool,
-    generator: Optional[torch.Generator],
-    drop_last: bool,
-    ) -> Iterable[torch.Tensor]:
+        x: torch.Tensor,
+        batch_size: int,
+        shuffle: bool,
+        generator: Optional[torch.Generator],
+        drop_last: bool,
+) -> Iterable[torch.Tensor]:
     size = len(x)
     if not size:
         raise ValueError('data must not contain empty tensors')
@@ -538,14 +586,15 @@ def _make_index_batches(
         else batch_indices
     )
 
+
 def iter_batches(
-    data: T,
-    /,
-    batch_size: int,
-    *,
-    shuffle: bool = False,
-    generator: Optional[torch.Generator] = None,
-    drop_last: bool = False,
+        data: T,
+        /,
+        batch_size: int,
+        *,
+        shuffle: bool = False,
+        generator: Optional[torch.Generator] = None,
+        drop_last: bool = False,
 ) -> Iterator[T]:
     """Iterate over a tensor or a collection of tensors by (random) batches.
 
@@ -721,7 +770,7 @@ def iter_batches(
 
     else:
         raise ValueError(f'The collection {type(data)} is not supported.')
-    
+
 
 def cat(data: List[T], /, dim: int = 0) -> T:
     """Concatenate a sequence of collections of tensors.

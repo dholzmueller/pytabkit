@@ -50,7 +50,7 @@ def run_example(paths: Paths):
         task_package = TaskPackage(task_info, split_infos=split_infos, n_cv=1, n_refit=0, paths=paths, rerun=True,
                                    alg_name='test', save_y_pred=False)
     logger = StdoutLogger(verbosity_level=2)
-    metric_name = Metrics.default_metric_name(task_info.task_type)
+    metric_name = Metrics.default_eval_metric_name(task_info.task_type)
     required_resources = wrapper.get_required_resources(task_package)
     print(f'Predicted time usage in s: {required_resources.time_s:g}')
     print(f'Predicted CPU RAM usage in GB: {required_resources.cpu_ram_gb:g}')
