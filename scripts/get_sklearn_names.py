@@ -1,4 +1,5 @@
 import importlib
+# get the names of all sklearn interfaces, for exporting them in __all__ to import them from a higher-level module
 
 if __name__ == '__main__':
     # Import the module
@@ -9,4 +10,4 @@ if __name__ == '__main__':
              if not attr_name.startswith('_') and not 'Mixin' in attr_name
              and hasattr(getattr(module, attr_name), '__module__')
              and getattr(module, attr_name).__module__ == module.__name__]
-    print(f', '.join(attrs))
+    print(f'"' + '", "'.join(attrs) + '"')
