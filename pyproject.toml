@@ -89,11 +89,11 @@ path = "pytabkit/__about__.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
-features = ["bench"]
+features = ["bench,autogluon,extra,hpo"]
 
 [tool.hatch.envs.hatch-test]
 installer = "uv"
-features = ["full"]
+features = ["bench"]
 
 [tool.hatch.build.targets.sdist]
 package = ['pytabkit']
