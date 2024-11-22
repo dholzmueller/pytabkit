@@ -11,7 +11,7 @@ import skorch
 import numpy as np
 import pandas as pd
 import torch.nn as nn
-from skorch.callbacks import Checkpoint, EarlyStopping, LRScheduler
+from skorch.callbacks import Checkpoint, EarlyStopping, LRScheduler, PrintLog
 from skorch import NeuralNetRegressor, NeuralNetClassifier
 from skorch.dataset import Dataset
 from skorch.callbacks import EpochScoring
@@ -60,6 +60,14 @@ def get_nonglu_activation_fn(name: str) -> ty.Callable[[Tensor], Tensor]:
         if name == 'geglu'
         else get_activation_fn(name)
     )
+
+
+def print_but_serializable(*args, **kwargs):
+    # this is a dummy function to prevent an obscure error in pickling skorch objects
+    # containing callbacks with sink=print
+    # The error occurs when ray.init() and FunctionProcess() are both used. Error message:
+    # _pickle.PicklingError: Can't pickle <built-in function print>: it's not the same object as builtins.print
+    print(*args, **kwargs)
 
 
 class RTDL_MLP(nn.Module):
@@ -748,6 +756,12 @@ class NeuralNetRegressorWrapped(NeuralNetRegressor):
     def set_y_train_mean(self, y_train_mean):
         self.y_train_mean = y_train_mean
 
+    def get_default_callbacks(self):
+        callbacks = [cb for cb in super().get_default_callbacks() if not isinstance(cb[1], PrintLog)]
+        callbacks.append(('print_log', PrintLog(sink=print_but_serializable)))
+        print(callbacks)
+        return callbacks
+
     def fit(self, X, y):
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -793,6 +807,12 @@ class NeuralNetClassifierWrapped(NeuralNetClassifier):
     def fit(self, X, y):
         y = y.astype(np.int64)
         return super().fit(X, y)
+
+    def get_default_callbacks(self):
+        callbacks = [cb for cb in super().get_default_callbacks() if not isinstance(cb[1], PrintLog)]
+        callbacks.append(('print_log', PrintLog(sink=print_but_serializable)))
+        print(callbacks)
+        return callbacks
 
     # adapted from skorch code 
     # to remove ignoring keyboard interrupt
@@ -905,7 +925,7 @@ def create_regressor_skorch(
             batch_size=batch_size
         ),
         EpochScoring(scoring=mse_constant_predictor, name="constant_val_mse", on_train=False),
-        EarlyStoppingCustomError(monitor="valid_loss", patience=es_patience),
+        EarlyStoppingCustomError(monitor="valid_loss", patience=es_patience, sink=print_but_serializable),
     ]
 
     if lr_scheduler:
@@ -924,6 +944,7 @@ def create_regressor_skorch(
                 f_history=None,
                 load_best=True,
                 monitor="valid_loss_best",
+                sink=print_but_serializable,
             )
         )
     if not wandb_run is None:
@@ -1004,11 +1025,11 @@ def create_classifier_skorch(
     ]
     if val_metric_name == 'class_error':
         callbacks.append(EarlyStoppingCustomError(monitor="valid_acc", patience=es_patience,
-                                                  lower_is_better=False))
+                                                  lower_is_better=False, sink=print_but_serializable))
     elif val_metric_name == 'cross_entropy':
         print(f'Using early stopping on cross-entropy loss')
         callbacks.append(EarlyStoppingCustomError(monitor='valid_loss', patience=es_patience,
-                                                  lower_is_better=True))
+                                                  lower_is_better=True, sink=print_but_serializable))
     else:
         raise ValueError(f'Validation metric {val_metric_name} not implemented here!')
 
@@ -1027,7 +1048,8 @@ def create_classifier_skorch(
                 f_criterion=None,
                 f_history=None,
                 load_best=True,
-                monitor="valid_acc_best" if val_metric_name == 'class_error' else 'valid_loss_best'
+                monitor="valid_acc_best" if val_metric_name == 'class_error' else 'valid_loss_best',
+                sink=print_but_serializable,
             )
         )
     if not wandb_run is None:

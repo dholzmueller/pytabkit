@@ -96,6 +96,7 @@ features = ["bench","autogluon","extra","hpo","dev"]
 [tool.hatch.envs.hatch-test]
 installer = "uv"
 features = ["bench","dev"]
+#features = ["bench","autogluon","extra","hpo","dev"]
 
 [tool.hatch.build.targets.sdist]
 package = ['pytabkit']

@@ -492,5 +492,6 @@ class FunctionProcess:
     def pop_result(self) -> Any:
         result = self.result_queue.get()
         self.result_queue.task_done()
+        time.sleep(1e-2)
         self.process.terminate()
         return result

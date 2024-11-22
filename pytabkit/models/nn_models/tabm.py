@@ -4,7 +4,7 @@
 # NOTE
 # The minimum required versions of the dependencies are specified in README.md.
 
-from typing import Literal
+from typing import Literal, Union, Optional, List, Dict
 
 from pytabkit.models.nn_models import rtdl_num_embeddings
 import torch
@@ -76,7 +76,7 @@ class OneHotEncoding0d(nn.Module):
     # Input:  (*, n_cat_features=len(cardinalities))
     # Output: (*, sum(cardinalities))
 
-    def __init__(self, cardinalities: list[int]) -> None:
+    def __init__(self, cardinalities: List[int]) -> None:
         super().__init__()
         self._cardinalities = cardinalities
 
@@ -157,9 +157,9 @@ class LinearEfficientEnsemble(nn.Module):
     avoids the term "adapter".
     """
 
-    r: None | Tensor
-    s: None | Tensor
-    bias: None | Tensor
+    r: Optional[Tensor]
+    s: Optional[Tensor]
+    bias: Optional[Tensor]
 
     def __init__(
         self,
@@ -257,8 +257,8 @@ class MLP(nn.Module):
     def __init__(
         self,
         *,
-        d_in: None | int = None,
-        d_out: None | int = None,
+        d_in: Optional[int] = None,
+        d_out: Optional[int] = None,
         n_blocks: int,
         d_block: int,
         dropout: float,
@@ -327,7 +327,7 @@ def _get_first_ensemble_layer(
 def _init_first_adapter(
     weight: Tensor,
     distribution: Literal['normal', 'random-signs'],
-    init_sections: list[int],
+    init_sections: List[int],
 ) -> None:
     """Initialize the first adapter.
 
@@ -390,11 +390,11 @@ class Model(nn.Module):
         self,
         *,
         n_num_features: int,
-        cat_cardinalities: list[int],
-        n_classes: None | int,
-        backbone: dict,
-        bins: None | list[Tensor],  # For piecewise-linear encoding/embeddings.
-        num_embeddings: None | dict = None,
+        cat_cardinalities: List[int],
+        n_classes: Optional[int],
+        backbone: Dict,
+        bins: Optional[List[Tensor]],  # For piecewise-linear encoding/embeddings.
+        num_embeddings: Optional[Dict] = None,
         arch_type: Literal[
             # Plain feed-forward network without any kind of ensembling.
             'plain',
@@ -414,7 +414,7 @@ class Model(nn.Module):
             # evidence that may be a better default strategy.
             'tabm-normal',
         ],
-        k: None | int = None,
+        k: Optional[int] = None,
     ) -> None:
         # >>> Validate arguments.
         assert n_num_features >= 0
@@ -526,7 +526,7 @@ class Model(nn.Module):
         self.k = k
 
     def forward(
-        self, x_num: None | Tensor = None, x_cat: None | Tensor = None
+        self, x_num: Optional[Tensor] = None, x_cat: Optional[Tensor] = None
     ) -> Tensor:
         x = []
         if x_num is not None:
