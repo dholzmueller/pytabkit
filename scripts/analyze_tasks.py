@@ -95,12 +95,14 @@ def plot_tasks_multi(coll_names: List[str], paths: Paths):
 if __name__ == '__main__':
     paths = Paths.from_env_variables()
 
-    coll_names = ['meta-train-class', 'meta-train-reg', 'meta-test-class', 'meta-test-reg',
-                  'grinsztajn-class', 'grinsztajn-reg',
-                  # 'grinsztajn-cat-class', 'grinsztajn-num-class', 'grinsztajn-cat-reg', 'grinsztajn-num-reg',
-                  # 'grinsztajn-cat-class-15k', 'grinsztajn-num-class-15k', 'grinsztajn-cat-reg-15k',
-                  # 'grinsztajn-num-reg-15k'
-                  ]
+    # coll_names = ['meta-train-class', 'meta-train-reg', 'meta-test-class', 'meta-test-reg',
+    #               'grinsztajn-class', 'grinsztajn-reg',
+    #               # 'grinsztajn-cat-class', 'grinsztajn-num-class', 'grinsztajn-cat-reg', 'grinsztajn-num-reg',
+    #               # 'grinsztajn-cat-class-15k', 'grinsztajn-num-class-15k', 'grinsztajn-cat-reg-15k',
+    #               # 'grinsztajn-num-reg-15k'
+    #               ]
+
+    coll_names = [dir.stem for dir in paths.tasks().iterdir()]
 
     for coll_name in coll_names:
         print_task_analysis(coll_name, paths)

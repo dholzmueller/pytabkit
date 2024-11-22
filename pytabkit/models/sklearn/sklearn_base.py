@@ -83,14 +83,17 @@ class AlgInterfaceEstimator(BaseEstimator):
     def get_config(self) -> Dict[str, Any]:
         """
         Augments the result from self.get_params() with the parameters from self._get_default_params().
+        Uses _preprocess_config_key() to change the names from self.get_params() if implemented.
         Default parameters are used if the value in get_params() is either None or not present.
         :return: Dictionary of parameters augmented with default parameters.
         """
-        params = copy.copy(self.get_params(deep=False))
+        params = {key: value for key, value in self.get_params(deep=False).items()}
         default_params = self._get_default_params()
         for key, value in default_params.items():
             if key not in params or params[key] is None:
                 params[key] = value
+
+        print(f'{params=}')
 
         # return params
         # remove None values
@@ -310,12 +313,19 @@ class AlgInterfaceEstimator(BaseEstimator):
         idxs_list = [SplitIdxs(train_idxs=train_idxs, val_idxs=val_idxs, test_idxs=None, split_seed=split_seed,
                                sub_split_seeds=sub_split_seeds, split_id=0)]
 
-        # print(f'{ds.tensors["x_cont"]=}')
-
         # ----- resources -----
-        n_logical_threads = mp.cpu_count()
+        # n_logical_threads = mp.cpu_count()
+        # n_physical_threads = max(1, n_logical_threads//2)
+
+        import psutil
+        n_physical_threads = psutil.cpu_count(logical=False)
+
         device = params.get('device', None)
-        n_threads = params.get('n_threads', n_logical_threads)
+        n_threads = params.get('n_threads', n_physical_threads)
+        self.n_threads_ = n_threads
+
+        old_torch_n_threads = torch.get_num_threads()
+        torch.set_num_threads(n_threads)
 
         gpu_devices = []
 
@@ -370,6 +380,7 @@ class AlgInterfaceEstimator(BaseEstimator):
         else:
             self.alg_interface_ = self.cv_alg_interface_
 
+        torch.set_num_threads(old_torch_n_threads)
         return self
 
     def _predict_raw(self, X) -> torch.Tensor:
@@ -381,6 +392,9 @@ class AlgInterfaceEstimator(BaseEstimator):
         # Check is fit had been called
         check_is_fitted(self, ['alg_interface_', 'x_converter_'])
 
+        old_torch_n_threads = torch.get_num_threads()
+        torch.set_num_threads(self.n_threads_)
+
         # Input validation
         # if isinstance(X, np.ndarray):
         check_array(X, force_all_finite='allow-nan')
@@ -389,6 +403,8 @@ class AlgInterfaceEstimator(BaseEstimator):
         if torch.any(torch.isnan(x_ds.tensors['x_cont'])):
             raise ValueError('NaN values in continuous columns are currently not allowed!')
         y_preds = self.alg_interface_.predict(x_ds).detach().cpu()
+
+        torch.set_num_threads(old_torch_n_threads)
         return y_preds
 
 
@@ -408,9 +424,6 @@ class AlgInterfaceClassifier(AlgInterfaceEstimator, ClassifierMixin):
         # y_preds are logits, so take the softmax and the mean over the ensemble dimension afterward
         y_probs = torch.softmax(y_preds, dim=-1)
         return y_probs.numpy()
-
-    def get_validation_predictions_and_labels(self):
-        pass
 
     def predict(self, X):
         """ Predict labels.

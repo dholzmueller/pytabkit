@@ -11,7 +11,8 @@ from pytabkit.bench.data.tasks import TaskCollection, TaskDescription, TaskInfo
 
 def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, import_meta_test: bool = True,
                import_openml_class_bin_extra: bool = False,
-               import_grinsztajn: bool = False, import_grinsztajn_medium: bool = True):
+               import_grinsztajn: bool = False, import_grinsztajn_medium: bool = True,
+               import_tabzilla_hard: bool = False):
     paths = Paths.from_env_variables()
     min_n_samples = 1000
 
@@ -128,6 +129,9 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
     if import_grinsztajn_medium:
         import_grinsztajn_medium_datasets(openml_cache_dir)
 
+    if import_tabzilla_hard:
+        import_tabzilla_hard_datasets(openml_cache_dir)
+
 
 
 def import_grinsztajn_datasets(openml_cache_dir: str = None):
@@ -181,6 +185,13 @@ def import_grinsztajn_medium_datasets(openml_cache_dir: str = None):
     tc = TaskCollection('grinsztajn-class-filtered',
                         [task_desc for task_desc in tc_orig.task_descs if task_desc.task_name != 'eye_movements'])
     tc.save(paths)
+
+
+def import_tabzilla_hard_datasets(openml_cache_dir: str = None):
+    # import data sets from the benchmark of Grinsztajn et al.
+    paths = Paths.from_env_variables()
+    import_openml(get_openml_task_ids(379), 'tabzilla-hard-class', paths, openml_cache_dir,
+                  rerun=False)
 
 
 def split_meta_test(paths: Paths):

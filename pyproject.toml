@@ -44,6 +44,8 @@ dependencies = [
     "dask[dataframe]>=2023",  # this is here because of a pandas warning:
     # "Dask dataframe query planning is disabled because dask-expr is not installed"
     # "packaging",  # unclear why this is here?
+    "tqdm",  # for TabM with verbosity >= 1
+    "psutil>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -60,28 +62,28 @@ hpo = [
     "hyperopt>=0.2",
 ]
 bench = [
-    "matplotlib>=3.0",
-    "fire",
-    "ray>=2.8",
-    "pynvml>=11.0",
-    "psutil>=5.0",
-    "openml>=0.14",
+    "fire",   # argparse utilities
+    "ray>=2.8",   # parallelization
+    "pynvml>=11.0",   # NVIDIA GPU utilization
+    "openml>=0.14",  # OpenML data download
+    # ----- UCI import ------
     "requests>=2.0",
     "patool>=1.0",
     "openpyxl>=3.0",
     "xlrd>=2.0",
+    # ----- plotting -----
+    "matplotlib>=3.0",
     "tueplots>=0.0.12",
     "seaborn>=0.0.13",
     "adjustText>=1.0",
     "autorank>=1.0",
+]
+dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "sphinx>=7.0",
     "myst_parser>=3.0",
     "sphinx_rtd_theme>=2.0",
-    "ConfigSpace>=0.7",
-    "smac>=2.0",
-    "hyperopt>=0.2",
 ]
 
 [tool.hatch.version]
@@ -89,11 +91,11 @@ path = "pytabkit/__about__.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
-features = ["bench,autogluon,extra,hpo"]
+features = ["bench","autogluon","extra","hpo","dev"]
 
 [tool.hatch.envs.hatch-test]
 installer = "uv"
-features = ["bench"]
+features = ["bench","dev"]
 
 [tool.hatch.build.targets.sdist]
 package = ['pytabkit']

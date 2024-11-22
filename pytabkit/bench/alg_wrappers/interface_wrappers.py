@@ -25,6 +25,7 @@ from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInter
     FTTransformerSubSplitInterface, RandomParamsResnetAlgInterface, RandomParamsRTDLMLPAlgInterface, \
     RandomParamsFTTransformerAlgInterface
 from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
+from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
 from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface, \
     RandomParamsTabRAlgInterface
 from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomParamsNNAlgInterface, NNHyperoptAlgInterface
@@ -111,6 +112,9 @@ class AlgInterfaceWrapper(AlgWrapper):
 
         interface_resources = assigned_resources.get_interface_resources()
 
+        old_torch_n_threads = torch.get_num_threads()
+        torch.set_num_threads(interface_resources.n_threads)
+
         ds = task.ds
         name = 'alg ' + task_package.alg_name + ' on task ' + str(task_desc)
 
@@ -175,6 +179,8 @@ class AlgInterfaceWrapper(AlgWrapper):
                                                                   refit_tmp_folders, name, metrics, return_preds)
             for rm, refit_results in zip(rms, refit_results_list):
                 rm.add_results(is_cv=False, results_dict=refit_results.get_dict())
+
+        torch.set_num_threads(old_torch_n_threads)
 
         return rms
 
@@ -458,6 +464,11 @@ class FTTransformerInterfaceWrapper(SubSplitInterfaceWrapper):
 class TabRInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return TabRSubSplitInterface(**self.config)
+
+
+class TabMInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return TabMSubSplitInterface(**self.config)
 
 
 class RandomParamsResnetInterfaceWrapper(AlgInterfaceWrapper):

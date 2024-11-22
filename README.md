@@ -18,13 +18,14 @@ on our benchmarks.
 ```commandline
 pip install pytabkit
 ```
-- If you want to use **TabR**, you have to manually install faiss, 
+- If you want to use **TabR**, you have to manually install 
+[faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md), 
 which is only available on **conda**.
 - Please install torch separately if you want to control the version (CPU/GPU etc.)
-- Use `pytabkit[autogluon,extra,hpo,bench]` to install additional dependencies for 
+- Use `pytabkit[autogluon,extra,hpo,bench,dev]` to install additional dependencies for 
 AutoGluon models, extra preprocessing, 
 hyperparameter optimization methods beyond random search (hyperopt/SMAC), 
-and the benchmarking part. For the hpo part, 
+the benchmarking part, and testing/documentation. For the hpo part, 
 you might need to install *swig* (e.g. via pip) if the build of *pyrfr* fails.
 See also the [documentation](https://pytabkit.readthedocs.io).
 To run the data download, you need one of rar, unrar, or 7-zip 
@@ -80,8 +81,10 @@ or random search hyperparameter optimization (HPO)
 - **XGB**, **LGBM**, **CatBoost** (D, TD, HPO, HPO-TPE): Interfaces for gradient-boosted 
 tree libraries XGBoost, LightGBM, CatBoost
 - **MLP**, **ResNet**, **FTT** (D, HPO): Models from [Revisiting Deep Learning Models for Tabular Data](https://proceedings.neurips.cc/paper_files/paper/2021/hash/9d86d83f925f2149e9edb0ac3b49229c-Abstract.html)
-- **MLP-PLR**: MLP with numerical embeddings from [On Embeddings for Numerical Features in Tabular Deep Learning](https://proceedings.neurips.cc/paper_files/paper/2022/hash/9e9f0ffc3d836836ca96cbf8fe14b105-Abstract-Conference.html)
-- **TabR-S** (D): TabR model from [TabR: Tabular Deep Learning Meets Nearest Neighbors](https://openreview.net/forum?id=rhgIgTSSxW)
+- **MLP-PLR** (D, HPO): MLP with numerical embeddings from [On Embeddings for Numerical Features in Tabular Deep Learning](https://proceedings.neurips.cc/paper_files/paper/2022/hash/9e9f0ffc3d836836ca96cbf8fe14b105-Abstract-Conference.html)
+- **TabR** (D, HPO): TabR model from [TabR: Tabular Deep Learning Meets Nearest Neighbors](https://openreview.net/forum?id=rhgIgTSSxW)
+- **TabM** (D): TabM model from [TabM: Advancing Tabular Deep Learning with Parameter-Efficient Ensembling](https://arxiv.org/abs/2410.24210)
+- **RealTabR** (D): Our new TabR variant with default parameters
 - **Ensemble-TD**: Weighted ensemble of all TD models (RealMLP, XGB, LGBM, CatBoost)
 
 ## Benchmarking code
@@ -129,6 +132,22 @@ code from https://github.com/catboost/benchmarks/
 and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html 
 (Apache 2.0 license).
 
-## Older versions
-This code is for the NeurIPS version and arXiv v2 of the paper. 
-The code for the arXiv v1 version is in older commits and archived at [DaRUS](https://doi.org/10.18419/darus-4255).
+## Releases (see git tags)
+
+- v1.1.0: 
+  - Included TabM
+  - Replaced `__` by `_` in parameter names for MLP, MLP-PLR, ResNet, and FTT,
+    to comply with scikit-learn interface requirements.
+  - Fixed non-determinism in NN baselines 
+    by initializing the random state of quantile (and KDI) 
+    preprocessing transforms.
+  - n_threads parameter is not ignored by NNs anymore.
+- v1.0.0: Release for the NeurIPS version and arXiv v2. 
+  - More baselines (MLP-PLR, FT-Transformer, TabR-HPO, RF-HPO), 
+    also some un-polished internal interfaces for other methods, 
+    esp. the ones in AutoGluon
+  - Updated benchmarking code (configurations, plots)
+    including the new version of the Grinsztajn et al. benchmark
+  - Updated fit() parameters in scikit-learn interfaces, etc.
+- v0.0.1: First release for arXiv v1. Code and data are archived at [DaRUS](https://doi.org/10.18419/darus-4255).
+

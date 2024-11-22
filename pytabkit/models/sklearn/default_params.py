@@ -106,17 +106,17 @@ class DefaultParams:
 
     RESNET_RTDL_D_CLASS_Grinsztajn = {
         "lr_scheduler": False,
-        "module__activation": "reglu",
-        "module__normalization": "batchnorm",
-        "module__n_layers": 8,
-        "module__d": 256,
-        "module__d_hidden_factor": 2,
-        "module__hidden_dropout": 0.2,
-        "module__residual_dropout": 0.2,
+        "module_activation": "reglu",
+        "module_normalization": "batchnorm",
+        "module_n_layers": 8,
+        "module_d": 256,
+        "module_d_hidden_factor": 2,
+        "module_hidden_dropout": 0.2,
+        "module_residual_dropout": 0.2,
         "lr": 1e-3,
-        "optimizer__weight_decay": 1e-7,
+        "optimizer_weight_decay": 1e-7,
         "optimizer": "adamw",
-        "module__d_embedding": 128,
+        "module_d_embedding": 128,
         "batch_size": 256,
         "max_epochs": 300,
         "use_checkpoints": True,
@@ -131,14 +131,14 @@ class DefaultParams:
 
     MLP_RTDL_D_CLASS_Grinsztajn = {
         "lr_scheduler": False,
-        "module__n_layers": 8,
-        "module__d_layers": 256,
-        "module__d_first_layer": 128,
-        "module__d_last_layer": 128,
-        "module__dropout": 0.2,
+        "module_n_layers": 8,
+        "module_d_layers": 256,
+        "module_d_first_layer": 128,
+        "module_d_last_layer": 128,
+        "module_dropout": 0.2,
         "lr": 1e-3,
         "optimizer": "adamw",
-        "module__d_embedding": 128,
+        "module_d_embedding": 128,
         "batch_size": 256,
         "max_epochs": 300,
         "use_checkpoints": True,
@@ -150,25 +150,25 @@ class DefaultParams:
 
     MLP_RTDL_D_REG_Grinsztajn = {**MLP_RTDL_D_CLASS_Grinsztajn,
                                  "transformed_target": True}
-    
+
     FTT_D_CLASS = {
         "lr_scheduler": False,
-        "module__d_token": 192,
-        "module__d_ffn_factor": 4. / 3.,
-        "module__n_layers": 3,
-        "module__n_heads": 8,
-        "module__activation": "reglu",
-        "module__token_bias": True,
-        "module__attention_dropout": 0.2,
-        "module__initialization": "kaiming",
-        "module__ffn_dropout": 0.1,
-        "module__residual_dropout": 0.0,
-        "module__prenormalization": True,
-        "module__kv_compression": None,
-        "module__kv_compression_sharing": None,
+        "module_d_token": 192,
+        "module_d_ffn_factor": 4. / 3.,
+        "module_n_layers": 3,
+        "module_n_heads": 8,
+        "module_activation": "reglu",
+        "module_token_bias": True,
+        "module_attention_dropout": 0.2,
+        "module_initialization": "kaiming",
+        "module_ffn_dropout": 0.1,
+        "module_residual_dropout": 0.0,
+        "module_prenormalization": True,
+        "module_kv_compression": None,
+        "module_kv_compression_sharing": None,
         "lr": 1e-4,
         "optimizer": "adamw",
-        "optimizer__weight_decay": 1e-5,
+        "optimizer_weight_decay": 1e-5,
         "batch_size": 256,  # default in Grinsztajn is 512?
         "max_epochs": 300,  # todo: keep it?
         "use_checkpoints": True,
@@ -177,25 +177,24 @@ class DefaultParams:
         "verbose": 0,
         "tfms": ['quantile_tabr'],
     }
-    
-    FTT_D_REG = {**FTT_D_CLASS,
-                                          "transformed_target": True}
+
+    FTT_D_REG = {**FTT_D_CLASS, "transformed_target": True}
 
     # Default parameters for rtdl models based on https://github.com/naszilla/tabzilla/blob/main/TabZilla/models/rtdl.py
     RESNET_RTDL_D_CLASS_TabZilla = {
         "lr_scheduler": False,
-        "module__activation": "relu",
-        "module__normalization": "batchnorm",
-        "module__n_layers": 2,
-        "module__d": 128,
-        "module__d_hidden_factor": 2,
-        "module__hidden_dropout": 0.25,  # DROPOUT_FIRST
-        "module__residual_dropout": 0.1,  # DROPOUT_SECOND
+        "module_activation": "relu",
+        "module_normalization": "batchnorm",
+        "module_n_layers": 2,
+        "module_d": 128,
+        "module_d_hidden_factor": 2,
+        "module_hidden_dropout": 0.25,  # DROPOUT_FIRST
+        "module_residual_dropout": 0.1,  # DROPOUT_SECOND
         "lr": 1e-3,
-        "optimizer__weight_decay": 0.01,  # for tabzilla they don't set it which means 0.01 (which seems high compared
+        "optimizer_weight_decay": 0.01,  # for tabzilla they don't set it which means 0.01 (which seems high compared
         # to rtdl hp space?)
         "optimizer": "adamw",
-        "module__d_embedding": 8,
+        "module_d_embedding": 8,
         "batch_size": 128,
         # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
         "max_epochs": 1000,  # same
@@ -211,17 +210,17 @@ class DefaultParams:
 
     MLP_RTDL_D_CLASS_TabZilla = {
         "lr_scheduler": False,
-        "module__n_layers": 3,
-        "module__d_first_layer": 128,  # ignored by the code since d_layers is a list
-        "module__d_last_layer": 128,  # ignored by the code since d_layers is a list
-        "module__d_layers": [128, 256, 128],
-        "module__dropout": 0.1,
-        # module__activation
-        # module__dropout
-        # optimizer__weight_decay
+        "module_n_layers": 3,
+        "module_d_first_layer": 128,  # ignored by the code since d_layers is a list
+        "module_d_last_layer": 128,  # ignored by the code since d_layers is a list
+        "module_d_layers": [128, 256, 128],
+        "module_dropout": 0.1,
+        # module_activation
+        # module_dropout
+        # optimizer_weight_decay
         "lr": 1e-3,
         "optimizer": "adamw",
-        "module__d_embedding": 8,
+        "module_d_embedding": 8,
         "batch_size": 128,
         # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
         "max_epochs": 1000,  # same
@@ -238,14 +237,14 @@ class DefaultParams:
     MLP_PLR_D_CLASS = {
         # adapted from TabZilla version of MLP_RTDL_D and the defaults of the rtdl_num_embeddings library
         "lr_scheduler": False,
-        "module__n_layers": 3,
-        "module__d_first_layer": 128,  # ignored by the code since d_layers is a list
-        "module__d_last_layer": 128,  # ignored by the code since d_layers is a list
-        "module__d_layers": [128, 256, 128],
-        "module__dropout": 0.1,
+        "module_n_layers": 3,
+        "module_d_first_layer": 128,  # ignored by the code since d_layers is a list
+        "module_d_last_layer": 128,  # ignored by the code since d_layers is a list
+        "module_d_layers": [128, 256, 128],
+        "module_dropout": 0.1,
         "lr": 1e-3,
         "optimizer": "adamw",
-        "module__d_embedding": 8,
+        "module_d_embedding": 8,
         "batch_size": 128,
         # default param in https://github.com/naszilla/tabzilla/blob/4949a1dea3255c1a794d89aa2422ef1f8c9ae265/README.md?plain=1#L129
         "max_epochs": 1000,  # same
@@ -254,11 +253,11 @@ class DefaultParams:
         "lr_patience": 30,
         "verbose": 0,
         'tfms': ['quantile_tabr'],
-        "module__num_emb_type": 'plr',
-        "module__num_emb_dim": 24,
-        "module__num_emb_hidden_dim": 48,
-        "module__num_emb_sigma": 0.01,
-        "module__num_emb_lite": False
+        "module_num_emb_type": 'plr',
+        "module_num_emb_dim": 24,
+        "module_num_emb_hidden_dim": 48,
+        "module_num_emb_sigma": 0.01,
+        "module_num_emb_lite": False
     }
 
     MLP_PLR_D_REG = {**MLP_PLR_D_CLASS,
@@ -339,7 +338,27 @@ class DefaultParams:
     }
 
     RealTABR_D_REG = {**RealTABR_D_CLASS,
-                        "transformed_target": True}
+                      "transformed_target": True}
+
+    TABM_D_CLASS = {
+        # from https://github.com/yandex-research/tabm/blob/main/example.ipynb
+        'arch_type': 'tabm',
+        'tabm_k': 32,
+        'num_emb_type': 'none',
+        'num_emb_n_bins': 48,
+        'batch_size': 256,
+        'lr': 2e-3,
+        'n_epochs': 1_000_000_000,
+        'patience': 16,
+        'd_embedding': 16,
+        'd_block': 512,
+        'n_blocks': 'auto',
+        'dropout': 0.1,
+        'compile_model': False,
+        'allow_amp': False,
+    }
+
+    TABM_D_REG = TABM_D_CLASS
 
     # ----- sklearn versions ------
 

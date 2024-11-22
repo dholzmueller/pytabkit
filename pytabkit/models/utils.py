@@ -357,15 +357,15 @@ def extract_params(config: Dict[str, Any],
         elif isinstance(source_names, str):
             source_names = [source_names]
 
-        for source_name in source_names:
-            if source_name in config:
-                result[target_name] = config[source_name]
-                break
-        else:
-            # if break is not used in the loop
+        source_names_in_config = [source_name for source_name in source_names if source_name in config]
+        if len(source_names_in_config) == 0:
             if len(param_config) >= 3:
                 # default value specified
                 result[target_name] = param_config[2]  # use the default value
+        elif len(source_names_in_config) == 1:
+            result[target_name] = config[source_names_in_config[0]]
+        else:
+            raise ValueError(f'Found multiple parameter names encoding the same parameter: {source_names_in_config}')
     return result
 
 

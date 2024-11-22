@@ -458,7 +458,9 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
                               xlabel: str, ylabel: str, title: Optional[str] = None,
                               name_tfm_func: Optional[Callable[[str], str]] = None,
                               plot_pareto_frontier: bool = True,
-                              arrow_alg_names: Optional[List[Tuple[str, str]]] = None):
+                              arrow_alg_names: Optional[List[Tuple[str, str]]] = None,
+                              pareto_frontier_width: float = 2.,
+                              alg_names_to_hide: Optional[List[str]] = None):
     # First, convert dictionaries to a format suitable for seaborn
     # take shared models
     models = list(set(x_dict.keys()).intersection(set(y_dict.keys())))
@@ -494,6 +496,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
     # df['model_type'] = df['model'].str.split('-', expand=True)[1].str.split('(', expand=True)[0]
     df['model_type'] = [get_model_type(alg_name) for alg_name in df['model']]
     df['color'] = [get_plot_color(alg_name) for alg_name in models]
+    df['alpha'] = [1.0 if alg_name not in alg_names_to_hide else 0.0 for alg_name in models]
 
     # Set up the figure size and style
     # fig = plt.figure(figsize=(10, 10))
@@ -516,6 +519,7 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
         # palette='tab10',  # palette can be changed as needed
         legend=False,  # No need to draw legend at this point
         ax=ax,
+        alpha=df['alpha'],
     )
 
     ax.set_xscale('log')
@@ -535,6 +539,8 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
     texts = []
     for i, point in enumerate(ax.collections[0].get_offsets()):
         model_name = df.iloc[i]['model']
+        if model_name in alg_names_to_hide:
+            continue
         x, y = point
         text_color = point_colors[i]
         # Annotate the model names
@@ -606,11 +612,13 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
         xs_pareto.append(ax.get_xlim()[1])
         ys_pareto.append(ys_pareto[-1])
 
-        ax.plot(xs_pareto, ys_pareto, '--', color='k', linewidth=2, zorder=0.8)
+        ax.plot(xs_pareto, ys_pareto, '--', color='k', linewidth=pareto_frontier_width, zorder=0.8)
 
     if arrow_alg_names is not None:
         # arrow_head_length =
         for first, second in arrow_alg_names:
+            if first in alg_names_to_hide or second in alg_names_to_hide:
+                continue
             x1 = x_dict[first]
             y1 = y_dict[first]
             x2 = x_dict[second]
@@ -710,7 +718,9 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
                    use_ranks: bool = False, use_normalized_errors: bool = False, tag: Optional[str] = None,
                    use_geometric_mean: bool = True, use_grinnorm_errors: bool = False,
                    shift_eps: float = 1e-2, use_validation_errors: bool = False,
-                   arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True):
+                   arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True,
+                   alg_names_to_hide: Optional[List[str]] = None,
+                   pareto_frontier_width: float = 2.):
     print(f'Creating plot for {coll_name}')
     is_reg = TaskCollection.from_name(coll_name, paths).load_infos(paths)[0].tensor_infos[
                  'y'].get_cat_size_product() == 0
@@ -829,6 +839,8 @@ def plot_pareto_ax(ax: matplotlib.axes.Axes, paths: Paths, tables: ResultsTables
                               name_tfm_func=get_display_name,
                               arrow_alg_names=arrow_alg_names,
                               plot_pareto_frontier=plot_pareto_frontier,
+                              alg_names_to_hide=alg_names_to_hide,
+                              pareto_frontier_width=pareto_frontier_width,
                               # ylabel=r'Benchmark score relative to best model',
                               # ylabel=r'Error increase in \% vs best ($\downarrow$)',
                               # title=f'Benchmark scores on {coll_name_latex} vs train time',
@@ -847,9 +859,13 @@ def shorten_coll_names(coll_names: List[str]) -> List[str]:
 def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_names: List[str],
                 val_metric_name: Optional[str] = None, test_metric_name: Optional[str] = None,
                 use_ranks: bool = False, use_normalized_errors: bool = False, filename: Optional[str] = None,
+                filename_suffix: Optional[str] = None,
                 tag: Optional[str] = None, use_grinnorm_errors: bool = False,
                 use_geometric_mean: bool = True, shift_eps: float = 1e-2, use_validation_errors: bool = False,
-                arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True):
+                arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True,
+                alg_names_to_hide: Optional[List[str]] = None,
+                subfolder: Optional[str] = None,
+                pareto_frontier_width: float = 2.):
     print(f'Plotting pareto plot for {coll_names}')
     sns.set_theme(style="whitegrid", font_scale=2)
     if len(coll_names) == 1:
@@ -878,7 +894,9 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
                        use_grinnorm_errors=use_grinnorm_errors,
                        use_geometric_mean=use_geometric_mean, shift_eps=shift_eps,
                        use_validation_errors=use_validation_errors,
-                       arrow_alg_names=arrow_alg_names, plot_pareto_frontier=plot_pareto_frontier)
+                       arrow_alg_names=arrow_alg_names, plot_pareto_frontier=plot_pareto_frontier,
+                       alg_names_to_hide=alg_names_to_hide,
+                       pareto_frontier_width=pareto_frontier_width)
 
     mean_name = f'geometric_eps-{shift_eps:g}' if use_geometric_mean else 'arithmetic'
     if use_ranks:
@@ -891,10 +909,17 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
     name_parts = shorten_coll_names(coll_names) + [mean_name]
     if use_validation_errors:
         name_parts = ['validation'] + name_parts
+
+    plots_path = paths.plots()
+    if subfolder is not None:
+        plots_path = plots_path / subfolder
+
     if filename is None:
-        file_path = paths.plots() / f'pareto_{"_".join(name_parts)}.pdf'
+        file_path = plots_path / f'pareto_{"_".join(name_parts)}.pdf'
     else:
-        file_path = paths.plots() / filename
+        file_path = plots_path / filename
+    if filename_suffix is not None:
+        file_path = file_path.with_stem(f'{file_path.stem}{filename_suffix}')
 
     if len(coll_names) in [4, 6]:
         labels = ['D = defaults {} {} {} {} {} TD = tuned defaults {} {} {} {} {} HPO = hyperparameter optimization',
@@ -910,6 +935,7 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
     plt.savefig(file_path, bbox_inches='tight')
     plt.close(fig)
     sns.reset_orig()
+    print(f'Created plot {file_path}')
 
 
 def plot_winrates(paths: Paths, tables: ResultsTables, coll_name: str, alg_names: List[str],

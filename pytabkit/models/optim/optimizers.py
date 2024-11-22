@@ -144,6 +144,14 @@ class MoMoAdamOptimizer(OptimizerBase):
         self.opt.step(loss=loss)
 
 
+class AdoptOptimizer(OptimizerBase):
+    def __init__(self, param_groups, hp_manager: HyperparamManager):
+        from .adopt import ADOPT
+        super().__init__(ADOPT(param_groups, decoupled=True),
+                         hyper_mappings=[('lr', 'lr', 1e-3), (('mom', 'sq_mom'), 'betas', (0.9, 0.999)),
+                                         ('opt_eps', 'eps', 1e-8), ('wd', None, 0.0)],
+                         hp_manager=hp_manager)
+
 
 def get_opt_class(opt_name):
     if opt_name == 'adam':
@@ -160,5 +168,7 @@ def get_opt_class(opt_name):
         return SFAdamOptimizer
     elif opt_name == 'momoadam':
         return MoMoAdamOptimizer
+    elif opt_name == 'adopt':
+        return AdoptOptimizer
     else:
         raise ValueError(f'Unknown optimizer "{opt_name}"')

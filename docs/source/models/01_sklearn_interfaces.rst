@@ -57,13 +57,15 @@ We offer interfaces (D and HPO variants) for
 - ResNet (from the RTDL code)
 - FTT (FT-Transformer from the RTDL code)
 - MLP-PLR (from the RTDL code)
-- TabR-S-D (requires installing faiss)
+- TabR (requires installing faiss)
+- TabM
 
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.MLP_RTDL_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.Resnet_RTDL_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.FTT_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.MLP_PLR_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabR_S_D_Classifier.__init__
+.. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabM_D_Classifier.__init__
 
 Other methods
 -------------
