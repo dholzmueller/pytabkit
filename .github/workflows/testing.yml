@@ -24,8 +24,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install UV
         run: curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh | sh
-      - name: Add UV to path
-        run: source $HOME/.local/bin/env || echo
+      - name: Add UV to PATH on Windows
+        if: "startsWith(runner.os, 'windows')"
+        run: echo "::add-path::/c/Users/runneradmin/.local/bin"
       - name: Install hatch
         run: uv pip install --system hatch
       - name: Install swig

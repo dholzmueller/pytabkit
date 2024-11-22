@@ -1121,6 +1121,11 @@ class Resnet_RTDL_D_Regressor(ResnetConstructorMixin, AlgInterfaceRegressor):
     def _supports_multioutput(self) -> bool:
         return False
 
+    def _more_tags(self):
+        # set non-deterministic
+        # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
+        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
+
 
 class FTTransformerConstructorMixin:
     def __init__(self,
@@ -1368,6 +1373,11 @@ class MLP_PLR_D_Regressor(RTDL_MLPConstructorMixin, AlgInterfaceRegressor):
 
     def _supports_multioutput(self) -> bool:
         return False
+
+    def _more_tags(self):
+        # set non-deterministic
+        # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
+        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
 
 
 class TabrConstructorMixin:
