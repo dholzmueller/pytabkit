@@ -29,7 +29,6 @@ dependencies = [
     "torch>=2.0",
     "numpy>=1.25,<2.0",
     "pandas>=2.0",
-    "dill",
     "scikit-learn>=1.3",
     "xgboost>=2.0",
     "catboost>=1.2",
@@ -37,16 +36,23 @@ dependencies = [
     # older versions of torchmetrics (<1.2.1) have a bug that makes certain metrics used in tabr slow:
     # https://github.com/Lightning-AI/torchmetrics/pull/2184
     "torchmetrics>=1.2.1",
-    "pyyaml>=5.0",
+    # can also install the newer lightning package with more dependencies instead, it will be prioritized
     "pytorch_lightning>=2.0",
-    "msgpack>=1.0",
-    "msgpack_numpy>=0.4",  # apparently fixed some bug in using numpy arrays in msgpack?
     "skorch>=0.15",  # for rtdl models
     "dask[dataframe]>=2023",  # this is here because of a pandas warning:
     # "Dask dataframe query planning is disabled because dask-expr is not installed"
     # "packaging",  # unclear why this is here?
     "tqdm",  # for TabM with verbosity >= 1
     "psutil>=5.0",
+
+    # packages for saving objects in different formats
+    "dill",
+    "pyyaml>=5.0",
+    "msgpack>=1.0",
+    # apparently msgpack_numpy fixed some bug in using numpy arrays in msgpack?
+    # but apparently it can also cause a bug in ray due to its monkey-patching of msgpack functions
+    # in theory we shouldn't be using if for numpy arrays at the moment, not sure why the need for this occured
+    # "msgpack_numpy>=0.4",
 ]
 
 [project.optional-dependencies]

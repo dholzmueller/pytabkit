@@ -24,8 +24,14 @@ from pytabkit.models.nn_models.tabr_context_freeze import TabrModelContextFreeze
 from pytabkit.models.training.metrics import insert_missing_class_columns
 
 import torch.utils.data
-import lightning.pytorch as pl
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+try:
+    import lightning.pytorch as pl
+    from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+except ImportError:
+    import pytorch_lightning as pl
+    from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+
+
 
 
 class ExceptionPrintingCallback(pl.callbacks.Callback):

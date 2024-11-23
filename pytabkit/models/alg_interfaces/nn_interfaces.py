@@ -5,7 +5,11 @@ from typing import List, Optional, Dict, Any, Union
 
 import numpy as np
 import torch
-import lightning.pytorch as pl
+try:
+    import lightning.pytorch as pl
+except ImportError:
+    import pytorch_lightning as pl
+
 import logging
 
 from future.backports.datetime import timedelta

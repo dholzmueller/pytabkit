@@ -4,7 +4,6 @@ import warnings
 import math
 from functools import partial
 
-import lightning as pl
 import torch
 from torch import Tensor
 import torch.optim as optim
@@ -15,6 +14,11 @@ import torch.nn as nn
 from torchmetrics import Accuracy, Precision, Recall, F1Score, MeanSquaredError, AUROC, MeanAbsoluteError
 from typing import Any, Optional, Union, Literal, Callable, NamedTuple
 from tqdm import tqdm
+
+try:
+    import lightning.pytorch as pl
+except ImportError:
+    import pytorch_lightning as pl
 
 from pytabkit.models.nn_models.tabr import ParametricMishActivationLayer, ParametricReluActivationLayer, ScalingLayer, \
     bce_with_logits_and_label_smoothing

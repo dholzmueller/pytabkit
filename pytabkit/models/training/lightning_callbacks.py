@@ -2,7 +2,10 @@ from typing import List, Any, Optional
 
 import numpy as np
 import torch
-from lightning.pytorch.callbacks import Callback
+try:
+    from lightning.pytorch.callbacks import Callback
+except ImportError:
+    from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from pytabkit.models.nn_models.base import Variable, Layer

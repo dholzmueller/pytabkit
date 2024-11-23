@@ -5,7 +5,6 @@ import math
 from functools import partial
 
 import numpy as np
-import lightning.pytorch as pl
 import torch
 from torch import Tensor
 import torch.optim as optim
@@ -15,6 +14,11 @@ from pytabkit.models.nn_models import tabr_lib as lib
 import torch.nn as nn
 from torchmetrics import Accuracy, Precision, Recall, F1Score, MeanSquaredError, AUROC, MeanAbsoluteError
 from typing import Any, Optional, Union, Literal, Callable
+
+try:
+    import lightning.pytorch as pl
+except ImportError:
+    import pytorch_lightning as pl
 
 
 class NTPLinearLayer(nn.Module):
