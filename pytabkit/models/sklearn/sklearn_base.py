@@ -93,14 +93,14 @@ class AlgInterfaceEstimator(BaseEstimator):
             if key not in params or params[key] is None:
                 params[key] = value
 
-        print(f'{params=}')
+        # print(f'{params=}')
 
         # return params
         # remove None values
         return {key: value for key, value in params.items() if value is not None}
 
     def fit(self, X, y, X_val: Optional = None, y_val: Optional = None, val_idxs: Optional[np.ndarray] = None,
-            cat_indicator: Optional[Union[List[bool], np.ndarray]] = None, cat_col_names: Optional[List[str]] = None) -> BaseEstimator:
+            cat_indicator: Optional[Union[List[bool], np.ndarray]] = None, cat_col_names: Optional[List[str]] = None, time_to_fit_in_seconds: int | None = None) -> BaseEstimator:
         """
         Fit the estimator.
 
@@ -357,7 +357,7 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         logger = StdoutLogger(verbosity_level=params.get('verbosity', 0))
 
-        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices)
+        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices, time_in_seconds=time_to_fit_in_seconds)
         self.cv_alg_interface_.fit(ds=ds, idxs_list=idxs_list, interface_resources=interface_resources,
                                    logger=logger, tmp_folders=tmp_folders, name=self.__class__.__name__)
 

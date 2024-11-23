@@ -5,7 +5,7 @@ import math
 from functools import partial
 
 import numpy as np
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from torch import Tensor
 import torch.optim as optim

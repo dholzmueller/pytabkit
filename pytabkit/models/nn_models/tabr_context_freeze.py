@@ -4,7 +4,7 @@ import warnings
 import math
 from functools import partial
 
-import pytorch_lightning as pl
+import lightning as pl
 import torch
 from torch import Tensor
 import torch.optim as optim

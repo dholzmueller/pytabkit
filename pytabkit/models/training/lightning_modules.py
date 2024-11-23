@@ -1,4 +1,4 @@
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from typing import List, Optional, Dict, Any
 import numpy as np
 import torch

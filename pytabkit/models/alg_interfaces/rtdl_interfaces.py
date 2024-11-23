@@ -7,8 +7,6 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.impute import SimpleImputer
-from skorch.dataset import Dataset
-from skorch.helper import predefined_split
 
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models import utils
@@ -19,9 +17,6 @@ from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, R
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.sklearn.default_params import DefaultParams
 from pytabkit.models.training.logging import Logger
-from pytabkit.models.nn_models.rtdl_resnet import create_mlp_classifier_skorch, create_mlp_regressor_skorch, \
-    create_resnet_classifier_skorch, create_resnet_regressor_skorch, create_ft_transformer_classifier_skorch, \
-    create_ft_transformer_regressor_skorch
 from pytabkit.models.training.metrics import insert_missing_class_columns
 
 
@@ -41,6 +36,9 @@ def allow_single_underscore(params_config: List[Tuple]) -> List[Tuple]:
 class SkorchSubSplitInterface(SklearnSubSplitInterface):
     def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
                      cat_col_names: Optional[List[str]] = None):
+        from skorch.helper import predefined_split
+        from skorch.dataset import Dataset
+
         # set number of classes
         if self.n_classes > 0:  # classification
             self.model.set_n_classes(self.n_classes)
@@ -158,6 +156,7 @@ class RTDL_MLPSubSplitInterface(SkorchSubSplitInterface):
         params['device'] = 'cpu' if len(gpu_devices) == 0 else gpu_devices[0]
         if 'checkpoint_dir' not in params or params['checkpoint_dir'] is None:
             params['checkpoint_dir'] = './rtdl_checkpoints'
+        from pytabkit.models.nn_models.rtdl_resnet import create_mlp_classifier_skorch, create_mlp_regressor_skorch
         if self.n_classes > 0:
             return create_mlp_classifier_skorch(**params)
         else:
@@ -216,6 +215,8 @@ class ResnetSubSplitInterface(SkorchSubSplitInterface):
         params['device'] = 'cpu' if len(gpu_devices) == 0 else gpu_devices[0]
         if 'checkpoint_dir' not in params or params['checkpoint_dir'] is None:
             params['checkpoint_dir'] = './rtdl_checkpoints'
+
+        from pytabkit.models.nn_models.rtdl_resnet import create_resnet_classifier_skorch, create_resnet_regressor_skorch
         if self.n_classes > 0:
             return create_resnet_classifier_skorch(**params)
         else:
@@ -275,6 +276,7 @@ class FTTransformerSubSplitInterface(SkorchSubSplitInterface):
         params['device'] = 'cpu' if len(gpu_devices) == 0 else gpu_devices[0]
         if 'checkpoint_dir' not in params or params['checkpoint_dir'] is None:
             params['checkpoint_dir'] = './rtdl_checkpoints'
+        from pytabkit.models.nn_models.rtdl_resnet import create_ft_transformer_classifier_skorch, create_ft_transformer_regressor_skorch
         if self.n_classes > 0:
             return create_ft_transformer_classifier_skorch(**params)
         else:
