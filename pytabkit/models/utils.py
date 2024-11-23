@@ -17,10 +17,10 @@ import time
 import json
 
 import msgpack
-import msgpack_numpy as m
-import psutil
 
-m.patch()
+# msgpack_numpy Removed for now due to potential bug caused by this
+# import msgpack_numpy as m
+# m.patch()
 
 import yaml
 from torch import multiprocessing as mp

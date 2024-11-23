@@ -5,8 +5,14 @@ from typing import List, Optional, Dict, Any, Union
 
 import numpy as np
 import torch
-import pytorch_lightning as pl
+try:
+    import lightning.pytorch as pl
+except ImportError:
+    import pytorch_lightning as pl
+
 import logging
+
+from datetime import timedelta
 
 from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset
@@ -48,7 +54,7 @@ class NNAlgInterface(AlgInterface):
                                    split_id=idxs.split_id) for idxs in idxs_list]
 
         # https://stackoverflow.com/questions/74364944/how-to-get-rid-of-info-logging-messages-in-pytorch-lightning
-        log = logging.getLogger("pytorch_lightning")
+        log = logging.getLogger("lightning")
         log.propagate = False
         log.setLevel(logging.ERROR)
 
@@ -81,7 +87,10 @@ class NNAlgInterface(AlgInterface):
         else:
             raise ValueError(f'Unknown device "{self.device}"')
 
+        max_time = None if interface_resources.time_in_seconds is None else timedelta(seconds=interface_resources.time_in_seconds)
+
         self.trainer = pl.Trainer(
+            max_time=max_time,
             accelerator=pl_accelerator,
             devices=pl_devices,
             callbacks=self.model.create_callbacks(),
@@ -106,6 +115,7 @@ class NNAlgInterface(AlgInterface):
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
 
         # print(f'Importances (sorted):', self.get_importances().sort()[0])  # todo
+        self.trainer.max_time = None
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         old_allow_tf32 = torch.backends.cuda.matmul.allow_tf32

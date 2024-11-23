@@ -121,6 +121,7 @@ If you use this repository for research purposes, please cite our [paper](https:
 - Léo Grinsztajn (deep learning baselines, plotting)
 - Ingo Steinwart (UCI dataset download)
 - Katharina Strecker (PyTorch-Lightning interface)
+- Lennart Purucker (some features/fixes)
 - Jérôme Dockès (deployment, continuous integration)
 
 ## Acknowledgements
@@ -142,12 +143,17 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
     by initializing the random state of quantile (and KDI) 
     preprocessing transforms.
   - n_threads parameter is not ignored by NNs anymore.
+  - Changes by [Lennart Purucker](https://github.com/LennartPurucker): 
+    Add time limit for RealMLP, 
+    add support for `lightning` (but also still allowing `pytorch-lightning`),
+    making skorch a lazy import, removed msgpack\_numpy dependency.
 - v1.0.0: Release for the NeurIPS version and arXiv v2. 
   - More baselines (MLP-PLR, FT-Transformer, TabR-HPO, RF-HPO), 
     also some un-polished internal interfaces for other methods, 
-    esp. the ones in AutoGluon
+    esp. the ones in AutoGluon.
   - Updated benchmarking code (configurations, plots)
     including the new version of the Grinsztajn et al. benchmark
   - Updated fit() parameters in scikit-learn interfaces, etc.
-- v0.0.1: First release for arXiv v1. Code and data are archived at [DaRUS](https://doi.org/10.18419/darus-4255).
+- v0.0.1: First release for arXiv v1. 
+  Code and data are archived at [DaRUS](https://doi.org/10.18419/darus-4255).
 

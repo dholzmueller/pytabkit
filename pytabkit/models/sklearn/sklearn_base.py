@@ -52,6 +52,7 @@ class AlgInterfaceEstimator(BaseEstimator):
     """
     Base class for wrapping AlgInterface subclasses with a scikit-learn compatible interface.
     """
+
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
         # override this
         raise NotImplementedError()
@@ -93,14 +94,15 @@ class AlgInterfaceEstimator(BaseEstimator):
             if key not in params or params[key] is None:
                 params[key] = value
 
-        print(f'{params=}')
+        # print(f'{params=}')
 
         # return params
         # remove None values
         return {key: value for key, value in params.items() if value is not None}
 
     def fit(self, X, y, X_val: Optional = None, y_val: Optional = None, val_idxs: Optional[np.ndarray] = None,
-            cat_indicator: Optional[Union[List[bool], np.ndarray]] = None, cat_col_names: Optional[List[str]] = None) -> BaseEstimator:
+            cat_indicator: Optional[Union[List[bool], np.ndarray]] = None, cat_col_names: Optional[List[str]] = None,
+            time_to_fit_in_seconds: Optional[int] = None) -> BaseEstimator:
         """
         Fit the estimator.
 
@@ -118,6 +120,8 @@ class AlgInterfaceEstimator(BaseEstimator):
             and all others as numerical.
         :param cat_col_names: List of column names that should be treated as categorical (if X is a pd.DataFrame).
             Can be specified instead of cat_indicator.
+        :param time_to_fit_in_seconds: Time limit in seconds for fitting.
+            Currently only implemented for RealMLP (default=None). If None, no time limit will be applied.
         :return: Returns self.
         """
         # Check that X and y have correct shape
@@ -153,7 +157,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             X_val = to_normal_type(X_val)
             y_val = to_normal_type(y_val)
 
-            val_idxs = np.arange(len(X), len(X)+len(X_val))
+            val_idxs = np.arange(len(X), len(X) + len(X_val))
 
             X = concat_arrays(X, X_val)
             y = concat_arrays(y, y_val)
@@ -183,7 +187,6 @@ class AlgInterfaceEstimator(BaseEstimator):
             cat_indicator = [col_name in cat_col_names for col_name in X_df.columns]
         self.x_converter_ = ToDictDatasetConverter(cat_features=cat_indicator)
         self.y_encoder_ = OrdinalEncoder(dtype=np.int64)  # only used for classification
-
 
         if not self._supports_single_sample() and len(X_df) == 1:
             raise ValueError('Training with one sample is not supported!')
@@ -249,7 +252,6 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         # set n_features_in_ as required by https://scikit-learn.org/stable/developers/develop.html
         self.n_features_in_ = ds.tensor_infos['x_cont'].get_n_features() + ds.tensor_infos['x_cat'].get_n_features()
-
 
         self.cv_alg_interface_ = self._create_alg_interface(n_cv=n_cv)
 
@@ -357,7 +359,8 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         logger = StdoutLogger(verbosity_level=params.get('verbosity', 0))
 
-        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices)
+        interface_resources = InterfaceResources(n_threads=n_threads, gpu_devices=gpu_devices,
+                                                 time_in_seconds=time_to_fit_in_seconds)
         self.cv_alg_interface_.fit(ds=ds, idxs_list=idxs_list, interface_resources=interface_resources,
                                    logger=logger, tmp_folders=tmp_folders, name=self.__class__.__name__)
 

@@ -62,9 +62,10 @@ class InterfaceResources:
     """
     Simple class representing resources that a method is allowed to use (number of threads and GPUs).
     """
-    def __init__(self, n_threads: int, gpu_devices: List[str]):
+    def __init__(self, n_threads: int, gpu_devices: List[str], time_in_seconds: Optional[int] = None):
         self.n_threads = n_threads
         self.gpu_devices = gpu_devices
+        self.time_in_seconds = time_in_seconds
 
 
 class RequiredResources:
