@@ -6,8 +6,6 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.impute import SimpleImputer
-from skorch.dataset import Dataset
-from skorch.helper import predefined_split
 
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models import utils
@@ -35,47 +33,6 @@ class ExceptionPrintingCallback(pl.callbacks.Callback):
         import traceback
         print(f'caught exception')
         traceback.print_exception(exception)
-
-
-class TabrDataset(Dataset):
-    def __init__(self, X_num, X_bin, X_cat, Y):
-        self.data = {
-            "Y": Y.reshape(-1)
-        }
-        if X_num.shape[1] > 0:
-            self.data["X_num"] = X_num.float()
-        if X_bin.shape[1] > 0:
-            self.data["X_bin"] = X_bin.long()
-        if X_cat.shape[1] > 0:
-            self.data["X_cat"] = X_cat.long()
-        self.size = len(Y)
-
-    def __len__(self):
-        return self.size
-
-    def __getitem__(self, idx):
-        return {"indices": idx}
-
-
-class TabrDatasetTest(Dataset):
-    def __init__(self, X_num, X_bin, X_cat):
-        self.data = {}
-        if X_num.shape[1] > 0:
-            self.data["X_num"] = X_num.float()
-            self.size = len(X_num)
-        if X_bin.shape[1] > 0:
-            self.data["X_bin"] = X_bin.long()
-            self.size = len(X_bin)
-        if X_cat.shape[1] > 0:
-            self.data["X_cat"] = X_cat.long()
-            self.size = len(X_cat)
-    def __len__(self):
-        return self.size
-    def __getitem__(self, idx):
-        return {
-            key: self.data[key][idx]
-            for key in self.data
-        }
 
 
 class TabRSubSplitInterface(AlgInterface):
@@ -245,6 +202,28 @@ class TabRSubSplitInterface(AlgInterface):
                 X_bin_val = X_bin_val - 1
                 X_bin_val[X_bin_val == -1] = 0.5
 
+        from skorch.dataset import Dataset
+
+        class TabrDataset(Dataset):
+            def __init__(self, X_num, X_bin, X_cat, Y):
+                self.data = {
+                    "Y": Y.reshape(-1)
+                }
+                if X_num.shape[1] > 0:
+                    self.data["X_num"] = X_num.float()
+                if X_bin.shape[1] > 0:
+                    self.data["X_bin"] = X_bin.long()
+                if X_cat.shape[1] > 0:
+                    self.data["X_cat"] = X_cat.long()
+                self.size = len(Y)
+
+            def __len__(self):
+                return self.size
+
+            def __getitem__(self, idx):
+                return {"indices": idx}
+
+
         train_dataset = TabrDataset(
             X_num,
             X_bin,
@@ -397,6 +376,28 @@ class TabRSubSplitInterface(AlgInterface):
                             (X_bin == 1)).all()
             # replace -1 by 0.5
             X_bin[X_bin == -1] = 0.5
+
+        from skorch.dataset import Dataset
+
+        class TabrDatasetTest(Dataset):
+            def __init__(self, X_num, X_bin, X_cat):
+                self.data = {}
+                if X_num.shape[1] > 0:
+                    self.data["X_num"] = X_num.float()
+                    self.size = len(X_num)
+                if X_bin.shape[1] > 0:
+                    self.data["X_bin"] = X_bin.long()
+                    self.size = len(X_bin)
+                if X_cat.shape[1] > 0:
+                    self.data["X_cat"] = X_cat.long()
+                    self.size = len(X_cat)
+            def __len__(self):
+                return self.size
+            def __getitem__(self, idx):
+                return {
+                    key: self.data[key][idx]
+                    for key in self.data
+        }
 
         test_dataset = TabrDatasetTest(
             X_num,

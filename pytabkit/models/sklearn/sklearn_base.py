@@ -93,7 +93,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             if key not in params or params[key] is None:
                 params[key] = value
 
-        print(f'{params=}')
+        # print(f'{params=}')
 
         # return params
         # remove None values
