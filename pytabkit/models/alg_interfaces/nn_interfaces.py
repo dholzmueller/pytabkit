@@ -12,7 +12,7 @@ except ImportError:
 
 import logging
 
-from future.backports.datetime import timedelta
+from datetime import timedelta
 
 from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset
