@@ -23,7 +23,10 @@ from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_TD_Classifier, Ca
     CatBoost_TD_Regressor, LGBM_TD_Regressor, MLP_RTDL_D_Classifier, Resnet_RTDL_D_Classifier, MLP_RTDL_D_Regressor, \
     Resnet_RTDL_D_Regressor, TabR_S_D_Classifier, TabR_S_D_Regressor, MLP_RTDL_HPO_Classifier, \
     MLP_RTDL_HPO_Regressor, XGB_HPO_TPE_Regressor, LGBM_HPO_TPE_Regressor, \
-    CatBoost_HPO_TPE_Regressor, XGB_HPO_TPE_Classifier, LGBM_HPO_TPE_Classifier, CatBoost_HPO_TPE_Classifier
+    CatBoost_HPO_TPE_Regressor, XGB_HPO_TPE_Classifier, LGBM_HPO_TPE_Classifier, CatBoost_HPO_TPE_Classifier, \
+    MLP_PLR_D_Classifier, MLP_PLR_HPO_Classifier, MLP_PLR_D_Regressor, MLP_PLR_HPO_Regressor, Resnet_RTDL_HPO_Regressor, \
+    Resnet_RTDL_HPO_Classifier, RealTabR_D_Classifier, RealTabR_D_Regressor, TabR_HPO_Classifier, TabR_HPO_Regressor, \
+    RF_HPO_Classifier, RF_HPO_Regressor, FTT_HPO_Classifier, FTT_D_Classifier, FTT_D_Regressor, FTT_HPO_Regressor
 
 
 def measure_times(paths: Paths, alg_name: str, estimator: AlgInterfaceEstimator, coll_name: str, device: str,
@@ -91,17 +94,26 @@ def measure_times_cpu_class(n_threads: int, rerun: bool = False):
         'RF-SKL-D_CPU': RF_SKL_D_Classifier(n_threads=n_threads),
         'MLP-SKL-D_CPU': MLP_SKL_D_Classifier(n_threads=n_threads),
         'MLP-RTDL-D_CPU': MLP_RTDL_D_Classifier(n_threads=n_threads),
+        'MLP-PLR-D_CPU': MLP_PLR_D_Classifier(n_threads=n_threads),
         'ResNet-RTDL-D_CPU': Resnet_RTDL_D_Classifier(n_threads=n_threads),
         'XGB-PBB-D_CPU': XGB_PBB_D_Classifier(n_threads=n_threads),
+        'TabR-S-D_CPU': TabR_S_D_Classifier(n_threads=n_threads),
+        'RealTabR-D_CPU': RealTabR_D_Classifier(n_threads=n_threads),
+        'FTT-D_CPU': FTT_D_Classifier(n_threads=n_threads),
+
         'RealMLP-HPO-2_CPU': RealMLP_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
         'MLP-RTDL-HPO-2_CPU': MLP_RTDL_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
+        'MLP-PLR-HPO-2_CPU': MLP_PLR_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
+        'ResNet-RTDL-HPO-2_CPU': Resnet_RTDL_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
         'XGB-HPO-TPE_CPU': XGB_HPO_TPE_Classifier(n_threads=n_threads),
         'LGBM-HPO-TPE_CPU': LGBM_HPO_TPE_Classifier(n_threads=n_threads, verbosity=-1),
         'CatBoost-HPO-TPE_CPU': CatBoost_HPO_TPE_Classifier(n_threads=n_threads),
         'XGB-HPO-2_CPU': XGB_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
         'LGBM-HPO-2_CPU': LGBM_HPO_Classifier(n_threads=n_threads, verbosity=-1, n_hyperopt_steps=2),
         'CatBoost-HPO-2_CPU': CatBoost_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
-        'TabR-S-D_CPU': TabR_S_D_Classifier(n_threads=n_threads),
+        'RF-HPO-2_CPU': RF_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=2),
+        'TabR-HPO-1_CPU': TabR_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=1),
+        'FTT-HPO-1_CPU': FTT_HPO_Classifier(n_threads=n_threads, n_hyperopt_steps=1),
 
         'LGBM-D_val-ce_CPU': LGBM_D_Classifier(n_threads=n_threads, val_metric_name='cross_entropy', verbosity=-1),
         'XGB-D_val-ce_CPU': XGB_D_Classifier(n_threads=n_threads, val_metric_name='cross_entropy'),
@@ -124,9 +136,19 @@ def measure_times_cpu_class(n_threads: int, rerun: bool = False):
                                                            n_threads=n_threads),
         'MLP-RTDL-D_val-ce_CPU': MLP_RTDL_D_Classifier(val_metric_name='cross_entropy',
                                                        n_threads=n_threads),
+        'MLP-PLR-D_val-ce_CPU': MLP_PLR_D_Classifier(val_metric_name='cross_entropy',
+                                                       n_threads=n_threads),
         'ResNet-RTDL-D_val-ce_CPU': Resnet_RTDL_D_Classifier(val_metric_name='cross_entropy',
                                                              n_threads=n_threads),
         'TabR-S-D_val-ce_CPU': TabR_S_D_Classifier(val_metric_name='cross_entropy',
+                                                   n_threads=n_threads),
+        'RealTabR-D_val-ce_CPU': RealTabR_D_Classifier(val_metric_name='cross_entropy',
+                                                   n_threads=n_threads),
+        'RealTabR-D_no-ls_CPU': RealTabR_D_Classifier(ls_eps=0.0,
+                                                       n_threads=n_threads),
+        'RealTabR-D_val-ce_no-ls_CPU': RealTabR_D_Classifier(ls_eps=0.0, val_metric_name='cross_entropy',
+                                                      n_threads=n_threads),
+        'FTT-D_val-ce_CPU': FTT_D_Classifier(val_metric_name='cross_entropy',
                                                    n_threads=n_threads),
 
         'MLP-RTDL-D_rssc_CPU': MLP_RTDL_D_Classifier(n_threads=n_threads,
@@ -135,6 +157,10 @@ def measure_times_cpu_class(n_threads: int, rerun: bool = False):
                                                            tfms=['median_center', 'robust_scale', 'smooth_clip']),
         'TabR-S-D_rssc_CPU': TabR_S_D_Classifier(n_threads=n_threads,
                                                  tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'FTT-D_rssc_CPU': FTT_D_Classifier(n_threads=n_threads,
+                                                 tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'MLP-PLR-D_rssc_CPU': MLP_PLR_D_Classifier(n_threads=n_threads,
+                                                     tfms=['median_center', 'robust_scale', 'smooth_clip']),
     }
 
     for alg_name, estimator in estimators.items():
@@ -156,16 +182,36 @@ def measure_times_cpu_reg(n_threads: int, rerun: bool = False):
         'RF-SKL-D_CPU': RF_SKL_D_Regressor(n_threads=n_threads),
         'MLP-SKL-D_CPU': MLP_SKL_D_Regressor(n_threads=n_threads),
         'MLP-RTDL-D_CPU': MLP_RTDL_D_Regressor(n_threads=n_threads),
+        'MLP-PLR-D_CPU': MLP_PLR_D_Regressor(n_threads=n_threads),
         'ResNet-RTDL-D_CPU': Resnet_RTDL_D_Regressor(n_threads=n_threads),
+        'TabR-S-D_CPU': TabR_S_D_Regressor(n_threads=n_threads),
+        'RealTabR-D_CPU': RealTabR_D_Regressor(n_threads=n_threads),
+        'FTT-D_CPU': FTT_D_Regressor(n_threads=n_threads),
+
         'RealMLP-HPO-2_CPU': RealMLP_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
         'MLP-RTDL-HPO-2_CPU': MLP_RTDL_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
+        'MLP-PLR-HPO-2_CPU': MLP_PLR_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
+        'ResNet-RTDL-HPO-2_CPU': Resnet_RTDL_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
         'XGB-HPO-2_CPU': XGB_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
         'LGBM-HPO-2_CPU': LGBM_HPO_Regressor(n_threads=n_threads, verbosity=-1, n_hyperopt_steps=2),
         'CatBoost-HPO-2_CPU': CatBoost_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
         'XGB-HPO-TPE_CPU': XGB_HPO_TPE_Regressor(n_threads=n_threads),
         'LGBM-HPO-TPE_CPU': LGBM_HPO_TPE_Regressor(n_threads=n_threads, verbosity=-1),
         'CatBoost-HPO-TPE_CPU': CatBoost_HPO_TPE_Regressor(n_threads=n_threads),
-        'TabR-S-D_CPU': TabR_S_D_Regressor(n_threads=n_threads),
+        'RF-HPO-2_CPU': RF_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=2),
+        'TabR-HPO-1_CPU': TabR_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=1),
+        'FTT-HPO-1_CPU': FTT_HPO_Regressor(n_threads=n_threads, n_hyperopt_steps=1),
+
+        'MLP-RTDL-D_rssc_CPU': MLP_RTDL_D_Regressor(n_threads=n_threads,
+                                                     tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'ResNet-RTDL-D_rssc_CPU': Resnet_RTDL_D_Regressor(n_threads=n_threads,
+                                                           tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'TabR-S-D_rssc_CPU': TabR_S_D_Regressor(n_threads=n_threads,
+                                                 tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'FTT-D_rssc_CPU': FTT_D_Regressor(n_threads=n_threads,
+                                                tfms=['median_center', 'robust_scale', 'smooth_clip']),
+        'MLP-PLR-D_rssc_CPU': MLP_PLR_D_Regressor(n_threads=n_threads,
+                                                tfms=['median_center', 'robust_scale', 'smooth_clip']),
     }
 
     for alg_name, estimator in estimators.items():

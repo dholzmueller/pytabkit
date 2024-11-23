@@ -8,7 +8,7 @@ import torch
 
 from sklearn.base import BaseEstimator
 
-from pytabkit.bench.scheduling.execution import FunctionProcess
+from pytabkit.models.utils import FunctionProcess
 from pytabkit.models.alg_interfaces.resource_computation import UniformSampler, FeatureSpec, get_resource_features, \
     process_resource_features, \
     Sampler, ds_to_xy, fit_resource_factors, TimeWrapper

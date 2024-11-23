@@ -208,7 +208,7 @@ class AlgInterface:
         return self.fit_params
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         """
         Estimate the required resources for fit().
 
@@ -271,9 +271,10 @@ class MultiSplitWrapperAlgInterface(AlgInterface):
         return cat_if_necessary([s.predict(ds) for s in self.single_split_interfaces], dim=0)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
-        single_resources = [ssi.get_required_resources(ds, n_cv, n_refit, n_splits=1, split_seeds=[split_seeds[i]])
-                            for i, ssi in enumerate(self.single_split_interfaces)]
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        single_resources = [
+            ssi.get_required_resources(ds, n_cv, n_refit, n_splits=1, split_seeds=[split_seeds[i]], n_train=n_train)
+            for i, ssi in enumerate(self.single_split_interfaces)]
         return RequiredResources.combine_sequential(single_resources)
 
 
@@ -387,7 +388,7 @@ class OptAlgInterface(SingleSplitAlgInterface):
         if metrics is None:
             # create metrics because we need to have a validation score
             task_type = TaskType.CLASSIFICATION if ds.tensor_infos['y'].is_cat() else TaskType.REGRESSION
-            val_metric_name = self.config.get('val_metric_name', Metrics.default_metric_name(task_type))
+            val_metric_name = self.config.get('val_metric_name', Metrics.default_val_metric_name(task_type))
             metrics = Metrics(metric_names=[val_metric_name], val_metric_name=val_metric_name, task_type=task_type)
 
         self.opt_step = 0
@@ -405,10 +406,10 @@ class OptAlgInterface(SingleSplitAlgInterface):
         return self.best_alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         ref_alg_interface = self.create_alg_interface(n_sub_splits=1, **self.max_resource_config)
         single_resources = ref_alg_interface.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=1,
-                                                                    split_seeds=split_seeds)
+                                                                    split_seeds=split_seeds, n_train=n_train)
         single_resources.time_s *= (self.hyper_optimizer.get_n_hyperopt_steps() * n_cv + n_refit) * n_splits
         return single_resources
 
@@ -425,7 +426,7 @@ class RandomParamsAlgInterface(SingleSplitAlgInterface):
         self.model_idx = model_idx
         self.alg_interface = None
 
-    def _sample_params(self, is_classification: bool, seed: int):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         raise NotImplementedError()  # override in subclass
 
     def _create_interface_from_config(self, n_tv_splits: int, **config):
@@ -436,12 +437,12 @@ class RandomParamsAlgInterface(SingleSplitAlgInterface):
         # return RandomParamsNNAlgInterface(model_idx=self.model_idx, fit_params=fit_params or self.fit_params,
         #                                   **self.config)
 
-    def _create_sub_interface(self, ds: DictDataset, seed: int, n_tv_splits: int):
+    def _create_sub_interface(self, ds: DictDataset, seed: int, n_train: int, n_tv_splits: int):
         # this is also set in get_required_resources, but okay
         if self.fit_params is None:
             hparam_seed = utils.combine_seeds(seed, self.model_idx)
             is_classification = not ds.tensor_infos['y'].is_cont()
-            self.fit_params = [self._sample_params(is_classification, hparam_seed)]
+            self.fit_params = [self._sample_params(is_classification, hparam_seed, n_train)]
         # todo: need epoch for refit
         return self._create_interface_from_config(n_tv_splits=n_tv_splits, fit_params=None,
                                                   **utils.update_dict(self.config, self.fit_params[0]))
@@ -450,14 +451,15 @@ class RandomParamsAlgInterface(SingleSplitAlgInterface):
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
         assert len(idxs_list) == 1
         n_tv_splits = idxs_list[0].n_trainval_splits
-        self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed, n_tv_splits=n_tv_splits)
+        self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed, n_train=idxs_list[0].n_train,
+                                                        n_tv_splits=n_tv_splits)
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         return self.alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert len(split_seeds) == 1
-        alg_interface = self._create_sub_interface(ds, split_seeds[0], n_tv_splits=n_cv)
-        return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds)
+        alg_interface = self._create_sub_interface(ds, split_seeds[0], n_train=n_train, n_tv_splits=n_cv, )
+        return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)

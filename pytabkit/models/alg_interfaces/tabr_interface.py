@@ -12,13 +12,15 @@ from skorch.helper import predefined_split
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.base import RequiredResources
-from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface
+from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, SingleSplitAlgInterface, \
+    RandomParamsAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources, SubSplitIdxs
+from pytabkit.models.alg_interfaces.rtdl_interfaces import choose_batch_size_rtdl_new
+from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
 from pytabkit.models.data.data import DictDataset
+from pytabkit.models.sklearn.default_params import DefaultParams
 from pytabkit.models.training.logging import Logger
 from pytabkit.models.nn_models.models import PreprocessingFactory
-from pytabkit.models.nn_models.rtdl_resnet import create_mlp_classifier_skorch, create_mlp_regressor_skorch, \
-    create_resnet_classifier_skorch, create_resnet_regressor_skorch
 from pytabkit.models.nn_models.tabr import TabrLightning, TabrModel
 from pytabkit.models.nn_models.tabr_context_freeze import TabrModelContextFreeze, TabrLightningContextFreeze
 from pytabkit.models.training.metrics import insert_missing_class_columns
@@ -26,6 +28,13 @@ from pytabkit.models.training.metrics import insert_missing_class_columns
 import torch.utils.data
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
+
+class ExceptionPrintingCallback(pl.callbacks.Callback):
+    def on_exception(self, trainer, pl_module, exception):
+        import traceback
+        print(f'caught exception')
+        traceback.print_exception(exception)
 
 
 class TabrDataset(Dataset):
@@ -69,7 +78,7 @@ class TabrDatasetTest(Dataset):
         }
 
 
-class TabRSubSplitLearner(AlgInterface):
+class TabRSubSplitInterface(AlgInterface):
     def __init__(self, **config):
         super().__init__(**config)
         self.tfm = None
@@ -95,6 +104,11 @@ class TabRSubSplitLearner(AlgInterface):
             # The following options should be used only when truly needed.
             ('memory_efficient', None),
             ('candidate_encoding_batch_size', None),
+            ('add_scaling_layer', None),
+            ('scale_lr_factor', None),
+            ('use_ntp_linear', None),
+            ('linear_init_type', None),
+            ('use_ntp_encoder', None),
         ]
         params = utils.extract_params(self.config, params_config)
 
@@ -274,6 +288,7 @@ class TabRSubSplitLearner(AlgInterface):
             torch_model, train_dataset, val_dataset, C=self.config,
             n_classes=self.n_classes,
             )
+
         if self.n_classes > 0:
             val_metric_name = self.config.get('val_metric_name', 'class_error')
             if val_metric_name == 'class_error':
@@ -296,6 +311,7 @@ class TabRSubSplitLearner(AlgInterface):
                                                   dirpath=tmp_folders[0])
 
         gpu_devices = interface_resources.gpu_devices
+        print("gpu_devices", gpu_devices)
         self.device = gpu_devices[0] if len(gpu_devices) > 0 else 'cpu'
         if self.device == 'cpu':
             pl_accelerator = 'cpu'
@@ -316,13 +332,12 @@ class TabRSubSplitLearner(AlgInterface):
                            accelerator=pl_accelerator,
                             devices=pl_devices,
                             deterministic=True,
-                            callbacks=[es_callback, checkpoint_callback],
+                            callbacks=[es_callback, checkpoint_callback, ExceptionPrintingCallback()],
                             max_epochs=self.config["n_epochs"],
                             enable_progress_bar=self.config["verbosity"] > 0,
                             enable_model_summary=self.config["verbosity"] > 0,
                             logger=pl.loggers.logger.DummyLogger(),
                             )
-        
 
         self.trainer.fit(self.model)
 
@@ -393,7 +408,7 @@ class TabRSubSplitLearner(AlgInterface):
             test_dataset,
             batch_size=self.config["eval_batch_size"],
             shuffle=False,
-            num_workers=min(self.config["n_threads"] - 1, 16)
+            num_workers=0, #min(self.config["n_threads"] - 1, 16)
         )
 
         y_pred = self.trainer.predict(self.model, test_dataloader)
@@ -411,14 +426,100 @@ class TabRSubSplitLearner(AlgInterface):
         return y_pred[None]  # add vectorized dimension
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
+        has_num_emb = self.config.get('num_embeddings', None) is not None
+        if has_num_emb:
+            num_emb_dict = self.config['num_embeddings']
+
+            num_emb_size_factor = 1.0 + 0.2 * (num_emb_dict.get('n_frequencies', 8) + num_emb_dict.get('d_embedding', 4))
+        else:
+            num_emb_size_factor = 1.0
+
         updated_config = utils.join_dicts(dict(n_estimators=100, max_n_threads=1), self.config)
-        time_params = {'': 10, 'ds_onehot_size_gb': 10.0, 'n_samples': 8e-5}
-        ram_params = {'': 6, 'ds_onehot_size_gb': 1.5}
-        gpu_ram_params = {'': 6, 'n_features': 1e-4, "n_samples": 1.5e-5}
+        time_params = {'': 10, 'ds_onehot_size_gb': 10.0, 'n_train': 1e-4}
+        ram_params = {'': 4, 'ds_onehot_size_gb': 1.5}
+        gpu_ram_params = {'': 5, 'n_features': num_emb_size_factor * 1e-4, "n_train": 3e-5,
+                          'n_features*n_train': num_emb_size_factor * 0.5e-7, 'n_classes': 0.04}
         rc = ResourcePredictor(config=updated_config, time_params=time_params, gpu_ram_params=gpu_ram_params,
-                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.15)#, gpu_ram_params)
-        return rc.get_required_resources(ds)
+                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.3) #, gpu_ram_params)
+        return rc.get_required_resources(ds, n_train=n_train)
+
+
+class RandomParamsTabRAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        hpo_space_name = self.config.get('hpo_space_name', 'tabr')
+
+        if hpo_space_name == 'tabr':
+            params = {
+                # reduced d_layers
+                "d_main": rng.choice(np.arange(96, 385)),
+                "context_dropout": rng.uniform(0.0, 0.6),
+                "dropout0": rng.uniform(0.0, 0.6),
+                "dropout1": 0.0,
+                "optimizer": {
+                    "type": "AdamW",
+                    "lr": np.exp(rng.uniform(np.log(3e-5), np.log(1e-3))),
+                    "weight_decay": rng.choice([0, np.exp(rng.uniform(np.log(1e-6), np.log(1e-4)))])
+                    # paper says 1e-3 but logs on github say 1e-4 for upper bound
+                },
+                "encoder_n_blocks": rng.choice([0, 1]),
+                "predictor_n_blocks": rng.choice([1, 2]),
+                "num_embeddings": {
+                    "type": "PLREmbeddings",
+                    "n_frequencies": rng.choice(np.arange(16, 97)),
+                    "d_embedding": rng.choice(np.arange(16, 65)),
+                    "frequency_scale": np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                    "lite": True,
+                },
+            }
+
+            if is_classification:
+                params = utils.join_dicts(DefaultParams.TABR_S_D_CLASS, params)
+            else:
+                params = utils.join_dicts(DefaultParams.TABR_S_D_REG, params)
+        elif hpo_space_name == 'realtabr':
+            tfms_list = [['quantile_tabr'], ['median_center', 'robust_scale', 'smooth_clip']]
+            params = {
+                # reduced d_layers
+                "d_main": rng.choice(np.arange(96, 385)),
+                "context_dropout": rng.uniform(0.0, 0.6),
+                "dropout0": rng.uniform(0.0, 0.6),
+                "dropout1": 0.0,
+                "optimizer": {
+                    "type": "AdamW",
+                    "lr": np.exp(rng.uniform(np.log(3e-5), np.log(1e-3))),
+                    "weight_decay": rng.choice([0, np.exp(rng.uniform(np.log(1e-6), np.log(1e-4)))]),
+                    # paper says 1e-3 but logs on github say 1e-4 for upper bound
+                    "betas": (0.9, rng.choice([0.95, 0.999])),
+                },
+                "encoder_n_blocks": rng.choice([0, 1]),
+                "predictor_n_blocks": rng.choice([1, 2]),
+                "num_embeddings": {
+                    "type": "PBLDEmbeddings",
+                    # use factor 2 since it results in the same hidden dimension
+                    # as for PLR without the factor 2 because of the concat(sin, cos) thing
+                    "n_frequencies": 2*rng.choice(np.arange(16, 97)),
+                    "d_embedding": rng.choice(np.arange(16, 65)),
+                    "frequency_scale": np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                },
+                "ls_eps": rng.choice([0.0, 0.1]),
+                'tfms': tfms_list[rng.choice(np.arange(len(tfms_list)))],
+                'add_scaling_layer': rng.choice([True, False]),
+                'scale_lr_factor': 96,
+            }
+
+            if is_classification:
+                params = utils.join_dicts(DefaultParams.RealTABR_D_CLASS, params)
+            else:
+                params = utils.join_dicts(DefaultParams.RealTABR_D_REG, params)
+        else:
+            raise ValueError(f'Unknown HPO space name "{hpo_space_name}"')
+
+        return params
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([TabRSubSplitInterface(**config) for i in range(n_tv_splits)])

@@ -6,15 +6,19 @@ import torch
 from sklearn.preprocessing import QuantileTransformer
 
 from pytabkit.models.nn_models.activations import ActivationFactory
-from pytabkit.models.nn_models.base import FitterFactory, SequentialFitter, ResidualFitter, Fitter, RenameTensorFactory, FunctionFactory, \
+from pytabkit.models.nn_models.base import FitterFactory, SequentialFitter, ResidualFitter, Fitter, RenameTensorFactory, \
+    FunctionFactory, \
     SequentialFactory, FilterTensorsFactory, ConcatParallelFactory
-from pytabkit.models.nn_models.categorical import EncodingFactory, SingleOneHotFactory, SingleEmbeddingFactory, SingleOrdinalEncodingFactory, \
+from pytabkit.models.nn_models.categorical import EncodingFactory, SingleOneHotFactory, SingleEmbeddingFactory, \
+    SingleOrdinalEncodingFactory, \
     SingleTargetEncodingFactory
-from pytabkit.models.nn_models.nn import DropoutFitter, WeightFitter, BiasFitter, ScaleFitter, NoiseFitter, PLREmbeddingsFactory, ScaleFactory, \
+from pytabkit.models.nn_models.nn import DropoutFitter, WeightFitter, BiasFitter, ScaleFitter, NoiseFitter, \
+    PLREmbeddingsFactory, ScaleFactory, \
     PeriodicEmbeddingsFactory, RFFeatureImportanceFactory, LabelSmoothingFactory, StochasticLabelNoiseFactory, \
     StochasticGateFactory, FeatureImportanceFactory, FixedWeightFactory, AntisymmetricInitializationFactory, \
     NormalizeOutputFactory, ClampOutputFactory
-from pytabkit.models.nn_models.pipeline import MedianCenterFactory, RobustScaleFactory, MeanCenterFactory, GlobalScaleNormalizeFactory, \
+from pytabkit.models.nn_models.pipeline import MedianCenterFactory, RobustScaleFactory, MeanCenterFactory, \
+    GlobalScaleNormalizeFactory, \
     L2NormalizeFactory, L1NormalizeFactory, ThermometerCodingFactory, CircleCodingFactory, SklearnTransformFactory, \
     RobustScaleV2Factory
 from pytabkit.models import utils
@@ -112,14 +116,18 @@ class PreprocessingFactory(FitterFactory):
             elif tfm == 'kdi':
                 from kditransform import KDITransformer
                 tfm = KDITransformer(alpha=self.config.get('kdi_alpha', 1.0),
-                                     output_distribution=self.config.get('kdi_output_distribution', 'normal'))
+                                     output_distribution=self.config.get('kdi_output_distribution', 'normal'),
+                                     random_state=0)
                 tfm_factories.append(SklearnTransformFactory(tfm))
             elif tfm == 'quantile':
-                tfm = QuantileTransformer(output_distribution=self.config.get('quantile_output_distribution', 'normal'))
+                tfm = QuantileTransformer(output_distribution=self.config.get('quantile_output_distribution', 'normal'),
+                                          random_state=0)
                 tfm_factories.append(SklearnTransformFactory(tfm))
             elif tfm == "quantile_tabr":
-                tfm = TabrQuantileTransformer()
+                tfm = TabrQuantileTransformer(random_state=0)
                 tfm_factories.append(SklearnTransformFactory(tfm))
+            else:
+                raise NotImplementedError(f"Transformation '{tfm}' is not implemented.")
 
         # old interface, using 'tfms' is preferred
         if self.config.get('use_one_hot', False):
@@ -246,12 +254,12 @@ class NNFactory(FitterFactory):
         if self.config.get('add_fixed_weight_layer', False):
             factories.append(FixedWeightFactory())
 
-        out_sizes = self.config.get('hidden_sizes', [256]*3) + [len(y_cat_sizes) if n_classes == 0 else n_classes]
+        out_sizes = self.config.get('hidden_sizes', [256] * 3) + [len(y_cat_sizes) if n_classes == 0 else n_classes]
         for i in range(len(out_sizes)):
             layer_position = 'middle'
             block_scope_2 = f'layer-{i}'
             config = self.config
-            if i+1 == len(out_sizes):
+            if i + 1 == len(out_sizes):
                 config = utils.join_dicts(config, {'block_str': 'w-b'}, config.get('last_layer_config', {}))
                 layer_position = 'last'
             elif i == 0:
@@ -270,7 +278,7 @@ class NNFactory(FitterFactory):
             factories = [AntisymmetricInitializationFactory(SequentialFactory(factories), **self.config)]
 
         if self.config.get('output_factor', 1.0) != 1.0:
-            factories.append(FunctionFactory(lambda x, c=self.config['output_factor']: c*x))
+            factories.append(FunctionFactory(lambda x, c=self.config['output_factor']: c * x))
         if self.config.get('normalize_output', False):
             factories.append(NormalizeOutputFactory(**self.config))
         if self.config.get('clamp_output', False):

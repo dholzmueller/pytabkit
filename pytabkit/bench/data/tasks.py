@@ -147,7 +147,7 @@ class TaskInfo:
     Information about a task (without containing the dataset itself).
     """
     def __init__(self, task_desc: TaskDescription, n_samples: int, tensor_infos: Dict[str, TensorInfo],
-                 default_split_idx: Optional[int], more_info_dict: Optional[Dict]):
+                 default_split_idx: Optional[int], more_info_dict: Optional[Dict], max_n_trainval: Optional[int] = None):
         """
         :param task_desc: Task description.
         :param n_samples: Number of samples.
@@ -156,6 +156,8 @@ class TaskInfo:
             We assume that in this case, the training part is stored before the test part.
         :param more_info_dict: Dictionary with more information that can be stored,
             for example about the original OpenML dataset id.
+        :param max_n_trainval: maximum number of samples used for training+validation in random splits.
+            If None (default value), no maximum is imposed.
         """
         self.task_desc = task_desc
         self.n_samples = n_samples
@@ -163,6 +165,7 @@ class TaskInfo:
         self.task_type = TaskType.REGRESSION if tensor_infos['y'].is_cont() else TaskType.CLASSIFICATION
         self.default_split_idx = default_split_idx
         self.more_info_dict = more_info_dict or dict()
+        self.max_n_trainval = max_n_trainval
 
     def get_n_classes(self) -> int:
         """
@@ -199,7 +202,8 @@ class TaskInfo:
         info_dict = {'task_desc': self.task_desc.to_dict(), 'n_samples': self.n_samples,
                      'tensor_infos': {key: value.to_dict() for key, value in self.tensor_infos.items()},
                      'default_split_idx': self.default_split_idx,
-                     'more_info_dict': self.more_info_dict}
+                     'more_info_dict': self.more_info_dict,
+                     'max_n_trainval': self.max_n_trainval}
         utils.serialize(path / 'info.yaml', info_dict, use_yaml=True)
 
     @staticmethod
@@ -210,7 +214,8 @@ class TaskInfo:
                         tensor_infos={key: TensorInfo.from_dict(value)
                                       for key, value in info_dict['tensor_infos'].items()},
                         default_split_idx=info_dict['default_split_idx'],
-                        more_info_dict=info_dict.get('more_info_dict', dict()))
+                        more_info_dict=info_dict.get('more_info_dict', dict()),
+                        max_n_trainval=info_dict.get('max_n_trainval', None))
 
     @staticmethod
     def from_ds(task_desc: TaskDescription, ds: DictDataset, default_split_idx: Optional[int] = None,
@@ -221,7 +226,8 @@ class TaskInfo:
     def get_random_splits(self, n_splits, first_fraction=0.8) -> List[SplitInfo]:
         # use n_samples to generate alg_seed
         # in order to have the randomness also depend on the data set and not only on the split index
-        return [SplitInfo(RandomSplitter(seed=i, first_fraction=first_fraction), SplitType.RANDOM, id=i,
+        return [SplitInfo(RandomSplitter(seed=i, first_fraction=first_fraction, max_n_first=self.max_n_trainval),
+                          SplitType.RANDOM, id=i,
                           alg_seed=utils.combine_seeds(self.n_samples, i))
                 for i in range(n_splits)]
 

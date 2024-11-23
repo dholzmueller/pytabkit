@@ -61,6 +61,7 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
                           val_metric_name: Optional[str] = None, test_metric_name: Optional[str] = None,
                           rel_alg_name: str = 'BestModel', use_ranks: bool = False,
                           use_normalized_errors: bool = False,
+                          use_grinnorm_errors: bool = False,
                           use_task_mean: bool = True,
                           use_geometric_mean: bool = True, shift_eps: float = 1e-2,
                           filter_alg_names_list: Optional[List[str]] = None,
@@ -107,6 +108,15 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
         max_arr = np.max(errors, axis=0, keepdims=True)
         errors = (errors - min_arr) / (max_arr - min_arr + 1e-30)
         errors = np.clip(errors, 0.0, 1.0)
+    elif use_grinnorm_errors:
+        assert task_type_name in ['class', 'reg']
+        min_arr = np.min(errors, axis=0, keepdims=True)
+        max_arr = np.quantile(errors, 1.0 if task_type_name == 'class' else 0.9, axis=0, keepdims=True)
+        errors = (errors - min_arr) / (max_arr - min_arr + 1e-30)
+        if task_type_name == 'reg':
+            errors = np.clip(errors, 0.0, 1.0)
+        else:
+            errors = np.clip(errors, 0.0, np.Inf)
 
     idx_best = test_table.alg_names.index(rel_alg_name) if use_relative_score else 0
 
@@ -205,7 +215,7 @@ def get_opt_groups(task_type_name: str) -> Dict[str, List[str]]:
     :param task_type_name: 'class' or 'reg'
     :return: A dict of lists {alg_group_name: [alg_name_1, alg_name_2, ...]}
     """
-    return utils.join_dicts(get_ensemble_groups(task_type_name), {
+    opt_groups = utils.join_dicts(get_ensemble_groups(task_type_name), {
         '_LGBM-HPO+TD': ['LGBM-HPO', f'LGBM-TD-{task_type_name}'],
         '_XGB-HPO+TD': ['XGB-HPO', f'XGB-TD-{task_type_name}'],
         '_CatBoost-HPO+TD': ['CatBoost-HPO', f'CatBoost-TD-{task_type_name}'],
@@ -213,9 +223,14 @@ def get_opt_groups(task_type_name: str) -> Dict[str, List[str]]:
         '_MLP-HPO+TD': ['MLP-HPO', f'MLP-TD-{task_type_name}'],
         '-TD_val-ce': [f'RealMLP-TD-{task_type_name}_val-ce_no-ls', f'XGB-TD-{task_type_name}_val-ce',
                        f'LGBM-TD-{task_type_name}_val-ce', f'CatBoost-TD-{task_type_name}_val-ce'],
-        '-D_val-ce': [f'MLP-RTDL-D-{task_type_name}_val-ce', f'XGB-D-{task_type_name}_val-ce',
+        '-D_val-ce': [f'MLP-PLR-D-{task_type_name}_val-ce', f'XGB-D-{task_type_name}_val-ce',
                       f'LGBM-D-{task_type_name}_val-ce', f'CatBoost-D-{task_type_name}_val-ce'],
     })
+
+    for method in ['MLP-RTDL-D', 'ResNet-RTDL-D', 'MLP-PLR-D', 'FTT-D', 'TabR-S-D']:
+        opt_groups[f'_{method}_prep'] = [f'{method}-{task_type_name}', f'{method}-{task_type_name}_rssc']
+
+    return opt_groups
 
 
 def get_ensemble_groups(task_type_name: str) -> Dict[str, List[str]]:
@@ -234,13 +249,14 @@ def get_ensemble_groups(task_type_name: str) -> Dict[str, List[str]]:
         # 'GBDTs-HPO_MLP-HPO': ['XGB-HPO', 'LGBM-HPO', 'CatBoost-HPO', 'MLP-HPO'],  # todo: duplicate
         '-HPO': ['XGB-HPO', 'LGBM-HPO', 'CatBoost-HPO', 'RealMLP-HPO'],
         '_MLP-TD_MLP-TD-S': [f'RealMLP-TD-{task_type_name}', f'RealMLP-TD-S-{task_type_name}'],
-        '-D': ['XGB-D', 'LGBM-D', 'CatBoost-D', f'MLP-RTDL-D-{task_type_name}'],
+        '-D': ['XGB-D', 'LGBM-D', 'CatBoost-D', f'MLP-PLR-D-{task_type_name}'],
     }
 
 
 def get_simplified_name(alg_name: str):
     alg_name = alg_name.replace(' [bag-1]', '')
     alg_name = alg_name.replace('-class', '').replace('-reg', '')
+    # the rest is not happening in get_display_name after merging the names with the names from the runtimes
     # alg_name = alg_name.replace('RF-SKL', 'RF')
     # alg_name = alg_name.replace('-RTDL', '')
     # alg_name = alg_name.replace('_val-ce', '')
@@ -257,9 +273,12 @@ def get_display_name(alg_name: str) -> str:
     alg_name = alg_name.replace('BestModel', 'Best')
     # alg_name = alg_name.replace('_rssc', '')
     alg_name = alg_name.replace('_rssc', ' (RS+SC)')
-    alg_name = alg_name.replace('_no-ls', ' (no ls)')
+    alg_name = alg_name.replace('_no-ls', ' (no LS)')
     alg_name = alg_name.replace('_val-ce', '')
     alg_name = alg_name.replace('RF-SKL', 'RF')
     alg_name = alg_name.replace('-RTDL', '')
     alg_name = alg_name.replace('_best-1-auc-ovr', '')
+    if alg_name.endswith('_prep') and alg_name.startswith('Best_'):
+        alg_name = alg_name[len('Best_'):-len('_prep')]
+        alg_name = alg_name + ' (best of both)'
     return alg_name

@@ -88,6 +88,7 @@ class TabNNModule(pl.LightningModule):
     # ----- Start LightningModule Methods -----
     def on_fit_start(self):
         self.model.train()
+        self.optimizers().train()
         # mean val errors will not be accurate if all epochs after this yield NaN
         self.best_mean_val_errors = [np.Inf] * self.creator.n_tt_splits
         # epoch 0 counts as before training, epoch 1 is first epoch
@@ -104,7 +105,7 @@ class TabNNModule(pl.LightningModule):
         loss = self.criterion(output["x_cont"], output["y"]).sum()
         # Callbacks for regularization are called before the backward pass
         self.manual_backward(loss)
-        opt.step()
+        opt.step(loss=loss)
         opt.zero_grad()
 
         self.progress.total_samples += batch["y"].shape[-2]
@@ -213,3 +214,31 @@ class TabNNModule(pl.LightningModule):
     def configure_optimizers(self):
         param_groups = [{"params": [p], "lr": 0.01} for p in self.model.parameters()]
         return get_opt_class(self.config.get('opt', 'adam'))(param_groups, self.hp_manager)
+
+
+    # from https://github.com/Lightning-AI/pytorch-lightning/discussions/19759
+    # def on_fit_start(self) -> None:
+    #     self.optimizers().train()  # already abovef
+
+    def on_predict_start(self) -> None:
+        self.optimizers(use_pl_optimizer=False).eval()
+
+    def on_validation_model_eval(self) -> None:
+        self.model.eval()
+        self.optimizers(use_pl_optimizer=False).eval()
+
+    def on_validation_model_train(self) -> None:
+        self.model.train()
+        self.optimizers(use_pl_optimizer=False).train()
+
+    def on_test_model_eval(self) -> None:
+        self.model.eval()
+        self.optimizers(use_pl_optimizer=False).eval()
+
+    def on_test_model_train(self) -> None:
+        self.model.train()
+        self.optimizers(use_pl_optimizer=False).train()
+
+    def on_predict_model_eval(self) -> None:  # redundant with on_predict_start()
+        self.model.eval()
+        self.optimizers(use_pl_optimizer=False).eval()

@@ -1,5 +1,7 @@
 from typing import Optional
 
+import fire
+
 from pytabkit.bench.data.common import TaskSource
 from pytabkit.bench.data.get_uci import download_all_uci
 from pytabkit.bench.data.import_tasks import import_uci_tasks, get_openml_task_ids, import_openml, get_openml_ds_names
@@ -8,7 +10,9 @@ from pytabkit.bench.data.tasks import TaskCollection, TaskDescription, TaskInfo
 
 
 def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, import_meta_test: bool = True,
-               import_openml_class_bin_extra: bool = False, import_grinsztajn: bool = False):
+               import_openml_class_bin_extra: bool = False,
+               import_grinsztajn: bool = False, import_grinsztajn_medium: bool = True,
+               import_tabzilla_hard: bool = False):
     paths = Paths.from_env_variables()
     min_n_samples = 1000
 
@@ -104,7 +108,6 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
             exclude_automl_reg = ['wine_quality', 'abalone', 'OnlineNewsPopularity', 'Brazilian_houses']
             exclude_ctr23_reg = ['abalone', 'physiochemical_protein', 'naval_propulsion_plant', 'superconductivity',
                                  'white_wine', 'red_wine', 'grid_stability']
-            # todo: check if dataset names match
             reg_descs = TaskCollection.from_source(TaskSource.OPENML_REGRESSION, paths).task_descs
             filtered_reg_descs = [td for td in reg_descs if td.task_name not in exclude_automl_reg + exclude_ctr23_reg
                                   and td.task_name in automl_reg_ds_names + ctr23_reg_ds_names
@@ -122,6 +125,13 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
 
     if import_grinsztajn:
         import_grinsztajn_datasets(openml_cache_dir)
+
+    if import_grinsztajn_medium:
+        import_grinsztajn_medium_datasets(openml_cache_dir)
+
+    if import_tabzilla_hard:
+        import_tabzilla_hard_datasets(openml_cache_dir)
+
 
 
 def import_grinsztajn_datasets(openml_cache_dir: str = None):
@@ -154,6 +164,36 @@ def import_grinsztajn_datasets(openml_cache_dir: str = None):
                   rerun=False)
 
 
+def import_grinsztajn_medium_datasets(openml_cache_dir: str = None):
+    paths = Paths.from_env_variables()
+    for bench_name, bench_id_cat, bench_id_num in [('grinsztajn-class', 334, 337), ('grinsztajn-reg', 335, 336)]:
+        task_ids_cat = get_openml_task_ids(bench_id_cat)
+        task_ids_num = get_openml_task_ids(bench_id_num)
+        task_ids = task_ids_cat + [task_id for task_id in task_ids_num if task_id not in task_ids_cat]
+        import_openml(task_ids, bench_name, paths, openml_cache_dir,
+                      max_n_samples=500_000, #normalize_y=(bench_name=='grinsztajn-reg'),
+                      rerun=False)
+        task_infos = TaskCollection.from_source(bench_name, paths).load_infos(paths)
+        for task_info in task_infos:
+            # use 13333 so the 75%-25% train-val split will use 10k training samples
+            task_info.max_n_trainval = 13_333
+            task_info.save(paths)
+
+    tc_orig = TaskCollection.from_source('grinsztajn-class', paths)
+    tc_orig.save(paths)
+    # exclude eye_movements because it has a leak according to the TabR paper
+    tc = TaskCollection('grinsztajn-class-filtered',
+                        [task_desc for task_desc in tc_orig.task_descs if task_desc.task_name != 'eye_movements'])
+    tc.save(paths)
+
+
+def import_tabzilla_hard_datasets(openml_cache_dir: str = None):
+    # import data sets from the benchmark of Grinsztajn et al.
+    paths = Paths.from_env_variables()
+    import_openml(get_openml_task_ids(379), 'tabzilla-hard-class', paths, openml_cache_dir,
+                  rerun=False)
+
+
 def split_meta_test(paths: Paths):
     for task_type in ['class', 'reg']:
         coll_name = f'meta-test-{task_type}'
@@ -183,16 +223,16 @@ def split_meta_test(paths: Paths):
 # could extend this for other task collections like openml-cc18, pmlb, uci121 or uci-small
 
 if __name__ == '__main__':
-    # fire.Fire(run_import)
+    fire.Fire(run_import)
     # import_grinsztajn_datasets()
     paths = Paths.from_env_variables()
     # split_meta_test(paths)
 
-    meta_train = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
-    only_bin_class = [info.task_desc for info in meta_train if info.get_n_classes() == 2]
-    only_multi_class = [info.task_desc for info in meta_train if info.get_n_classes() > 2]
-    TaskCollection('meta-train-bin-class', only_bin_class).save(paths)
-    TaskCollection('meta-train-multi-class', only_multi_class).save(paths)
+    # meta_train = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)
+    # only_bin_class = [info.task_desc for info in meta_train if info.get_n_classes() == 2]
+    # only_multi_class = [info.task_desc for info in meta_train if info.get_n_classes() > 2]
+    # TaskCollection('meta-train-bin-class', only_bin_class).save(paths)
+    # TaskCollection('meta-train-multi-class', only_multi_class).save(paths)
 
     # print(get_openml_ds_names([361011]))
     # ctr23_reg_task_ids = get_openml_task_ids(353)

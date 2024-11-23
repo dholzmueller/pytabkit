@@ -2,6 +2,8 @@ import os
 import inspect
 import warnings
 import math
+from functools import partial
+
 import lightning as pl
 import torch
 from torch import Tensor
@@ -14,38 +16,44 @@ from torchmetrics import Accuracy, Precision, Recall, F1Score, MeanSquaredError,
 from typing import Any, Optional, Union, Literal, Callable, NamedTuple
 from tqdm import tqdm
 
+from pytabkit.models.nn_models.tabr import ParametricMishActivationLayer, ParametricReluActivationLayer, ScalingLayer, \
+    bce_with_logits_and_label_smoothing
 
-#taken from https://github.com/yandex-research/tabular-dl-tabr/tree/main/bin
+
+# taken from https://github.com/yandex-research/tabular-dl-tabr/tree/main/bin
 # and https://github.com/yandex-research/tabular-dl-tabr/blob/main/bin/tabr_scaling.py
 class TabrModelContextFreeze(nn.Module):
     class ForwardOutput(NamedTuple):
         y_pred: Tensor
         context_idx: Tensor
         context_probs: Tensor
+
     def __init__(
-        self,
-        *,
-        #
-        n_num_features: int,
-        n_bin_features: int,
-        cat_cardinalities: list[int],
-        n_classes: Optional[int],
-        #
-        num_embeddings: Optional[dict],  # lib.deep.ModuleSpec
-        d_main: int,
-        d_multiplier: float,
-        encoder_n_blocks: int,
-        predictor_n_blocks: int,
-        mixer_normalization: Union[bool, Literal['auto']],
-        context_dropout: float,
-        dropout0: float,
-        dropout1: Union[float, Literal['dropout0']],
-        normalization: str,
-        activation: str,
-        #
-        # The following options should be used only when truly needed.
-        memory_efficient: bool = False,
-        candidate_encoding_batch_size: Optional[int] = None,
+            self,
+            *,
+            #
+            n_num_features: int,
+            n_bin_features: int,
+            cat_cardinalities: list[int],
+            n_classes: Optional[int],
+            #
+            num_embeddings: Optional[dict],  # lib.deep.ModuleSpec
+            d_main: int,
+            d_multiplier: float,
+            encoder_n_blocks: int,
+            predictor_n_blocks: int,
+            mixer_normalization: Union[bool, Literal['auto']],
+            context_dropout: float,
+            dropout0: float,
+            dropout1: Union[float, Literal['dropout0']],
+            normalization: str,
+            activation: str,
+            #
+            # The following options should be used only when truly needed.
+            memory_efficient: bool = False,
+            candidate_encoding_batch_size: Optional[int] = None,
+            add_scaling_layer: bool = False,
+            scale_lr_factor: float = 6.0,
     ) -> None:
         # import locally so importing this file doesn't cause problems if faiss is not installed
         # import in constructor as well to make model fail earlier if not installed
@@ -70,27 +78,37 @@ class TabrModelContextFreeze(nn.Module):
             else lib.make_module(num_embeddings, n_features=n_num_features)
         )
 
+        print(f'{add_scaling_layer=}')
+        print(f'{activation=}')
+        print(f'{scale_lr_factor=}')
+
         # >>> E
         d_in = (
-            n_num_features
-            * (1 if num_embeddings is None else num_embeddings['d_embedding'])
-            + n_bin_features
-            + sum(cat_cardinalities)
+                n_num_features
+                * (1 if num_embeddings is None else num_embeddings['d_embedding'])
+                + n_bin_features
+                + sum(cat_cardinalities)
         )
         d_block = int(d_main * d_multiplier)
         Normalization = getattr(nn, normalization)
-        Activation = getattr(nn, activation)
+        if activation == 'pmish':
+            Activation = lambda n_features: ParametricMishActivationLayer(n_features=n_features)
+        elif activation == 'prelu':
+            Activation = lambda n_features: ParametricReluActivationLayer(n_features=n_features)
+        else:
+            Activation = lambda n_features: getattr(nn, activation)()
 
         def make_block(prenorm: bool) -> nn.Sequential:
             return nn.Sequential(
                 *([Normalization(d_main)] if prenorm else []),
                 nn.Linear(d_main, d_block),
-                Activation(),
+                Activation(d_block),
                 nn.Dropout(dropout0),
                 nn.Linear(d_block, d_main),
                 nn.Dropout(dropout1),
             )
 
+        self.scale = ScalingLayer(d_in, lr_factor=scale_lr_factor) if add_scaling_layer else nn.Identity()
         self.linear = nn.Linear(d_in, d_main)
         self.blocks0 = nn.ModuleList(
             [make_block(i > 0) for i in range(encoder_n_blocks)]
@@ -108,7 +126,7 @@ class TabrModelContextFreeze(nn.Module):
         self.K = nn.Linear(d_main, d_main)
         self.T = nn.Sequential(
             nn.Linear(d_main, d_block),
-            Activation(),
+            Activation(d_block),
             nn.Dropout(dropout0),
             nn.Linear(d_block, d_main, bias=False),
         )
@@ -120,7 +138,7 @@ class TabrModelContextFreeze(nn.Module):
         )
         self.head = nn.Sequential(
             Normalization(d_main),
-            Activation(),
+            Activation(d_main),
             nn.Linear(d_main, lib.get_d_out(n_classes)),
         )
 
@@ -147,7 +165,8 @@ class TabrModelContextFreeze(nn.Module):
 
         x = []
         if x_num is None:
-            assert self.num_embeddings is None
+            # assert self.num_embeddings is None
+            pass  # changed to make it easier to use with all-categorical datasets
         else:
             x.append(
                 x_num
@@ -164,6 +183,7 @@ class TabrModelContextFreeze(nn.Module):
         assert x
         x = torch.cat(x, dim=1).float()
 
+        x = self.scale(x)
         x = self.linear(x)
         for block in self.blocks0:
             x = x + block(x)
@@ -182,118 +202,119 @@ class TabrModelContextFreeze(nn.Module):
             context_size: int,
             context_idx: Optional[Tensor],
             is_train: bool,
-        ):
-            # import locally so importing this file doesn't cause problems if faiss is not installed
-            import faiss
-            import faiss.contrib.torch_utils  # noqa  << this line makes faiss work with PyTorch
-            # >>> E
-            with torch.set_grad_enabled(
+    ):
+        # import locally so importing this file doesn't cause problems if faiss is not installed
+        import faiss
+        import faiss.contrib.torch_utils  # noqa  << this line makes faiss work with PyTorch
+        # >>> E
+        with torch.set_grad_enabled(
                 torch.is_grad_enabled() and not self.memory_efficient
-            ):
-                candidate_k = (
-                    self._encode(candidate_x_)[1]
-                    if self.candidate_encoding_batch_size is None
-                    else torch.cat(
-                        [
-                            self._encode(x)[1]
-                            for x in lib.iter_batches(
-                                candidate_x_, self.candidate_encoding_batch_size
-                            )
-                        ]
+        ):
+            candidate_k = (
+                self._encode(candidate_x_)[1]
+                if self.candidate_encoding_batch_size is None
+                else torch.cat(
+                    [
+                        self._encode(x)[1]
+                        for x in lib.iter_batches(
+                        candidate_x_, self.candidate_encoding_batch_size
                     )
+                    ]
                 )
-            x, k = self._encode(x_)
-            if is_train:
-                assert y is not None
-                assert idx is not None
-                if context_idx is None:
-                    candidate_k = torch.cat([k, candidate_k])
-                    candidate_y = torch.cat([y, candidate_y])
-                    candidate_idx = torch.cat([idx, candidate_idx])
-            else:
-                assert y is None
-                assert idx is None
-
-            # >>>
-            batch_size, d_main = k.shape
-            device = k.device
+            )
+        x, k = self._encode(x_)
+        if is_train:
+            assert y is not None
+            assert idx is not None
             if context_idx is None:
-                with torch.no_grad():
-                    if self.search_index is None:
-                        # self.search_index = (
-                        #     faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main)
-                        #     if device.type == 'cuda'
-                        #     else faiss.IndexFlatL2(d_main)
-                        # )
-                        if device.type == 'cpu':
-                            self.search_index = faiss.IndexFlatL2(d_main)
-                        elif device.type == 'cuda':
-                            gpu_index = 0 if device.index is None else device.index
-                            cfg = faiss.GpuIndexFlatConfig()
-                            cfg.device = gpu_index
-                            self.search_index = faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main, cfg)
-                        else:
-                            raise ValueError()
-                    self.search_index.reset()
-                    self.search_index.add(candidate_k)  # type: ignore[code]
-                    distances: Tensor
-                    distances, context_idx = self.search_index.search(  # type: ignore[code]
-                        k, context_size + (1 if is_train else 0)
-                    )
-                    assert isinstance(context_idx, Tensor)
-                    if is_train:
-                        distances[
-                            context_idx == torch.arange(batch_size, device=device)[:, None]
+                candidate_k = torch.cat([k, candidate_k])
+                candidate_y = torch.cat([y, candidate_y])
+                candidate_idx = torch.cat([idx, candidate_idx])
+        else:
+            assert y is None
+            assert idx is None
+
+        # >>>
+        batch_size, d_main = k.shape
+        device = k.device
+        if context_idx is None:
+            with torch.no_grad():
+                if self.search_index is None:
+                    # self.search_index = (
+                    #     faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main)
+                    #     if device.type == 'cuda'
+                    #     else faiss.IndexFlatL2(d_main)
+                    # )
+                    if device.type == 'cpu':
+                        self.search_index = faiss.IndexFlatL2(d_main)
+                    elif device.type == 'cuda':
+                        gpu_index = 0 if device.index is None else device.index
+                        cfg = faiss.GpuIndexFlatConfig()
+                        cfg.device = gpu_index
+                        self.search_index = faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), d_main, cfg)
+                    else:
+                        raise ValueError()
+                self.search_index.reset()
+                self.search_index.add(candidate_k)  # type: ignore[code]
+                distances: Tensor
+                distances, context_idx = self.search_index.search(  # type: ignore[code]
+                    k, context_size + (1 if is_train else 0)
+                )
+                assert isinstance(context_idx, Tensor)
+                if is_train:
+                    distances[
+                        context_idx == torch.arange(batch_size, device=device)[:, None]
                         ] = torch.inf
-                        context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
-            #print("context_idx", context_idx)
-            # "absolute" means "not relative", i.e. the original indices in the train set.
-            absolute_context_idx = candidate_idx[context_idx]
+                    context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
+        # print("context_idx", context_idx)
+        # "absolute" means "not relative", i.e. the original indices in the train set.
+        absolute_context_idx = candidate_idx[context_idx]
 
-            if self.memory_efficient and torch.is_grad_enabled():
-                assert is_train
-                context_k = self._encode(
-                    {
-                        ftype: torch.cat([x_[ftype], candidate_x_[ftype]])[
-                            context_idx
-                        ].flatten(0, 1)
-                        for ftype in x_
-                    }
-                )[1].reshape(batch_size, context_size, -1)
-            else:
-                context_k = candidate_k[context_idx]
+        if self.memory_efficient and torch.is_grad_enabled():
+            assert is_train
+            context_k = self._encode(
+                {
+                    ftype: torch.cat([x_[ftype], candidate_x_[ftype]])[
+                        context_idx
+                    ].flatten(0, 1)
+                    for ftype in x_
+                }
+            )[1].reshape(batch_size, context_size, -1)
+        else:
+            context_k = candidate_k[context_idx]
 
-            similarities = (
+        similarities = (
                 -k.square().sum(-1, keepdim=True)
                 + (2 * (k[..., None, :] @ context_k.transpose(-1, -2))).squeeze(-2)
                 - context_k.square().sum(-1)
-            )
-            raw_probs = F.softmax(similarities, dim=-1)
-            probs = self.dropout(raw_probs)
+        )
+        raw_probs = F.softmax(similarities, dim=-1)
+        probs = self.dropout(raw_probs)
 
-            context_y_emb: Tensor = self.label_encoder(candidate_y[context_idx][..., None])
-            values: Tensor = context_y_emb + self.T(k[:, None] - context_k)
-            context_x = (probs[:, None] @ values).squeeze(1)
-            x = x + context_x
+        context_y_emb: Tensor = self.label_encoder(candidate_y[context_idx][..., None])
+        values: Tensor = context_y_emb + self.T(k[:, None] - context_k)
+        context_x = (probs[:, None] @ values).squeeze(1)
+        x = x + context_x
 
-            # >>>
-            for block in self.blocks1:
-                x: Tensor = x + block(x)
-            x: Tensor = self.head(x)
-            return TabrModelContextFreeze.ForwardOutput(x, absolute_context_idx, raw_probs)
+        # >>>
+        for block in self.blocks1:
+            x: Tensor = x + block(x)
+        x: Tensor = self.head(x)
+        return TabrModelContextFreeze.ForwardOutput(x, absolute_context_idx, raw_probs)
+
 
 def zero_wd_condition(
-    module_name: str,
-    module: nn.Module,
-    parameter_name: str,
-    parameter: nn.parameter.Parameter,
+        module_name: str,
+        module: nn.Module,
+        parameter_name: str,
+        parameter: nn.parameter.Parameter,
 ):
     return (
-        'label_encoder' in module_name
-        or 'label_encoder' in parameter_name
-        or lib.default_zero_weight_decay_condition(
-            module_name, module, parameter_name, parameter
-        )
+            'label_encoder' in module_name
+            or 'label_encoder' in parameter_name
+            or lib.default_zero_weight_decay_condition(
+        module_name, module, parameter_name, parameter
+    )
     )
 
 
@@ -303,7 +324,7 @@ class TabrLightningContextFreeze(pl.LightningModule):
         super().__init__()
         self.model = model
         self.dataset = train_dataset
-        self.val_dataset = val_dataset 
+        self.val_dataset = val_dataset
         self.C = C
         if n_classes == 2:
             self.task_type = "binary"
@@ -311,14 +332,17 @@ class TabrLightningContextFreeze(pl.LightningModule):
             self.task_type = "multiclass"
         else:
             self.task_type = "regression"
-            
+
+        ls_eps = self.C.get('ls_eps', 0.0)
+        print(f'{ls_eps=}')
+
         self.loss_fn = (
-            F.binary_cross_entropy_with_logits
+            partial(bce_with_logits_and_label_smoothing, ls_eps=ls_eps)
             if self.task_type == "binary"
-            else F.cross_entropy
+            else partial(F.cross_entropy, label_smoothing=ls_eps)
             if self.task_type == "multiclass"
             else F.mse_loss
-    )
+        )
         # Define metrics for binary and multiclass classification
         if self.task_type in ["binary", "multiclass"]:
             self.train_accuracy = Accuracy(task=self.task_type, num_classes=n_classes)
@@ -373,16 +397,15 @@ class TabrLightningContextFreeze(pl.LightningModule):
             if idx is None
             else ({k: v[idx] for k, v in batch[0].items()}, batch[1][idx])
         )
-    
+
     def apply_model(self, part, batch, batch_idx, training):
         # batch should contain dictionaries with keys
         # "x_num", "x_bin", "x_cat", "y" and "indices"
-        batch_indices = batch["indices"].to(self.device) # batch_idx is the id of the batch itself
+        batch_indices = batch["indices"].to(self.device)  # batch_idx is the id of the batch itself
         # batch_indices contains the ids of the samples in the batch
 
         # batch_indices contains the ids of the samples in the batch
         x, y = self.get_Xy(part, batch_indices)
-
 
         is_train = part == 'train'
         if training and self.frozen_contexts is not None:
@@ -401,7 +424,7 @@ class TabrLightningContextFreeze(pl.LightningModule):
                 ]
         candidate_x, candidate_y = self.get_Xy(
             'train',
-            candidate_indices, #TODO check
+            candidate_indices,  # TODO check
         )
 
         fwd_out = self.model(
@@ -423,8 +446,8 @@ class TabrLightningContextFreeze(pl.LightningModule):
             print(f'Freezing contexts after {self.current_epoch} epochs', flush=True)
             # Get context_ids using evaluate?
             _, _, context_idx, _, _ = self.evaluate(self.C["eval_batch_size"],
-                                                    progress_bar=True #TODO
-            )
+                                                    progress_bar=True  # TODO
+                                                    )
             self.frozen_contexts = torch.tensor(context_idx['train'], device=self.device)
 
         # # batch should contain dictionaries with keys
@@ -447,7 +470,7 @@ class TabrLightningContextFreeze(pl.LightningModule):
         #     candidate_indices = self.train_indices[~torch.isin(self.train_indices, batch_indices)]
 
         # candidate_x, candidate_y = self.get_Xy('train', candidate_indices) #TODO check
-        
+
         # fwd_out = self.model(
         #     x_=x,
         #     y=y,
@@ -462,12 +485,12 @@ class TabrLightningContextFreeze(pl.LightningModule):
         # fwd_out = fwd_out._replace(y_pred=fwd_out.y_pred.squeeze(-1))
         fwd_out, y = self.apply_model("train", batch, batch_idx, training=True)
         output, _, _ = fwd_out
-        
+
         y = y.float() if self.task_type == "regression" else y.long()
         # binary cross entropy with logits needs float
         loss = self.loss_fn(output, y.float() \
-                            if self.task_type == "binary" \
-                             else y)
+            if self.task_type == "binary" \
+            else y)
         # Log the loss and return it
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
@@ -479,19 +502,19 @@ class TabrLightningContextFreeze(pl.LightningModule):
             self.log('train_accuracy', self.train_accuracy, on_epoch=True, prog_bar=True)
             self.log('train_precision', self.train_precision, on_epoch=True)
             self.log('train_recall', self.train_recall, on_epoch=True)
-            self.log('train_f1_score', self.train_f1_score,on_epoch=True)
+            self.log('train_f1_score', self.train_f1_score, on_epoch=True)
         elif self.task_type == "regression":
             self.train_mse.update(output, y)
             self.train_mae.update(output, y)
             self.log('train_mse', self.train_mse, on_epoch=True)
             self.log('train_mae', self.train_mae, on_epoch=True, prog_bar=True)
         return loss
-    
+
     def validation_step(self, batch, batch_idx):
         if batch_idx == 0:
             print(f'Validation in epoch {self.current_epoch}', flush=True)
-        #print(f'Validation step', flush=True)
-        #TODO: do like test to save gpu memory?
+        # print(f'Validation step', flush=True)
+        # TODO: do like test to save gpu memory?
         # batch_indices = batch["indices"]  # batch_idx is the idxs of the batch samples
         # x, y = self.get_Xy("val", batch_indices)
 
@@ -522,8 +545,8 @@ class TabrLightningContextFreeze(pl.LightningModule):
         y = y.float() if self.task_type == "regression" else y.long()
         # binary cross entropy with logits needs float
         loss = self.loss_fn(output, y.float() \
-                            if self.task_type == "binary" \
-                             else y)
+            if self.task_type == "binary" \
+            else y)
         self.log('val_loss', loss, on_epoch=True, prog_bar=True)  # Log validation loss
 
         if self.task_type in ["binary", "multiclass"]:
@@ -544,7 +567,7 @@ class TabrLightningContextFreeze(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         # here batch shouldn't contain indices nor y
-        #TODO: use apply_model
+        # TODO: use apply_model
         x = {
             key[2:]: batch[key]
             for key in batch
@@ -566,7 +589,7 @@ class TabrLightningContextFreeze(pl.LightningModule):
             is_train=False
         )
         fwd_out = fwd_out._replace(y_pred=fwd_out.y_pred.squeeze(-1))
-        #fwd_out, y = self.apply_model("test", batch, batch_idx, training=False)
+        # fwd_out, y = self.apply_model("test", batch, batch_idx, training=False)
         output, _, _ = fwd_out
 
         # in binary case, we need to convert it to 2-class logits
@@ -621,16 +644,16 @@ class TabrLightningContextFreeze(pl.LightningModule):
                 #         )
                 #     )
                 fwd_out = lib.cat(
-                        [
-                            self.apply_model("train", batch, batch_idx, training=False)[0]
-                            for batch_idx, batch in enumerate(
-                                DataLoader(
-                                    self.dataset, batch_size=eval_batch_size, shuffle=False
-                                )
-                            )
-                        ]
+                    [
+                        self.apply_model("train", batch, batch_idx, training=False)[0]
+                        for batch_idx, batch in enumerate(
+                        DataLoader(
+                            self.dataset, batch_size=eval_batch_size, shuffle=False
+                        )
+                    )
+                    ]
                 )
-                #fwd_out = lib.cat(fwd_out)
+                # fwd_out = lib.cat(fwd_out)
                 predictions["train"], context_idx["train"], context_probs["train"] = (
                     e.cpu().numpy() for e in fwd_out
                 )
@@ -650,18 +673,16 @@ class TabrLightningContextFreeze(pl.LightningModule):
     def configure_optimizers(self):
         optimizer_config = self.C["optimizer"].copy()
         optimizer = lib.make_optimizer(
-                self.model, **optimizer_config, zero_weight_decay_condition=zero_wd_condition
-            )
+            self.model, **optimizer_config, zero_weight_decay_condition=zero_wd_condition
+        )
         return optimizer
-        
+
     def train_dataloader(self):
-        return DataLoader(self.dataset, batch_size=self.C["batch_size"], shuffle=True, 
+        return DataLoader(self.dataset, batch_size=self.C["batch_size"], shuffle=True,
                           num_workers=max(1, min(self.C["n_threads"] - 1, 8)),
                           persistent_workers=True)
+
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.C["eval_batch_size"], shuffle=False, 
+        return DataLoader(self.val_dataset, batch_size=self.C["eval_batch_size"], shuffle=False,
                           num_workers=max(1, min(self.C["n_threads"] - 1, 8)),
-                            persistent_workers=True)
-    
-
-
+                          persistent_workers=True)

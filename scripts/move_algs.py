@@ -1,4 +1,5 @@
 import shutil
+from typing import Optional
 
 import fire
 
@@ -6,11 +7,19 @@ from pytabkit.bench.data.paths import Paths
 from pytabkit.models import utils
 
 
-def move_algs(base_path_1: str, base_path_2: str, *alg_names):
+def move_algs(base_path_1: str, base_path_2: str, *alg_names, startswith: Optional[str] = None, dry_run: bool = False):
     paths_1 = Paths(base_folder=base_path_1)
     paths_2 = Paths(base_folder=base_path_2)
+
+    if startswith is not None:
+        all_alg_names = [path.name for path in paths_1.algs().iterdir()]
+        alg_names = list(alg_names) + [alg_name for alg_name in all_alg_names if alg_name.startswith(startswith)]
+
     for alg_name in alg_names:
         print(f'Moving alg {alg_name}')
+
+        if dry_run:
+            continue
 
         assert isinstance(alg_name, str)
         assert utils.existsDir(base_path_1)
@@ -32,7 +41,8 @@ def move_specific_algs(base_path_1: str, base_path_2: str):
     alg_names = []
     for path in paths_1.algs().iterdir():
         name = path.name
-        if name.startswith('MLP-cumul-abl-') and not name.startswith('MLP-cumul-abl-new'):
+        # if name.startswith('MLP-cumul-abl-') and not name.startswith('MLP-cumul-abl-new'):
+        if name.startswith('MLP-RTDL-HPO') and not name.startswith('MLP-cumul-abl-new'):
             alg_names.append(name)
     # print(alg_names)
     move_algs(base_path_1, base_path_2, *alg_names)

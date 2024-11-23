@@ -6,6 +6,7 @@ import torch
 
 from pytabkit.bench.data.paths import Paths
 from pytabkit.models import utils
+from pytabkit.models.alg_interfaces.autogluon_model_interfaces import AutoGluonModelAlgInterface
 from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface, CatBoostHyperoptAlgInterface, \
     CatBoostSklearnSubSplitInterface, RandomParamsCatBoostAlgInterface
 from pytabkit.models.alg_interfaces.ensemble_interfaces import PrecomputedPredictionsAlgInterface, \
@@ -16,14 +17,17 @@ from pytabkit.bench.alg_wrappers.general import AlgWrapper
 from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
-    KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface
+    KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
 from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface, ResnetSubSplitInterface, \
-    RandomParamsResnetAlgInterface, RandomParamsRTDLMLPAlgInterface
+    FTTransformerSubSplitInterface, RandomParamsResnetAlgInterface, RandomParamsRTDLMLPAlgInterface, \
+    RandomParamsFTTransformerAlgInterface
 from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
-from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitLearner
+from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
+from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface, \
+    RandomParamsTabRAlgInterface
 from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomParamsNNAlgInterface, NNHyperoptAlgInterface
 from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface, XGBHyperoptAlgInterface, \
     XGBSklearnSubSplitInterface, RandomParamsXGBAlgInterface
@@ -89,6 +93,12 @@ class AlgInterfaceWrapper(AlgWrapper):
                 alg_interface = PostHocCalibrationAlgInterface(alg_interface, **self.config)
             except ImportError:
                 raise ValueError('Calibration methods are not implemented')
+        if 'quantile_calib_alpha' in self.config:
+            try:
+                from pytabkit.models.alg_interfaces.custom_interfaces import QuantileCalibrationAlgInterface
+                alg_interface = QuantileCalibrationAlgInterface(alg_interface, **self.config)
+            except ImportError:
+                raise ValueError('Quantile Calibration methods are not implemented')
 
         return alg_interface
 
@@ -101,6 +111,9 @@ class AlgInterfaceWrapper(AlgWrapper):
         n_splits = len(task_package.split_infos)
 
         interface_resources = assigned_resources.get_interface_resources()
+
+        old_torch_n_threads = torch.get_num_threads()
+        torch.set_num_threads(interface_resources.n_threads)
 
         ds = task.ds
         name = 'alg ' + task_package.alg_name + ' on task ' + str(task_desc)
@@ -167,15 +180,22 @@ class AlgInterfaceWrapper(AlgWrapper):
             for rm, refit_results in zip(rms, refit_results_list):
                 rm.add_results(is_cv=False, results_dict=refit_results.get_dict())
 
+        torch.set_num_threads(old_torch_n_threads)
+
         return rms
 
     def get_required_resources(self, task_package: TaskPackage) -> RequiredResources:
         ds = DictDataset(tensors=None, tensor_infos=task_package.task_info.tensor_infos,
                          device='cpu', n_samples=task_package.task_info.n_samples)
         alg_interface = self.create_alg_interface(task_package)
+        n_train, n_val = task_package.split_infos[0].get_train_and_val_size(n_samples=task_package.task_info.n_samples,
+                                                                            n_splits=len(task_package.split_infos),
+                                                                            is_cv=True)
+        # n_train = split_info.get_sub_splits(trainval_ds, n_splits=n_cv, is_cv=True)
         return alg_interface.get_required_resources(ds=ds, n_cv=task_package.n_cv, n_refit=task_package.n_refit,
                                                     n_splits=len(task_package.split_infos),
-                                                    split_seeds=[si.alg_seed for si in task_package.split_infos])
+                                                    split_seeds=[si.alg_seed for si in task_package.split_infos],
+                                                    n_train=n_train)
 
 
 class LoadResultsWrapper(AlgInterfaceWrapper):
@@ -299,7 +319,8 @@ class NNInterfaceWrapper(AlgInterfaceWrapper):
         alg_interface = NNAlgInterface(**self.config)
         while max_n_vectorized > 1:
             required_resources = alg_interface.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=max_n_vectorized,
-                                                                      split_seeds=[0] * max_n_vectorized)
+                                                                      split_seeds=[0] * max_n_vectorized,
+                                                                      n_train=task_info.n_samples)
             if required_resources.gpu_ram_gb <= max_ram_gb and required_resources.cpu_ram_gb <= max_ram_gb:
                 return max_n_vectorized
             max_n_vectorized -= 1
@@ -319,7 +340,8 @@ class NNHyperoptInterfaceWrapper(AlgInterfaceWrapper):
         alg_interface = NNHyperoptAlgInterface(**self.config)
         while max_n_vectorized > 1:
             required_resources = alg_interface.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=max_n_vectorized,
-                                                                      split_seeds=[0] * max_n_vectorized)
+                                                                      split_seeds=[0] * max_n_vectorized,
+                                                                      n_train=task_info.n_samples)
             if required_resources.gpu_ram_gb <= max_ram_gb and required_resources.cpu_ram_gb <= max_ram_gb:
                 return max_n_vectorized
             max_n_vectorized -= 1
@@ -434,9 +456,19 @@ class ResNetRTDLInterfaceWrapper(SubSplitInterfaceWrapper):
         return ResnetSubSplitInterface(**self.config)
 
 
+class FTTransformerInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return FTTransformerSubSplitInterface(**self.config)
+
+
 class TabRInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
-        return TabRSubSplitLearner(**self.config)
+        return TabRSubSplitInterface(**self.config)
+
+
+class TabMInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return TabMSubSplitInterface(**self.config)
 
 
 class RandomParamsResnetInterfaceWrapper(AlgInterfaceWrapper):
@@ -449,3 +481,27 @@ class RandomParamsRTDLMLPInterfaceWrapper(AlgInterfaceWrapper):
     def __init__(self, model_idx: int, **config):
         # model_idx should be the random search iteration (i.e. start from zero)
         super().__init__(RandomParamsRTDLMLPAlgInterface, model_idx=model_idx, **config)
+
+
+class RandomParamsFTTransformerInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(RandomParamsFTTransformerAlgInterface, model_idx=model_idx, **config)
+
+
+class AutoGluonModelInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(AutoGluonModelAlgInterface, **config)
+
+
+class RandomParamsTabRInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_single_alg_interface(self, n_cv: int, task_type: TaskType) \
+            -> AlgInterface:
+        return RandomParamsTabRAlgInterface(**self.config)
+
+
+class RandomParamsRFInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(RandomParamsRFAlgInterface, model_idx=model_idx, **config)

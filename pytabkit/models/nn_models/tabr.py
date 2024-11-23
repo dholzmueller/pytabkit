@@ -2,6 +2,9 @@ import os
 import inspect
 import warnings
 import math
+from functools import partial
+
+import numpy as np
 import lightning.pytorch as pl
 import torch
 from torch import Tensor
@@ -14,32 +17,105 @@ from torchmetrics import Accuracy, Precision, Recall, F1Score, MeanSquaredError,
 from typing import Any, Optional, Union, Literal, Callable
 
 
-#taken from https://github.com/yandex-research/tabular-dl-tabr/tree/main/bin
+class NTPLinearLayer(nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True, bias_factor: float = 0.1, linear_init_type: str = 'default'):
+        super().__init__()
+        self.use_bias = bias
+        if linear_init_type == 'default':
+            self.weight = nn.Parameter(-1+2*torch.rand(in_features, out_features))
+            if self.use_bias:
+                self.bias = nn.Parameter((-1+2*torch.rand(1, out_features)) / np.sqrt(in_features))
+        elif linear_init_type == 'normal':
+            self.weight = nn.Parameter(torch.randn(in_features, out_features))
+            if self.use_bias:
+                self.bias = nn.Parameter(torch.randn(1, out_features))
+        else:
+            raise ValueError(f'Unknown linear_init_type "{linear_init_type}"')
+        self.bias_factor = bias_factor
+        self.weight_factor = 1./np.sqrt(in_features)
+
+    def forward(self, x):
+        x = self.weight_factor * x @ self.weight
+        if self.use_bias:
+            x = x + self.bias_factor * self.bias
+        return x
+
+
+class ParametricMishActivationLayer(nn.Module):
+    def __init__(self, n_features: int, lr_factor: float = 1.0):
+        super().__init__()
+        self.weight = nn.Parameter((1. / lr_factor) * torch.ones(n_features))
+        self.lr_factor = lr_factor
+
+    def f(self, x):
+        return x.mul(torch.tanh(F.softplus(x)))
+
+    def forward(self, x):
+        # print(f'{self.weight.mean().item()=:g}')
+        return x + self.lr_factor * (self.f(x) - x) * self.weight
+
+
+class ParametricReluActivationLayer(nn.Module):
+    def __init__(self, n_features: int, lr_factor: float = 1.0):
+        super().__init__()
+        self.weight = nn.Parameter((1. / lr_factor) * torch.ones(n_features))
+        self.lr_factor = lr_factor
+
+    def f(self, x):
+        return torch.relu(x)
+
+    def forward(self, x):
+        # print(f'{self.weight.mean().item()=:g}')
+        return x + self.lr_factor * (self.f(x) - x) * self.weight
+
+
+class ScalingLayer(nn.Module):
+    def __init__(self, n_features: int, lr_factor: float = 6.0):
+        super().__init__()
+        self.weight = nn.Parameter((1. / lr_factor) * torch.ones(n_features))
+        self.lr_factor = lr_factor
+
+    def forward(self, x):
+        return self.lr_factor * x * self.weight[None, :]
+
+
+def bce_with_logits_and_label_smoothing(inputs, *args, ls_eps: float, **kwargs):
+    return (1 - 0.5 * ls_eps) * F.binary_cross_entropy_with_logits(inputs, *args, **kwargs) \
+        + 0.5 * ls_eps * F.binary_cross_entropy_with_logits(-inputs, *args, **kwargs)
+
+
+# adapted from https://github.com/yandex-research/tabular-dl-tabr/tree/main/bin
 class TabrModel(nn.Module):
     def __init__(
-        self,
-        *,
-        #
-        n_num_features: int,
-        n_bin_features: int,
-        cat_cardinalities: list[int],
-        n_classes: Optional[int],
-        #
-        num_embeddings: Optional[dict],  # lib.deep.ModuleSpec
-        d_main: int,
-        d_multiplier: float,
-        encoder_n_blocks: int,
-        predictor_n_blocks: int,
-        mixer_normalization: Union[bool, Literal['auto']],
-        context_dropout: float,
-        dropout0: float,
-        dropout1: Union[float, Literal['dropout0']],
-        normalization: str,
-        activation: str,
-        #
-        # The following options should be used only when truly needed.
-        memory_efficient: bool = False,
-        candidate_encoding_batch_size: Optional[int] = None,
+            self,
+            *,
+            #
+            n_num_features: int,
+            n_bin_features: int,
+            cat_cardinalities: list[int],
+            n_classes: Optional[int],
+            #
+            num_embeddings: Optional[dict],  # lib.deep.ModuleSpec
+            d_main: int,
+            d_multiplier: float,
+            encoder_n_blocks: int,
+            predictor_n_blocks: int,
+            mixer_normalization: Union[bool, Literal['auto']],
+            context_dropout: float,
+            dropout0: float,
+            dropout1: Union[float, Literal['dropout0']],
+            normalization: str,
+            activation: str,
+            #
+            # The following options should be used only when truly needed.
+            memory_efficient: bool = False,
+            candidate_encoding_batch_size: Optional[int] = None,
+            # extra options not in the original tabr
+            add_scaling_layer: bool = False,
+            scale_lr_factor: float = 6.0,
+            use_ntp_linear: bool = False,
+            linear_init_type: str = 'default',  # only relevant if use_ntp_linear=True
+            use_ntp_encoder: bool = False,
     ) -> None:
         # import locally so importing this file doesn't cause problems if faiss is not installed
         # import in constructor as well to make model fail earlier if not installed
@@ -64,28 +140,44 @@ class TabrModel(nn.Module):
             else lib.make_module(num_embeddings, n_features=n_num_features)
         )
 
+        print(f'{add_scaling_layer=}')
+        print(f'{activation=}')
+        print(f'{scale_lr_factor=}')
+
         # >>> E
         d_in = (
-            n_num_features
-            * (1 if num_embeddings is None else num_embeddings['d_embedding'])
-            + n_bin_features
-            + sum(cat_cardinalities)
+                n_num_features
+                * (1 if num_embeddings is None else num_embeddings['d_embedding'])
+                + n_bin_features
+                + sum(cat_cardinalities)
         )
         d_block = int(d_main * d_multiplier)
         Normalization = getattr(nn, normalization)
-        Activation = getattr(nn, activation)
+        if activation == 'pmish':
+            Activation = lambda n_features: ParametricMishActivationLayer(n_features=n_features)
+        elif activation == 'prelu':
+            Activation = lambda n_features: ParametricReluActivationLayer(n_features=n_features)
+        else:
+            Activation = lambda n_features: getattr(nn, activation)()
+
+        if use_ntp_linear:
+            print(f'Using NTP linear layer with init {linear_init_type}')
+            Linear = lambda in_features, out_features, bias=True: NTPLinearLayer(in_features, out_features, bias=bias, bias_factor=0.1, linear_init_type=linear_init_type)
+        else:
+            Linear = nn.Linear
 
         def make_block(prenorm: bool) -> nn.Sequential:
             return nn.Sequential(
                 *([Normalization(d_main)] if prenorm else []),
-                nn.Linear(d_main, d_block),
-                Activation(),
+                Linear(d_main, d_block),
+                Activation(d_block),
                 nn.Dropout(dropout0),
-                nn.Linear(d_block, d_main),
+                Linear(d_block, d_main),
                 nn.Dropout(dropout1),
             )
 
-        self.linear = nn.Linear(d_in, d_main)
+        self.scale = ScalingLayer(d_in, lr_factor=scale_lr_factor) if add_scaling_layer else nn.Identity()
+        self.linear = Linear(d_in, d_main)
         self.blocks0 = nn.ModuleList(
             [make_block(i > 0) for i in range(encoder_n_blocks)]
         )
@@ -93,18 +185,18 @@ class TabrModel(nn.Module):
         # >>> R
         self.normalization = Normalization(d_main) if mixer_normalization else None
         self.label_encoder = (
-            nn.Linear(1, d_main)
+            Linear(1, d_main) if use_ntp_encoder else nn.Linear(1, d_main)
             if n_classes is None
             else nn.Sequential(
                 nn.Embedding(n_classes, d_main), lib.Lambda(lambda x: x.squeeze(-2))
             )
         )
-        self.K = nn.Linear(d_main, d_main)
+        self.K = Linear(d_main, d_main)
         self.T = nn.Sequential(
-            nn.Linear(d_main, d_block),
-            Activation(),
+            Linear(d_main, d_block),
+            Activation(d_block),
             nn.Dropout(dropout0),
-            nn.Linear(d_block, d_main, bias=False),
+            Linear(d_block, d_main, bias=False),
         )
         self.dropout = nn.Dropout(context_dropout)
 
@@ -114,8 +206,8 @@ class TabrModel(nn.Module):
         )
         self.head = nn.Sequential(
             Normalization(d_main),
-            Activation(),
-            nn.Linear(d_main, lib.get_d_out(n_classes)),
+            Activation(d_main),
+            Linear(d_main, lib.get_d_out(n_classes)),
         )
 
         # >>>
@@ -125,7 +217,7 @@ class TabrModel(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        if isinstance(self.label_encoder, nn.Linear):
+        if isinstance(self.label_encoder, nn.Linear) or isinstance(self.label_encoder, NTPLinearLayer):
             bound = 1 / math.sqrt(2.0)
             nn.init.uniform_(self.label_encoder.weight, -bound, bound)  # type: ignore[code]  # noqa: E501
             nn.init.uniform_(self.label_encoder.bias, -bound, bound)  # type: ignore[code]  # noqa: E501
@@ -141,7 +233,8 @@ class TabrModel(nn.Module):
 
         x = []
         if x_num is None:
-            assert self.num_embeddings is None
+            # assert self.num_embeddings is None
+            pass  # changed to make it easier to use with all-categorical datasets
         else:
             x.append(
                 x_num
@@ -158,6 +251,7 @@ class TabrModel(nn.Module):
         assert x
         x = torch.cat(x, dim=1).float()
 
+        x = self.scale(x)
         x = self.linear(x)
         for block in self.blocks0:
             x = x + block(x)
@@ -165,14 +259,14 @@ class TabrModel(nn.Module):
         return x, k
 
     def forward(
-        self,
-        *,
-        x_: dict[str, Tensor],
-        y: Optional[Tensor],
-        candidate_x_: dict[str, Tensor],
-        candidate_y: Tensor,
-        context_size: int,
-        is_train: bool,
+            self,
+            *,
+            x_: dict[str, Tensor],
+            y: Optional[Tensor],
+            candidate_x_: dict[str, Tensor],
+            candidate_y: Tensor,
+            context_size: int,
+            is_train: bool,
     ) -> Tensor:
         # print('forward()')
         # import locally so importing this file doesn't cause problems if faiss is not installed
@@ -181,7 +275,7 @@ class TabrModel(nn.Module):
 
         # >>>
         with torch.set_grad_enabled(
-            torch.is_grad_enabled() and not self.memory_efficient
+                torch.is_grad_enabled() and not self.memory_efficient
         ):
             # NOTE: during evaluation, candidate keys can be computed just once, which
             # looks like an easy opportunity for optimization. However:
@@ -206,8 +300,8 @@ class TabrModel(nn.Module):
                     [
                         self._encode(x)[1]
                         for x in lib.iter_batches(
-                            candidate_x_, self.candidate_encoding_batch_size
-                        )
+                        candidate_x_, self.candidate_encoding_batch_size
+                    )
                     ]
                 )
             )
@@ -259,7 +353,7 @@ class TabrModel(nn.Module):
                 # (because of how candidate_k is constructed).
                 distances[
                     context_idx == torch.arange(batch_size, device=device)[:, None]
-                ] = torch.inf
+                    ] = torch.inf
                 # Not the most elegant solution to remove the argmax, but anyway.
                 context_idx = context_idx.gather(-1, distances.argsort()[:, :-1])
 
@@ -283,9 +377,9 @@ class TabrModel(nn.Module):
         # and use the same code to compute `similarities` during both
         # training and evaluation.
         similarities = (
-            -k.square().sum(-1, keepdim=True)
-            + (2 * (k[..., None, :] @ context_k.transpose(-1, -2))).squeeze(-2)
-            - context_k.square().sum(-1)
+                -k.square().sum(-1, keepdim=True)
+                + (2 * (k[..., None, :] @ context_k.transpose(-1, -2))).squeeze(-2)
+                - context_k.square().sum(-1)
         )
         probs = F.softmax(similarities, dim=-1)
         probs = self.dropout(probs)
@@ -301,18 +395,19 @@ class TabrModel(nn.Module):
         x = self.head(x)
         return x
 
+
 def zero_wd_condition(
-    module_name: str,
-    module: nn.Module,
-    parameter_name: str,
-    parameter: nn.parameter.Parameter,
+        module_name: str,
+        module: nn.Module,
+        parameter_name: str,
+        parameter: nn.parameter.Parameter,
 ):
     return (
-        'label_encoder' in module_name
-        or 'label_encoder' in parameter_name
-        or lib.default_zero_weight_decay_condition(
-            module_name, module, parameter_name, parameter
-        )
+            'label_encoder' in module_name
+            or 'label_encoder' in parameter_name
+            or lib.default_zero_weight_decay_condition(
+        module_name, module, parameter_name, parameter
+    )
     )
 
 
@@ -322,7 +417,7 @@ class TabrLightning(pl.LightningModule):
         super().__init__()
         self.model = model
         self.dataset = train_dataset
-        self.val_dataset = val_dataset 
+        self.val_dataset = val_dataset
         self.C = C
         if n_classes == 2:
             self.task_type = "binary"
@@ -330,14 +425,17 @@ class TabrLightning(pl.LightningModule):
             self.task_type = "multiclass"
         else:
             self.task_type = "regression"
-            
+
+        ls_eps = self.C.get('ls_eps', 0.0)
+        print(f'{ls_eps=}')
+
         self.loss_fn = (
-            F.binary_cross_entropy_with_logits
+            partial(bce_with_logits_and_label_smoothing, ls_eps=ls_eps)
             if self.task_type == "binary"
-            else F.cross_entropy
+            else partial(F.cross_entropy, label_smoothing=ls_eps)
             if self.task_type == "multiclass"
             else F.mse_loss
-    )
+        )
         # Define metrics for binary and multiclass classification
         if self.task_type in ["binary", "multiclass"]:
             self.train_accuracy = Accuracy(task=self.task_type, num_classes=n_classes)
@@ -360,7 +458,7 @@ class TabrLightning(pl.LightningModule):
         self.train_size = len(self.dataset)
         self.train_indices = torch.arange(self.train_size, device=self.device)
         # move the dataset to the device
-        # I think that's what tabr does, but 
+        # I think that's what tabr does, but
         # we could also keep it on the cpu
         for key in self.dataset.data:
             if self.dataset.data[key] is not None:
@@ -394,7 +492,7 @@ class TabrLightning(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         # batch should contain dictionaries with keys
         # "x_num", "x_bin", "x_cat", "y" and "indices"
-        batch_indices = batch["indices"] # batch_idx is the id of the batch itself
+        batch_indices = batch["indices"]  # batch_idx is the id of the batch itself
         # batch_indices contains the ids of the samples in the batch
 
         x, y = self.get_Xy('train', batch_indices)
@@ -404,7 +502,7 @@ class TabrLightning(pl.LightningModule):
         candidate_indices = self.train_indices[~torch.isin(self.train_indices, batch_indices)]
 
         candidate_x, candidate_y = self.get_Xy('train', candidate_indices)
-        
+
         # Call the model's forward method
         output = self.model(
             x_=x,
@@ -417,8 +515,8 @@ class TabrLightning(pl.LightningModule):
         y = y.float() if self.task_type == "regression" else y.long()
         # binary cross entropy with logits needs float
         loss = self.loss_fn(output, y.float() \
-                            if self.task_type == "binary" \
-                             else y)
+            if self.task_type == "binary" \
+            else y)
         # Log the loss and return it
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
 
@@ -430,19 +528,19 @@ class TabrLightning(pl.LightningModule):
             self.log('train_accuracy', self.train_accuracy, on_epoch=True, prog_bar=True)
             self.log('train_precision', self.train_precision, on_epoch=True)
             self.log('train_recall', self.train_recall, on_epoch=True)
-            self.log('train_f1_score', self.train_f1_score,on_epoch=True)
+            self.log('train_f1_score', self.train_f1_score, on_epoch=True)
         elif self.task_type == "regression":
             self.train_mse.update(output, y)
             self.train_mae.update(output, y)
             self.log('train_mse', self.train_mse, on_epoch=True)
             self.log('train_mae', self.train_mae, on_epoch=True, prog_bar=True)
         return loss
-    
+
     def validation_step(self, batch, batch_idx):
         if batch_idx == 0:
             print(f'Validation in epoch {self.current_epoch}', flush=True)
-        #print(f'Validation step', flush=True)
-        #TODO: do like test to save gpu memory?
+        # print(f'Validation step', flush=True)
+        # TODO: do like test to save gpu memory?
         batch_indices = batch["indices"]  # batch_idx is the idxs of the batch samples
         x, y = self.get_Xy("val", batch_indices)
 
@@ -460,8 +558,8 @@ class TabrLightning(pl.LightningModule):
         y = y.float() if self.task_type == "regression" else y.long()
         # binary cross entropy with logits needs float
         loss = self.loss_fn(output, y.float() \
-                            if self.task_type == "binary" \
-                             else y)
+            if self.task_type == "binary" \
+            else y)
         self.log('val_loss', loss, on_epoch=True, prog_bar=True)  # Log validation loss
 
         if self.task_type in ["binary", "multiclass"]:
@@ -512,18 +610,16 @@ class TabrLightning(pl.LightningModule):
     def configure_optimizers(self):
         optimizer_config = self.C["optimizer"].copy()
         optimizer = lib.make_optimizer(
-                self.model, **optimizer_config, zero_weight_decay_condition=zero_wd_condition
-            )
+            self.model, **optimizer_config, zero_weight_decay_condition=zero_wd_condition
+        )
         return optimizer
-        
+
     def train_dataloader(self):
-        return DataLoader(self.dataset, batch_size=self.C["batch_size"], shuffle=True, 
-                          num_workers=max(1, min(self.C["n_threads"] - 1, 8)),
-                          persistent_workers=True)
+        return DataLoader(self.dataset, batch_size=self.C["batch_size"], shuffle=True,
+                          num_workers=0, #max(1, min(self.C["n_threads"] - 1, 8)),
+                          persistent_workers=False)
+
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.C["eval_batch_size"], shuffle=False, 
-                          num_workers=max(1, min(self.C["n_threads"] - 1, 8)),
-                            persistent_workers=True)
-    
-
-
+        return DataLoader(self.val_dataset, batch_size=self.C["eval_batch_size"], shuffle=False,
+                          num_workers=0, #max(1, min(self.C["n_threads"] - 1, 8)),
+                          persistent_workers=False)

@@ -75,7 +75,7 @@ class NNCreator:
         # else:
         #     raise ValueError(f'{train_metric_name=} is currently not supported')
 
-        val_criterion = self.config.get('val_metric_name', Metrics.default_metric_name(task_type))
+        val_criterion = self.config.get('val_metric_name', Metrics.default_val_metric_name(task_type))
         return train_criterion, val_criterion
 
     def create_model(self, ds: DictDataset, idxs_list: List[SplitIdxs]):

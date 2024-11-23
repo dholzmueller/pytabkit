@@ -9,9 +9,10 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, Grad
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
+from pytabkit.models.alg_interfaces.alg_interfaces import RandomParamsAlgInterface
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models.alg_interfaces.base import RequiredResources
-from pytabkit.models.alg_interfaces.sub_split_interfaces import SklearnSubSplitInterface
+from pytabkit.models.alg_interfaces.sub_split_interfaces import SklearnSubSplitInterface, SingleSplitWrapperAlgInterface
 from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset
 
@@ -21,6 +22,12 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
         params_config = [('n_estimators', None),
                          ('criterion', None),
                          ('max_depth', None),
+                         ('min_samples_split', None),
+                         ('max_features', None),
+                         ('min_samples_leaf', None),
+                         ('bootstrap', None),
+                         ('min_impurity_decrease', None),
+                         ('min_weight_fraction_leaf', None),
                          ('n_jobs', ['n_jobs', 'n_threads'], n_threads),
                          ('verbose', ['verbose', 'verbosity'])]
 
@@ -28,17 +35,17 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
         if self.n_classes > 0:
             return RandomForestClassifier(random_state=seed, **params)
         else:
-            train_metric_name = self.config.get('train_metric_name', 'mse')
+            train_metric_name = self.config.get('train_metric_name', None)
             if train_metric_name == 'mse':
                 params['criterion'] = 'squared_error'  # is the default anyway
             elif train_metric_name == 'mae':
                 params['criterion'] = 'absolute_error'
-            else:
+            elif train_metric_name is not None:
                 raise ValueError(f'Train metric "{train_metric_name}" is currently not supported!')
             return RandomForestRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -48,6 +55,28 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params)
         return rc.get_required_resources(ds)
+
+
+class RandomParamsRFAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        # adapted from Grinsztajn et al. (2022)
+        space = {
+            'n_estimators': 250,
+            'max_depth': rng.choice([None, 2, 3, 4], p=[0.7, 0.1, 0.1, 0.1]),
+            'criterion': rng.choice(['gini', 'entropy']) if is_classification
+                            else rng.choice(['squared_error', 'absolute_error']),
+            'max_features': rng.choice(['sqrt', 'sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+            'min_samples_split': rng.choice([2, 3], p=[0.95, 0.05]),
+            'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(50.5)))),
+            'bootstrap': rng.choice([True, False]),
+            'min_impurity_decrease': rng.choice([0.0, 0.01, 0.02, 0.05], p=[0.85, 0.05, 0.05, 0.05]),
+            'tfms': ['one_hot'],
+        }
+        return space
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([RFSubSplitInterface(**config) for i in range(n_tv_splits)])
 
 
 class GBTSubSplitInterface(SklearnSubSplitInterface):
@@ -76,7 +105,7 @@ class GBTSubSplitInterface(SklearnSubSplitInterface):
             return GradientBoostingRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -99,7 +128,7 @@ class SklearnMLPSubSplitInterface(SklearnSubSplitInterface):
             return TransformedTargetRegressor(regressor=reg, transformer=StandardScaler())
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -124,7 +153,7 @@ class KANSubSplitInterface(SklearnSubSplitInterface):
             return TransformedTargetRegressor(regressor=reg, transformer=StandardScaler())
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1
@@ -253,7 +282,7 @@ class GrandeSubSplitInterface(SklearnSubSplitInterface):
         return model
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]) -> RequiredResources:
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
         assert n_cv == 1
         assert n_refit == 0
         assert n_splits == 1

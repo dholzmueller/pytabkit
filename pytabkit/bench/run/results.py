@@ -10,6 +10,7 @@ class ResultManager:
     """
     Stores experimental results and can save and load them.
     """
+
     def __init__(self):
         # indexing convention:
         # self.metrics_dict['cv'/'refit']['train'/'val'/'test'][str(n_models)][str(start_idx)][metric_name] = float
@@ -94,10 +95,5 @@ def save_summaries(paths: Paths, task_infos: List[TaskInfo], alg_name: str, n_cv
             # print(f'{results_dict=}')
             # results_dict[split_type]['cv'/'refit']['train'/'val'/'test'][str(n_models)][str(start_idx)][metric_name][split_idx]
             utils.serialize(dest_path / 'metrics.msgpack.gz', results_dict, use_msgpack=True, compressed=True)
-
-
-
-
-
 
 

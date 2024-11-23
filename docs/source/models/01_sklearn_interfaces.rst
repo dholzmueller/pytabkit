@@ -55,11 +55,17 @@ We offer interfaces (D and HPO variants) for
 
 - MLP (from the RTDL code)
 - ResNet (from the RTDL code)
-- TabR-S-D (requires installing faiss)
+- FTT (FT-Transformer from the RTDL code)
+- MLP-PLR (from the RTDL code)
+- TabR (requires installing faiss)
+- TabM
 
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.MLP_RTDL_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.Resnet_RTDL_D_Classifier.__init__
+.. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.FTT_D_Classifier.__init__
+.. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.MLP_PLR_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabR_S_D_Classifier.__init__
+.. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabM_D_Classifier.__init__
 
 Other methods
 -------------
@@ -92,7 +98,8 @@ With standard pickling,
 a model trained on a GPU will be restored to use the same GPU,
 and fail to load if the GPU is not present.
 
-The following code allows to load GPU-trained models to the CPU, but fails to run predict().
+The following code allows to load GPU-trained models to the CPU,
+but fails to run predict() due to pytorch-lightning device issues.
 
 .. code-block:: language
     import torch

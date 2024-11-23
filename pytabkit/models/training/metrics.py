@@ -493,7 +493,9 @@ class Metrics:
         elif metric_name.startswith('pinball('):
             # expected format: pinball(number), e.g. pinball(0.95)
             quantile = float(metric_name[len('pinball('):-1])
-            return pinball_loss(y_pred, y, quantile)
+            result = pinball_loss(y_pred, y, quantile)
+            # print(f'pinball loss: {result:g}')
+            return result
         elif metric_name.startswith('n_pinball('):
             # expected format: n_pinball(number), e.g. n_pinball(0.95)
             # compute loss divided by loss of the best constant predictor
@@ -502,6 +504,13 @@ class Metrics:
             best_constant_y_pred = torch_np_quantile(y, quantile, dim=-2, keepdim=True).expand(*y_pred.shape)
             best_constant_loss = pinball_loss(best_constant_y_pred, y, quantile)
             return raw_loss / (best_constant_loss + 1e-30)
+        elif metric_name.startswith('c_pinball('):
+            # expected format: n_pinball(number), e.g. n_pinball(0.95)
+            # compute pinball loss after post-hoc calibration
+            quantile = float(metric_name[len('c_pinball('):-1])
+            err_quantile = torch_np_quantile(y - y_pred, quantile, dim=-2, keepdim=True)
+            raw_loss = pinball_loss(y_pred + err_quantile, y, quantile)
+            return raw_loss
         else:
             raise ValueError(f'Unknown metric {metric_name}')
 
@@ -578,15 +587,25 @@ class Metrics:
             # multi-class (or multi-label classification)
             return Metrics(default_class_metrics, val_metric_name, TaskType.CLASSIFICATION)
         else:  # regression
-            return Metrics(['rmse', 'mae', 'max_error', 'nrmse', 'nmae', 'n_max_error'],
+            return Metrics(['rmse', 'mae', 'max_error', 'nrmse', 'nmae', 'n_max_error',
+                            'pinball(0.95)', 'n_pinball(0.95)'],
                            val_metric_name, TaskType.REGRESSION)
 
     @staticmethod
-    def default_metric_name(task_type):
+    def default_val_metric_name(task_type):
         if task_type == TaskType.CLASSIFICATION:
             return 'class_error'
         elif task_type == TaskType.REGRESSION:
             return 'rmse'
+        else:
+            raise ValueError(f'Unknown task type {task_type}')
+
+    @staticmethod
+    def default_eval_metric_name(task_type):
+        if task_type == TaskType.CLASSIFICATION:
+            return 'class_error'
+        elif task_type == TaskType.REGRESSION:
+            return 'nrmse'
         else:
             raise ValueError(f'Unknown task type {task_type}')
 

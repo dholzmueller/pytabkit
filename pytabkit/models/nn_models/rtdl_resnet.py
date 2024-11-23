@@ -5,12 +5,13 @@ import typing as ty
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as nn_init
 from torch import Tensor
 import skorch
 import numpy as np
 import pandas as pd
 import torch.nn as nn
-from skorch.callbacks import Checkpoint, EarlyStopping, LRScheduler
+from skorch.callbacks import Checkpoint, EarlyStopping, LRScheduler, PrintLog
 from skorch import NeuralNetRegressor, NeuralNetClassifier
 from skorch.dataset import Dataset
 from skorch.callbacks import EpochScoring
@@ -24,6 +25,7 @@ import numpy as np
 import os
 from functools import partial
 from copy import deepcopy
+from .rtdl_num_embeddings import PeriodicEmbeddings
 
 
 # code adapted from https://github.com/yandex-research/rtdl/tree/e5dac7f1bb33078699f5079ce301dc907c5b512a/bin
@@ -60,6 +62,14 @@ def get_nonglu_activation_fn(name: str) -> ty.Callable[[Tensor], Tensor]:
     )
 
 
+def print_but_serializable(*args, **kwargs):
+    # this is a dummy function to prevent an obscure error in pickling skorch objects
+    # containing callbacks with sink=print
+    # The error occurs when ray.init() and FunctionProcess() are both used. Error message:
+    # _pickle.PicklingError: Can't pickle <built-in function print>: it's not the same object as builtins.print
+    print(*args, **kwargs)
+
+
 class RTDL_MLP(nn.Module):
     # baseline MLP
     def __init__(
@@ -75,13 +85,36 @@ class RTDL_MLP(nn.Module):
             categories: ty.Optional[ty.List[int]],
             d_embedding: int,
             regression: bool,
-            categorical_indicator
+            categorical_indicator,
+            num_emb_type: str = 'none',
+            num_emb_dim: int = 24,
+            num_emb_hidden_dim: int = 48,
+            num_emb_sigma: float = 0.01,
+            num_emb_lite: bool = False
     ) -> None:
         super().__init__()
 
         self.regression = regression
         self.categorical_indicator = categorical_indicator  # Added
         self.categories = categories  # Added
+
+        if num_emb_type == 'none':
+            self.num_emb_layer = nn.Identity()
+        elif num_emb_type == 'plr':
+            self.num_emb_layer = nn.Sequential(PeriodicEmbeddings(d_in, num_emb_dim,
+                                                                  n_frequencies=num_emb_hidden_dim,
+                                                                  frequency_init_scale=num_emb_sigma,
+                                                                  lite=num_emb_lite), nn.Flatten())
+            d_in = d_in * num_emb_dim
+        elif num_emb_type == 'pl':
+            self.num_emb_layer = nn.Sequential(PeriodicEmbeddings(d_in, num_emb_dim,
+                                                                  n_frequencies=num_emb_hidden_dim,
+                                                                  frequency_init_scale=num_emb_sigma,
+                                                                  activation=False,
+                                                                  lite=num_emb_lite), nn.Flatten())
+            d_in = d_in * num_emb_dim
+        else:
+            raise ValueError(f'Unknown numerical embedding type "{num_emb_type}"')
 
         if categories is not None and len(categories) > 0:
             d_in += len(categories) * d_embedding
@@ -123,6 +156,9 @@ class RTDL_MLP(nn.Module):
         else:
             x_num = x
             x_cat = None
+
+        # Added: Numerical embeddings
+        x_num = self.num_emb_layer(x_num)
         x = []
         if x_num is not None:
             x.append(x_num)
@@ -253,6 +289,317 @@ class ResNet(nn.Module):
                 z = F.dropout(z, self.residual_dropout, self.training)
             x = x + z
         x = self.last_normalization(x)
+        x = self.last_activation(x)
+        x = self.head(x)
+        if not self.regression:
+            x = x.squeeze(-1)
+        return x
+    
+class Tokenizer(nn.Module):
+    category_offsets: ty.Optional[Tensor]
+
+    def __init__(
+        self,
+        d_numerical: int,
+        categories: ty.Optional[ty.List[int]],
+        d_token: int,
+        bias: bool,
+    ) -> None:
+        #categories = None
+        super().__init__()
+        if categories is None:
+            d_bias = d_numerical
+            self.category_offsets = None
+            self.category_embeddings = None
+        else:
+            d_bias = d_numerical + len(categories)
+            category_offsets = torch.tensor([0] + categories[:-1]).cumsum(0)
+            self.register_buffer('category_offsets', category_offsets)
+            self.category_embeddings = nn.Embedding(sum(categories), d_token)
+            nn_init.kaiming_uniform_(self.category_embeddings.weight, a=math.sqrt(5))
+            print(f'{self.category_embeddings.weight.shape=}')
+            # set the embedding of the last category of each feature to zero
+            # it represents the "missing" category, i.e. the categories that is not present
+            # in the training set
+            for i, c in enumerate(categories):
+                self.category_embeddings.weight.data[
+                    category_offsets[i] + c - 1
+                    ].zero_()
+            
+
+        # take [CLS] token into account
+        self.weight = nn.Parameter(Tensor(d_numerical + 1, d_token))
+        self.bias = nn.Parameter(Tensor(d_bias, d_token)) if bias else None
+        # The initialization is inspired by nn.Linear
+        nn_init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            nn_init.kaiming_uniform_(self.bias, a=math.sqrt(5))
+        self.categories = categories
+
+    @property
+    def n_tokens(self) -> int:
+        return len(self.weight) + (
+            0 if self.category_offsets is None else len(self.category_offsets)
+        )
+
+    def forward(self, x_num: Tensor, x_cat: ty.Optional[Tensor]) -> Tensor:
+        x_some = x_num if x_cat is None else x_cat
+        assert x_some is not None
+        x_num = torch.cat(
+            [torch.ones(len(x_some), 1, device=x_some.device)]  # [CLS]
+            + ([] if x_num is None else [x_num]),
+            dim=1,
+        )
+        x = self.weight[None] * x_num[:, :, None]
+        if x_cat is not None:
+            # replace -1 by the last category
+            for i in range(x_cat.shape[1]):
+                x_cat[:, i][x_cat[:, i] == -1] = self.categories[i] - 1
+            x = torch.cat(
+                [x, self.category_embeddings(x_cat + self.category_offsets[None])],
+                dim=1,
+            )
+        if self.bias is not None:
+            bias = torch.cat(
+                [
+                    torch.zeros(1, self.bias.shape[1], device=x.device),
+                    self.bias,
+                ]
+            )
+            x = x + bias[None]
+        return x
+
+
+class MultiheadAttention(nn.Module):
+    def __init__(
+        self, d: int, n_heads: int, dropout: float, initialization: str
+    ) -> None:
+        if n_heads > 1:
+            assert d % n_heads == 0
+        assert initialization in ['xavier', 'kaiming']
+
+        super().__init__()
+        self.W_q = nn.Linear(d, d)
+        self.W_k = nn.Linear(d, d)
+        self.W_v = nn.Linear(d, d)
+        self.W_out = nn.Linear(d, d) if n_heads > 1 else None
+        self.n_heads = n_heads
+        self.dropout = nn.Dropout(dropout) if dropout else None
+
+        for m in [self.W_q, self.W_k, self.W_v]:
+            if initialization == 'xavier' and (n_heads > 1 or m is not self.W_v):
+                # gain is needed since W_qkv is represented with 3 separate layers
+                nn_init.xavier_uniform_(m.weight, gain=1 / math.sqrt(2))
+            nn_init.zeros_(m.bias)
+        if self.W_out is not None:
+            nn_init.zeros_(self.W_out.bias)
+
+    def _reshape(self, x: Tensor) -> Tensor:
+        batch_size, n_tokens, d = x.shape
+        d_head = d // self.n_heads
+        return (
+            x.reshape(batch_size, n_tokens, self.n_heads, d_head)
+            .transpose(1, 2)
+            .reshape(batch_size * self.n_heads, n_tokens, d_head)
+        )
+
+    def forward(
+        self,
+        x_q: Tensor,
+        x_kv: Tensor,
+        key_compression: ty.Optional[nn.Linear],
+        value_compression: ty.Optional[nn.Linear],
+    ) -> Tensor:
+        q, k, v = self.W_q(x_q), self.W_k(x_kv), self.W_v(x_kv)
+        for tensor in [q, k, v]:
+            assert tensor.shape[-1] % self.n_heads == 0
+        if key_compression is not None:
+            assert value_compression is not None
+            k = key_compression(k.transpose(1, 2)).transpose(1, 2)
+            v = value_compression(v.transpose(1, 2)).transpose(1, 2)
+        else:
+            assert value_compression is None
+
+        batch_size = len(q)
+        d_head_key = k.shape[-1] // self.n_heads
+        d_head_value = v.shape[-1] // self.n_heads
+        n_q_tokens = q.shape[1]
+
+        q = self._reshape(q)
+        k = self._reshape(k)
+        attention = F.softmax(q @ k.transpose(1, 2) / math.sqrt(d_head_key), dim=-1)
+        if self.dropout is not None:
+            attention = self.dropout(attention)
+        x = attention @ self._reshape(v)
+        x = (
+            x.reshape(batch_size, self.n_heads, n_q_tokens, d_head_value)
+            .transpose(1, 2)
+            .reshape(batch_size, n_q_tokens, self.n_heads * d_head_value)
+        )
+        if self.W_out is not None:
+            x = self.W_out(x)
+        return x
+
+
+class FT_Transformer(nn.Module):
+    """Transformer.
+
+    References:
+    - https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html
+    - https://github.com/facebookresearch/pytext/tree/master/pytext/models/representations/transformer
+    - https://github.com/pytorch/fairseq/blob/1bba712622b8ae4efb3eb793a8a40da386fe11d0/examples/linformer/linformer_src/modules/multihead_linear_attention.py#L19
+    """
+
+    def __init__(
+        self,
+        *,
+        # tokenizer
+        d_in: int, #changed name
+        categories: ty.Optional[ty.List[int]],
+        token_bias: bool,
+        # transformer
+        n_layers: int,
+        d_token: int,
+        n_heads: int,
+        d_ffn_factor: float,
+        attention_dropout: float,
+        ffn_dropout: float,
+        residual_dropout: float,
+        activation: str,
+        prenormalization: bool,
+        initialization: str,
+        # linformer
+        kv_compression: ty.Optional[float],
+        kv_compression_sharing: ty.Optional[str],
+        #
+        d_out: int,
+        regression: bool,
+        categorical_indicator
+    ) -> None:
+        assert (kv_compression is None) ^ (kv_compression_sharing is not None)
+        super().__init__()
+        self.tokenizer = Tokenizer(d_in, categories, d_token, token_bias)
+        n_tokens = self.tokenizer.n_tokens
+        # print("d_token {}".format(d_token))
+
+        self.categorical_indicator = categorical_indicator
+        self.regression = regression
+
+        def make_kv_compression():
+            assert kv_compression
+            compression = nn.Linear(
+                n_tokens, int(n_tokens * kv_compression), bias=False
+            )
+            if initialization == 'xavier':
+                nn_init.xavier_uniform_(compression.weight)
+            return compression
+
+        self.shared_kv_compression = (
+            make_kv_compression()
+            if kv_compression and kv_compression_sharing == 'layerwise'
+            else None
+        )
+
+        def make_normalization():
+            return nn.LayerNorm(d_token)
+
+        d_hidden = int(d_token * d_ffn_factor)
+        self.layers = nn.ModuleList([])
+        for layer_idx in range(n_layers):
+            layer = nn.ModuleDict(
+                {
+                    'attention': MultiheadAttention(
+                        d_token, n_heads, attention_dropout, initialization
+                    ),
+                    'linear0': nn.Linear(
+                        d_token, d_hidden * (2 if activation.endswith('glu') else 1)
+                    ),
+                    'linear1': nn.Linear(d_hidden, d_token),
+                    'norm1': make_normalization(),
+                }
+            )
+            if not prenormalization or layer_idx:
+                layer['norm0'] = make_normalization()
+            if kv_compression and self.shared_kv_compression is None:
+                layer['key_compression'] = make_kv_compression()
+                if kv_compression_sharing == 'headwise':
+                    layer['value_compression'] = make_kv_compression()
+                else:
+                    assert kv_compression_sharing == 'key-value'
+            self.layers.append(layer)
+
+        self.activation = get_activation_fn(activation)
+        self.last_activation = get_nonglu_activation_fn(activation)
+        self.prenormalization = prenormalization
+        self.last_normalization = make_normalization() if prenormalization else None
+        self.ffn_dropout = ffn_dropout
+        self.residual_dropout = residual_dropout
+        self.head = nn.Linear(d_token, d_out)
+
+    def _get_kv_compressions(self, layer):
+        return (
+            (self.shared_kv_compression, self.shared_kv_compression)
+            if self.shared_kv_compression is not None
+            else (layer['key_compression'], layer['value_compression'])
+            if 'key_compression' in layer and 'value_compression' in layer
+            else (layer['key_compression'], layer['key_compression'])
+            if 'key_compression' in layer
+            else (None, None)
+        )
+
+    def _start_residual(self, x, layer, norm_idx):
+        x_residual = x
+        if self.prenormalization:
+            norm_key = f'norm{norm_idx}'
+            if norm_key in layer:
+                x_residual = layer[norm_key](x_residual)
+        return x_residual
+
+    def _end_residual(self, x, x_residual, layer, norm_idx):
+        if self.residual_dropout:
+            x_residual = F.dropout(x_residual, self.residual_dropout, self.training)
+        x = x + x_residual
+        if not self.prenormalization:
+            x = layer[f'norm{norm_idx}'](x)
+        return x
+
+    def forward(self, x) -> Tensor:
+        if not self.categorical_indicator is None:
+            x_num = x[:, ~self.categorical_indicator].float()
+            x_cat = x[:, self.categorical_indicator].long() #TODO
+        else:
+            x_num = x
+            x_cat = None
+        #x_cat = None #FIXME
+        x = self.tokenizer(x_num, x_cat)
+
+        for layer_idx, layer in enumerate(self.layers):
+            is_last_layer = layer_idx + 1 == len(self.layers)
+            layer = ty.cast(ty.Dict[str, nn.Module], layer)
+
+            x_residual = self._start_residual(x, layer, 0)
+            x_residual = layer['attention'](
+                # for the last attention, it is enough to process only [CLS]
+                (x_residual[:, :1] if is_last_layer else x_residual),
+                x_residual,
+                *self._get_kv_compressions(layer),
+            )
+            if is_last_layer:
+                x = x[:, : x_residual.shape[1]]
+            x = self._end_residual(x, x_residual, layer, 0)
+
+            x_residual = self._start_residual(x, layer, 1)
+            x_residual = layer['linear0'](x_residual)
+            x_residual = self.activation(x_residual)
+            if self.ffn_dropout:
+                x_residual = F.dropout(x_residual, self.ffn_dropout, self.training)
+            x_residual = layer['linear1'](x_residual)
+            x = self._end_residual(x, x_residual, layer, 1)
+
+        assert x.shape[1] == 1
+        x = x[:, 0]
+        if self.last_normalization is not None:
+            x = self.last_normalization(x)
         x = self.last_activation(x)
         x = self.head(x)
         if not self.regression:
@@ -409,6 +756,12 @@ class NeuralNetRegressorWrapped(NeuralNetRegressor):
     def set_y_train_mean(self, y_train_mean):
         self.y_train_mean = y_train_mean
 
+    def get_default_callbacks(self):
+        callbacks = [cb for cb in super().get_default_callbacks() if not isinstance(cb[1], PrintLog)]
+        callbacks.append(('print_log', PrintLog(sink=print_but_serializable)))
+        print(callbacks)
+        return callbacks
+
     def fit(self, X, y):
         if y.ndim == 1:
             y = y.reshape(-1, 1)
@@ -455,6 +808,12 @@ class NeuralNetClassifierWrapped(NeuralNetClassifier):
         y = y.astype(np.int64)
         return super().fit(X, y)
 
+    def get_default_callbacks(self):
+        callbacks = [cb for cb in super().get_default_callbacks() if not isinstance(cb[1], PrintLog)]
+        callbacks.append(('print_log', PrintLog(sink=print_but_serializable)))
+        print(callbacks)
+        return callbacks
+
     # adapted from skorch code 
     # to remove ignoring keyboard interrupt
     # as it can be dangerous for benchmarking
@@ -471,7 +830,55 @@ class NeuralNetClassifierWrapped(NeuralNetClassifier):
             pass
         self.notify('on_train_end', X=X, y=y)
         return self
+    
+# for FT-Transformer, we extend the NeuralNet class to allow different weight decay for different
+# parts of the network
+def initialize_optimizer_ft_transformer(self, triggered_directly=None):
+    """Initialize the model optimizer. If ``self.optimizer__lr``
+    is not set, use ``self.lr`` instead.
 
+    Parameters
+    ----------
+    triggered_directly
+        Deprecated, don't use it anymore.
+
+    """
+    # handle deprecated paramter
+    # if triggered_directly is not None:
+    #     warnings.warn(
+    #         "The 'triggered_directly' argument to 'initialize_optimizer' is "
+    #         "deprecated, please don't use it anymore.", DeprecationWarning)
+
+    named_parameters = list(self.get_all_learnable_params())
+    # print
+    no_wd_names = ['tokenizer', '.norm', '.bias']
+    for x in ['tokenizer', '.norm', '.bias']:
+        assert any(x in a for a in (b[0] for b in named_parameters)) #TODO improve this
+
+    def needs_wd(name):
+        return all(x not in name for x in no_wd_names)
+
+    named_parameters_grouped = [
+        {'params': [v for k, v in named_parameters if needs_wd(k)]},
+        {
+            'params': [v for k, v in named_parameters if not needs_wd(k)],
+            'weight_decay': 0.0,
+        }]
+    
+    args, kwargs = self.get_params_for_optimizer(
+        'optimizer', named_parameters)
+
+    # pylint: disable=attribute-defined-outside-init
+    self.optimizer_ = self.optimizer(named_parameters_grouped, **kwargs)
+    return self
+
+class NeuralNetClassifierCustomOptim(NeuralNetClassifierWrapped):
+    def initialize_optimizer(self, triggered_directly=None):
+        return initialize_optimizer_ft_transformer(self, triggered_directly)
+    
+class NeuralNetRegressorCustomOptim(NeuralNetRegressorWrapped):
+    def initialize_optimizer(self, triggered_directly=None):
+        return initialize_optimizer_ft_transformer(self, triggered_directly)
 
 def mse_constant_predictor(model, X, y):
     return np.mean((y - model.y_train_mean) ** 2)
@@ -479,7 +886,7 @@ def mse_constant_predictor(model, X, y):
 
 def create_regressor_skorch(
         id=None, wandb_run=None, use_checkpoints=True, cat_features=None,
-        resnet_or_mlp="resnet", checkpoint_dir="skorch_cp", **kwargs
+        model_name="resnet", checkpoint_dir="skorch_cp", **kwargs
 ):
     print("RTDL regressor")
     if "lr_scheduler" not in kwargs:
@@ -518,7 +925,7 @@ def create_regressor_skorch(
             batch_size=batch_size
         ),
         EpochScoring(scoring=mse_constant_predictor, name="constant_val_mse", on_train=False),
-        EarlyStoppingCustomError(monitor="valid_loss", patience=es_patience),
+        EarlyStoppingCustomError(monitor="valid_loss", patience=es_patience, sink=print_but_serializable),
     ]
 
     if lr_scheduler:
@@ -537,14 +944,24 @@ def create_regressor_skorch(
                 f_history=None,
                 load_best=True,
                 monitor="valid_loss_best",
+                sink=print_but_serializable,
             )
         )
     if not wandb_run is None:
         callbacks.append(WandbLogger(wandb_run, save_model=False))
         callbacks.append(LearningRateLogger())
 
-    model = NeuralNetRegressorWrapped(
-        ResNet if resnet_or_mlp == "resnet" else RTDL_MLP,
+    nn_class = NeuralNetRegressorCustomOptim if model_name == "ft_transformer" else NeuralNetRegressorWrapped
+    if model_name == "ft_transformer":
+        model_class = FT_Transformer
+    elif model_name == "resnet":
+        model_class = ResNet
+    elif model_name == "mlp":
+        model_class = RTDL_MLP
+    else:
+        raise ValueError(f'Model {model_name} not implemented here! Choose from "ft_transformer", "resnet", "mlp"')
+    model = nn_class(
+        model_class,
         # Shuffle training data on each epoch
         optimizer=optimizer,
         batch_size=max(
@@ -565,7 +982,7 @@ def create_regressor_skorch(
 
 def create_classifier_skorch(
         id=None, wandb_run=None, use_checkpoints=True, cat_features=None,
-        resnet_or_mlp="resnet", checkpoint_dir="skorch_cp", val_metric_name: str = 'class_error',
+        model_name="resnet", checkpoint_dir="skorch_cp", val_metric_name: str = 'class_error',
         **kwargs
 ):
     print("RTDL classifier")
@@ -608,11 +1025,11 @@ def create_classifier_skorch(
     ]
     if val_metric_name == 'class_error':
         callbacks.append(EarlyStoppingCustomError(monitor="valid_acc", patience=es_patience,
-                                                  lower_is_better=False))
+                                                  lower_is_better=False, sink=print_but_serializable))
     elif val_metric_name == 'cross_entropy':
         print(f'Using early stopping on cross-entropy loss')
         callbacks.append(EarlyStoppingCustomError(monitor='valid_loss', patience=es_patience,
-                                                  lower_is_better=True))
+                                                  lower_is_better=True, sink=print_but_serializable))
     else:
         raise ValueError(f'Validation metric {val_metric_name} not implemented here!')
 
@@ -631,15 +1048,25 @@ def create_classifier_skorch(
                 f_criterion=None,
                 f_history=None,
                 load_best=True,
-                monitor="valid_acc_best",
+                monitor="valid_acc_best" if val_metric_name == 'class_error' else 'valid_loss_best',
+                sink=print_but_serializable,
             )
         )
     if not wandb_run is None:
         callbacks.append(WandbLogger(wandb_run, save_model=False))
         callbacks.append(LearningRateLogger())
 
-    model = NeuralNetClassifierWrapped(
-        ResNet if resnet_or_mlp == "resnet" else RTDL_MLP,
+    nn_class = NeuralNetClassifierCustomOptim if model_name == "ft_transformer" else NeuralNetClassifierWrapped
+    if model_name == "ft_transformer":
+        model_class = FT_Transformer
+    elif model_name == "resnet":
+        model_class = ResNet
+    elif model_name == "mlp":
+        model_class = RTDL_MLP
+    else:
+        raise ValueError(f'Model {model_name} not implemented here! Choose from "ft_transformer", "resnet", "mlp"')
+    model = nn_class(
+        model_class,
         # Shuffle training data on each epoch
         criterion=nn.CrossEntropyLoss,
         optimizer=optimizer,
@@ -659,7 +1086,9 @@ def create_classifier_skorch(
     return model
 
 
-create_resnet_regressor_skorch = partial(create_regressor_skorch, resnet_or_mlp="resnet", use_checkpoints=True)
-create_resnet_classifier_skorch = partial(create_classifier_skorch, resnet_or_mlp="resnet", use_checkpoints=True)
-create_mlp_regressor_skorch = partial(create_regressor_skorch, resnet_or_mlp="mlp", use_checkpoints=True)
-create_mlp_classifier_skorch = partial(create_classifier_skorch, resnet_or_mlp="mlp", use_checkpoints=True)
+create_resnet_regressor_skorch = partial(create_regressor_skorch, model_name="resnet", use_checkpoints=True)
+create_resnet_classifier_skorch = partial(create_classifier_skorch, model_name="resnet", use_checkpoints=True)
+create_mlp_regressor_skorch = partial(create_regressor_skorch, model_name="mlp", use_checkpoints=True)
+create_mlp_classifier_skorch = partial(create_classifier_skorch, model_name="mlp", use_checkpoints=True)
+create_ft_transformer_regressor_skorch = partial(create_regressor_skorch, model_name="ft_transformer", use_checkpoints=True)
+create_ft_transformer_classifier_skorch = partial(create_classifier_skorch, model_name="ft_transformer", use_checkpoints=True)
