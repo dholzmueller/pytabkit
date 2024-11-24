@@ -348,6 +348,7 @@ class DefaultParams:
         'num_emb_n_bins': 48,
         'batch_size': 256,
         'lr': 2e-3,
+        'weight_decay': 0.0,
         'n_epochs': 1_000_000_000,
         'patience': 16,
         'd_embedding': 16,
@@ -356,6 +357,8 @@ class DefaultParams:
         'dropout': 0.1,
         'compile_model': False,
         'allow_amp': False,
+        'tfms': ['quantile_tabr'],
+        'gradient_clipping_norm': None,  # set to 1.0 in TabR paper experiments
     }
 
     TABM_D_REG = TABM_D_CLASS

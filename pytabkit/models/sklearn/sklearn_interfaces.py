@@ -1512,6 +1512,7 @@ class TabMConstructorMixin:
                  num_emb_n_bins: Optional[int] = None,
                  batch_size: Optional[int] = None,
                  lr: Optional[float] = None,
+                 weight_decay: Optional[float] = None,
                  n_epochs: Optional[int] = None,
                  patience: Optional[int] = None,
                  d_embedding: Optional[int] = None,
@@ -1520,6 +1521,8 @@ class TabMConstructorMixin:
                  dropout: Optional[float] = None,
                  compile_model: Optional[bool] = None,
                  allow_amp: Optional[bool] = None,
+                 tfms: Optional[List[str]] = None,
+                 gradient_clipping_norm: Optional[Union[float, Literal['none']]] = None
                  ):
         """
 
@@ -1553,6 +1556,7 @@ class TabMConstructorMixin:
         Must be at most the number of training samples, but >1.
         :param batch_size: Batch size, default is 256.
         :param lr: Learning rate, default is 2e-3.
+        :param weight_decay: Weight decay, default is 0.
         :param n_epochs: Maximum number of epochs (if early stopping doesn't apply). Default is 1 billion.
         :param patience: Patience for early stopping. Default is 16
         :param d_embedding: Embedding dimension for numerical embeddings.
@@ -1562,6 +1566,12 @@ class TabMConstructorMixin:
         :param dropout: Dropout probability. Default is 0.1.
         :param compile_model: Whether torch.compile should be applied to the model (default=False).
         :param allow_amp: Whether automatic mixed precision should be used if the device is a GPU (default=False).
+        :param tfms: Preprocessing transformations, see models.nn_models.models.PreprocessingFactory.
+            Default is ['quantile_tabr']. Categorical values will be one-hot encoded by the model.
+            Note that in the original experiments, it seems that when cat_policy='ordinal',
+            the ordinal-encoded categorical values will later be one-hot encoded by the model.
+        :param gradient_clipping_norm: Norm for gradient clipping.
+            Default is None from the example code (no gradient clipping), but the experiments from the paper use 1.0.
         """
         self.arch_type = arch_type
         self.num_emb_type = num_emb_type
@@ -1571,12 +1581,15 @@ class TabMConstructorMixin:
         self.batch_size = batch_size
         self.compile_model = compile_model
         self.lr = lr
+        self.weight_decay = weight_decay
         self.d_embedding = d_embedding
         self.d_block = d_block
         self.n_blocks = n_blocks
         self.dropout = dropout
         self.tabm_k = tabm_k
         self.allow_amp = allow_amp
+        self.tfms = tfms
+        self.gradient_clipping_norm = gradient_clipping_norm
 
         self.device = device
         self.random_state = random_state

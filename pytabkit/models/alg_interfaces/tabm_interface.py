@@ -6,6 +6,7 @@ import scipy
 import sklearn
 import torch
 import numpy as np
+from torch import nn
 
 from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.alg_interfaces import SingleSplitAlgInterface
@@ -55,6 +56,9 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         allow_amp = self.config.get('allow_amp', False)
         n_blocks = self.config.get('n_blocks', 'auto')
         num_emb_n_bins = self.config.get('num_emb_n_bins', 48)
+
+        weight_decay = self.config.get('weight_decay', 0.0)
+        gradient_clipping_norm = self.config.get('gradient_clipping_norm', None)
 
         TaskType = Literal['regression', 'binclass', 'multiclass']
 
@@ -177,7 +181,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             arch_type=arch_type,
             k=tabm_k,
         ).to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
 
         if compile_model:
@@ -276,6 +280,15 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                 model.train()
                 optimizer.zero_grad()
                 loss = loss_fn(apply_model('train', batch_idx), Y_train[batch_idx])
+
+                # added from https://github.com/yandex-research/tabm/blob/main/bin/model.py
+                if gradient_clipping_norm is not None and gradient_clipping_norm != 'none':
+                    if grad_scaler is not None:
+                        grad_scaler.unscale_(optimizer)
+                    nn.utils.clip_grad.clip_grad_norm_(
+                        model.parameters(), gradient_clipping_norm
+                    )
+
                 if grad_scaler is None:
                     loss.backward()
                     optimizer.step()

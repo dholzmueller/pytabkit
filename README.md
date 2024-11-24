@@ -135,6 +135,10 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.1.1:
+  - Added parameters `weight_decay`, `tfms`,
+    and `gradient_clipping_norm` to TabM. 
+    The updated default parameters now apply the RTDL quantile transform.
 - v1.1.0: 
   - Included TabM
   - Replaced `__` by `_` in parameter names for MLP, MLP-PLR, ResNet, and FTT,
@@ -154,6 +158,6 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
   - Updated benchmarking code (configurations, plots)
     including the new version of the Grinsztajn et al. benchmark
   - Updated fit() parameters in scikit-learn interfaces, etc.
-- v0.0.1: First release for arXiv v1. 
+- v0.0.1: First release for arXiv v1.
   Code and data are archived at [DaRUS](https://doi.org/10.18419/darus-4255).
 
