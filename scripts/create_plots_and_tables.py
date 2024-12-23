@@ -60,6 +60,10 @@ if __name__ == '__main__':
         plot_pareto(paths, tables, coll_names=coll_names, alg_names=alg_names,
                     use_ranks=use_ranks, use_normalized_errors=use_normalized_errors,
                     use_grinnorm_errors=use_grinnorm_errors,
+                    use_geometric_mean=use_geometric_mean, arrow_alg_names=arrow_alg_names, use_2x3=True)
+        plot_pareto(paths, tables, coll_names=coll_names, alg_names=alg_names,
+                    use_ranks=use_ranks, use_normalized_errors=use_normalized_errors,
+                    use_grinnorm_errors=use_grinnorm_errors,
                     use_geometric_mean=use_geometric_mean, use_validation_errors=True, arrow_alg_names=arrow_alg_names)
 
     # alg_names_rssc = alg_names + ['MLP-RTDL-D_rssc', 'ResNet-RTDL-D_rssc', 'TabR-S-D_rssc']

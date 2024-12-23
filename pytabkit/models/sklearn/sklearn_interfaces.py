@@ -1121,10 +1121,10 @@ class Resnet_RTDL_D_Regressor(ResnetConstructorMixin, AlgInterfaceRegressor):
     def _supports_multioutput(self) -> bool:
         return False
 
-    def _more_tags(self):
+    def _non_deterministic_tag(self) -> bool:
         # set non-deterministic
         # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
-        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
+        return True
 
 
 class FTTransformerConstructorMixin:
@@ -1230,10 +1230,10 @@ class FTT_D_Regressor(FTTransformerConstructorMixin, AlgInterfaceRegressor):
     def _supports_multioutput(self) -> bool:
         return False
 
-    def _more_tags(self):
+    def _non_deterministic_tag(self) -> bool:
         # set non-deterministic
         # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
-        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
+        return True
 
 
 class RTDL_MLPConstructorMixin:
@@ -1335,10 +1335,10 @@ class MLP_RTDL_D_Regressor(RTDL_MLPConstructorMixin, AlgInterfaceRegressor):
     def _supports_multioutput(self) -> bool:
         return False
 
-    def _more_tags(self):
+    def _non_deterministic_tag(self) -> bool:
         # set non-deterministic
         # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
-        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
+        return True
 
 
 class MLP_PLR_D_Classifier(RTDL_MLPConstructorMixin, AlgInterfaceClassifier):
@@ -1374,10 +1374,10 @@ class MLP_PLR_D_Regressor(RTDL_MLPConstructorMixin, AlgInterfaceRegressor):
     def _supports_multioutput(self) -> bool:
         return False
 
-    def _more_tags(self):
+    def _non_deterministic_tag(self) -> bool:
         # set non-deterministic
         # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
-        return utils.join_dicts(super()._more_tags(), dict(non_deterministic=True))
+        return True
 
 
 class TabrConstructorMixin:

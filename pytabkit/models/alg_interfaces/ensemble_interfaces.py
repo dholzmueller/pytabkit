@@ -80,13 +80,13 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
 
         weights = np.zeros(len(self.alg_interfaces), dtype=np.int32)
         best_weights = np.copy(weights)
-        best_loss = np.Inf
+        best_loss = np.inf
 
         wp = WeightedPrediction(y_preds_oob_list, self.task_type)
 
         for step_idx in range(n_caruana_steps):
             best_step_weights = None
-            best_step_loss = np.Inf
+            best_step_loss = np.inf
             for weight_idx in range(weights.shape[0]):
                 weights[weight_idx] += 1
 
@@ -173,7 +173,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
         y_oob = cat_if_necessary([y[idxs_list[0].val_idxs[i]] for i in range(idxs_list[0].val_idxs.shape[0])], dim=0)
 
         best_alg_idx = 0
-        best_alg_loss = np.Inf
+        best_alg_loss = np.inf
 
         for alg_idx, alg_interface in enumerate(self.alg_interfaces):
             sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in

@@ -321,7 +321,8 @@ def import_openml(task_ids: List[int], task_source_name: str, paths: Paths, cach
                   normalize_y: bool = False, min_n_samples: int = 1, max_n_classes: int = 100000,
                   min_n_classes: int = 0, remove_missing_cont: bool = True, remove_duplicates: bool = False,
                   exclude_ds_names: Optional[List[str]] = None, max_n_samples: Optional[int] = None,
-                  include_only_ds_names: Optional[List[str]] = None, rerun: bool = False):
+                  include_only_ds_names: Optional[List[str]] = None, rerun: bool = False,
+                  ignore_above_n_classes: int = 100000):
     print(f'Processing task source {task_source_name}')
     import openml
 
@@ -348,11 +349,14 @@ def import_openml(task_ids: List[int], task_source_name: str, paths: Paths, cach
                 pd_task.subsample(max_n_samples)
             if normalize_y:
                 pd_task.normalize_regression_y()
+            if pd_task.get_n_classes() > ignore_above_n_classes:
+                print(f'Ignoring task with {pd_task.get_n_classes()} > {ignore_above_n_classes} classes')
+                continue
             if pd_task.get_n_classes() > max_n_classes:
                 print(f'Only keeping the most frequent {max_n_classes} out of {pd_task.get_n_classes()} classes')
                 pd_task.limit_n_classes(max_n_classes)
             if pd_task.get_n_samples() < min_n_samples:
-                print(f'Too few samples, ignoring task')
+                print(f'Too few samples ({pd_task.get_n_samples()} < {min_n_samples}), ignoring task')
                 continue
             if pd_task.get_n_classes() < min_n_classes:
                 print(f'Too few classes, ignoring task')

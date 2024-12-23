@@ -16,6 +16,7 @@ from sklearn.preprocessing import OrdinalEncoder
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_is_fitted, check_X_y
 
+from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources
 from pytabkit.models.data.data import DictDataset, TensorInfo
@@ -69,6 +70,9 @@ class AlgInterfaceEstimator(BaseEstimator):
     def _supports_single_sample(self) -> bool:
         return True
 
+    def _non_deterministic_tag(self) -> bool:
+        return False
+
     def _is_classification(self) -> bool:
         raise NotImplementedError()
 
@@ -80,6 +84,14 @@ class AlgInterfaceEstimator(BaseEstimator):
     def _allowed_device_names(self) -> List[str]:
         # override in subclasses that allow to run on a GPU or mps
         return ['cpu']
+
+    def _more_tags(self):
+        return dict(non_deterministic=self._non_deterministic_tag())
+
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        tags.non_deterministic = self._non_deterministic_tag()
+        return tags
 
     def get_config(self) -> Dict[str, Any]:
         """
@@ -124,9 +136,19 @@ class AlgInterfaceEstimator(BaseEstimator):
             Currently only implemented for RealMLP (default=None). If None, no time limit will be applied.
         :return: Returns self.
         """
-        # Check that X and y have correct shape
-        # if isinstance(X, np.ndarray) and isinstance(y, np.ndarray):
-        # we don't want to store the converted ones here
+
+        # do a first check, this includes to check if X or y are not None before other things are done to them
+        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
+
+        # if X is None:
+        #     raise ValueError(f'This estimator requires X to be passed, but X is None')
+        # if y is None:
+        #     # this message has to include the special text
+        #     # "requires y to be passed, but the target y is None"
+        #     # or one of the other particular messages
+        #     # for the estimator test "check_requires_y_none" to not fail
+        #     # it doesn't work automatically because of the to_normal_type(y) before the check_X_y
+        #     raise ValueError(f'This estimator requires y to be passed, but the target y is None')
 
         for arr in [X, y, X_val, y_val]:
             if scipy.sparse.issparse(arr):
@@ -162,6 +184,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             X = concat_arrays(X, X_val)
             y = concat_arrays(y, y_val)
 
+        # check again with the validation set concatenated
         check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
 
         if self._is_classification():
@@ -411,7 +434,9 @@ class AlgInterfaceEstimator(BaseEstimator):
         return y_preds
 
 
-class AlgInterfaceClassifier(AlgInterfaceEstimator, ClassifierMixin):
+class AlgInterfaceClassifier(ClassifierMixin, AlgInterfaceEstimator):
+    # inheritance order is important in scikit-learn 1.6
+    # otherwise sklearn.base.is_classifier(...) returns False
     def _is_classification(self) -> bool:
         return True
 
@@ -452,12 +477,20 @@ class AlgInterfaceClassifier(AlgInterfaceEstimator, ClassifierMixin):
         return np.asarray(self.classes_)[class_idxs]
 
 
-class AlgInterfaceRegressor(AlgInterfaceEstimator, RegressorMixin):
+class AlgInterfaceRegressor(RegressorMixin, AlgInterfaceEstimator):
+    # inheritance order is important in scikit-learn 1.6
+    # otherwise sklearn.base.regressor(...) or is_regressor(...) returns False
     def _is_classification(self) -> bool:
         return False
 
     def _more_tags(self):
-        return {'multioutput': self._supports_multioutput()}
+        return utils.join_dicts(super()._more_tags(), {'multioutput': self._supports_multioutput()})
+
+    def __sklearn_tags__(self):
+        # from sklearn version 1.6+
+        tags = super().__sklearn_tags__()
+        tags.target_tags.multi_output = self._supports_multioutput()
+        return tags
 
     def predict(self, X):
         y_preds = self._predict_raw(X)

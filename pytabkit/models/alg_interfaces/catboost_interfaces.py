@@ -250,7 +250,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
         # print(f'{y_pred.shape=}')
         # print(f'{y_pred.mean(dim=0)=}')
         #
-        # if torch.any(y_pred == -np.Inf):
+        # if torch.any(y_pred == -np.inf):
         #     y_pred_prob = torch.softmax(y_pred, dim=-1)
         #     # y_pred_prob = y_pred_prob.clamp(1e-10, 1)
         #     y_pred = torch.log(y_pred_prob + 1e-30)

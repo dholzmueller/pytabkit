@@ -80,11 +80,14 @@ def node_runner(feedback_queue, job_queue, node_id: int):
     processes = []
     process_rams_gb = []
 
+    # print(f'DEBUG: start loop', flush=True)
+
     while True:
         # get new jobs from queue
         while not job_queue.empty():
             try:
                 job_str = job_queue.get(timeout=0.1)
+                # print(f'DEBUG: got job str', flush=True)
             except Exception as e:
                 print(traceback.format_exc())
                 # might have been queue.Empty or ray.util.queue.Empty exception
@@ -94,6 +97,7 @@ def node_runner(feedback_queue, job_queue, node_id: int):
                 return  # or check if processes are still running?
 
             job_data = dill.loads(job_str)
+            # print(f'DEBUG: got job data', flush=True)
             processes.append(FunctionProcess(JobRunner(*job_data)).start())
             process_rams_gb.append(0.0)
 
@@ -108,6 +112,8 @@ def node_runner(feedback_queue, job_queue, node_id: int):
                 # print(f'Node {node_id}: After putting result in feedback_queue', flush=True)
                 del processes[i]
                 del process_rams_gb[i]
+
+        # print(f'.', end='', flush=True)
 
         time.sleep(0.01)
 

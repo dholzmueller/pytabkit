@@ -27,6 +27,10 @@ def analyze_hpo_best(alg_name: str, coll_name: str, n_splits: int = 10, data_pat
             results_path = paths.results_alg_task_split(task_info.task_desc, alg_name, n_cv=1,
                                                         split_type=SplitType.RANDOM, split_id=split_id)
             result_manager = ResultManager.load(results_path, only_metrics=False)
+            if (not isinstance(result_manager.other_dict['cv'], dict)
+                    or 'fit_params' not in result_manager.other_dict['cv']):
+                raise ValueError(
+                    f'Did not get a dict containing fit_params, instead got {result_manager.other_dict["cv"]=}')
             fit_params = result_manager.other_dict['cv']['fit_params']
 
             # print(fit_params)
@@ -66,7 +70,7 @@ def analyze_hpo_best(alg_name: str, coll_name: str, n_splits: int = 10, data_pat
                 print(f'{value}: {n_best}')
             print()
         elif all(isinstance(v, numbers.Number) for v in unique_values):
-            print(f'Quantiles of best values for hyperparameter {param_name}:')
+            print(f'Hyperparameter {param_name}: mean={np.mean(values):g}, quantiles:')
             for q in np.linspace(0.0, 1.0, 11):
                 print(f'alpha={q:g}: {np.quantile(values, q)}')
             print()

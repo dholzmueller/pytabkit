@@ -26,9 +26,9 @@ all data will be stored in `./tab_bench_data`.
 ## Download datasets
 
 To download all datasets for the meta-train and meta-test benchmarks, run 
-(with your desired OpenML cache directory)
+(with your desired OpenML cache directory, optionally)
 ```commandline
-python3 scripts/download_data.py openml_cache_dir
+python3 scripts/download_data.py openml_cache_dir --import_meta_train --import_meta_test --import_grinsztajn_medium
 ```
 To run methods on the benchmarks, there are two options:
 

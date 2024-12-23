@@ -95,7 +95,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     }}
     if not show_alg_groups:
         alg_group_dict = None
-    if alg_name is not None and alg_name_2 is not None:
+    if alg_name is not None and alg_name_2 is not None and show_alg_groups:
         alg_group_dict['selected algs'] = (lambda an, tags, config, grp=[alg_name, alg_name_2]:
                                            np.any([g.startswith(an) for g in grp]))
 

@@ -17,8 +17,8 @@ def identity(x):
 class Hyperparameter:
     def __init__(self, start_value: Union[int, float], min_step_size: Union[int, float], importance: float,
                  log_scale: bool = False, only_int: bool = False,
-                 min_value: Union[int, float] = -np.Inf, max_value: Union[int, float] = np.Inf,
-                 out_func: Callable[[Any], Any] = None, max_step_size: float = np.Inf):
+                 min_value: Union[int, float] = -np.inf, max_value: Union[int, float] = np.inf,
+                 out_func: Callable[[Any], Any] = None, max_step_size: float = np.inf):
         # if log_scale=True, min_value, max_value, min_step_size, and max_step_size are on the log scale,
         # i.e., min_value can still be negative
         # in this case, the values will be exponentiated at the end
@@ -35,8 +35,8 @@ class Hyperparameter:
         self.inv_tfm = (lambda x: np.log(x)) if log_scale else identity
         self.quant_tfm = (lambda x: round(x)) if only_int else identity
         # if log_scale:
-        #     self.min_value = np.log(min_value) if 0 < min_value < np.Inf else -np.Inf
-        #     self.max_value = np.log(max_value) if 0 < max_value < np.Inf else np.Inf
+        #     self.min_value = np.log(min_value) if 0 < min_value < np.inf else -np.inf
+        #     self.max_value = np.log(max_value) if 0 < max_value < np.inf else np.inf
         if self.log_scale and self.only_int:
             # need to avoid having values < 0 for which round(exp(value)) = 0, which is not representable in log-space
             self.min_value = max(self.min_value, 0.0)

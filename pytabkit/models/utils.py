@@ -465,6 +465,7 @@ class FunctionRunner:
         self.result_queue = result_queue
 
     def __call__(self):
+        # print(f'DEBUG: FunctionRunner start')
         f, args, kwargs = dill.loads(self.dill_f_args_kwargs)
         result = f(*args, **kwargs)
         self.result_queue.put(result)
@@ -487,6 +488,7 @@ class FunctionProcess:
         return not self.result_queue.empty()
 
     def get_ram_usage_gb(self) -> float:
+        import psutil
         return psutil.Process(self.process.pid).memory_info().rss / 1024 ** 3
 
     def pop_result(self) -> Any:

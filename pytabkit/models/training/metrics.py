@@ -1,3 +1,4 @@
+import traceback
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 import numpy as np
@@ -158,14 +159,14 @@ def pinball_loss(y_pred: torch.Tensor, y: torch.Tensor, quantile: float, reducti
         raise RuntimeError('Pinball loss: y_pred.dim() != y.dim(): could lead to broadcasting errors')
     err = y_pred - y
     # print(f'{quantile*err=}')
-    res = torch.maximum((1-quantile) * err, -quantile * err).mean(dim=-1)
+    res = torch.maximum((1 - quantile) * err, -quantile * err).mean(dim=-1)
     return apply_reduction(res, reduction)
 
 
 def mean_interleave(input, repeats, dim):
     assert input.shape[dim] % repeats == 0
-    new_shape = input.shape[:dim] + [input.shape[dim] // repeats, repeats] + input.shape[dim+1:]
-    return input.view(new_shape).mean(dim=dim+1)
+    new_shape = input.shape[:dim] + [input.shape[dim] // repeats, repeats] + input.shape[dim + 1:]
+    return input.view(new_shape).mean(dim=dim + 1)
 
 
 def get_y_probs(y: torch.Tensor, n_classes: int) -> torch.Tensor:
@@ -410,20 +411,20 @@ class Metrics:
                 y_pred[torch.any(invalid, dim=-1), :] = 0.0
             else:
                 # classification
-                # y_pred[invalid] = -np.Inf  # leads to NaN after softmax()
+                # y_pred[invalid] = -np.inf  # leads to NaN after softmax()
                 y_pred = torch.clone(y_pred)
                 not_invalid = y_pred[~invalid]
                 if len(not_invalid) == 0:
                     y_pred[invalid] = 0.0
                 else:
-                    y_pred[invalid] = torch.min(not_invalid) - 100   # a very small value, basically zero probability
+                    y_pred[invalid] = torch.min(not_invalid) - 100  # a very small value, basically zero probability
                 y_pred_probs = torch.softmax(y_pred, dim=-1)
                 y_pred = torch.log(y_pred_probs + 1e-30)
 
         def get_y_categorical():
-                if y.is_floating_point():
-                    return y.argmax(dim=-1)
-                return y.squeeze(-1)
+            if y.is_floating_point():
+                return y.argmax(dim=-1)
+            return y.squeeze(-1)
 
         if metric_name == 'class_error':
             return torch.count_nonzero(y_pred.argmax(dim=-1) != get_y_categorical(), dim=-1) / y_pred.shape[-2]
@@ -472,7 +473,7 @@ class Metrics:
             # rmse relative to rmse of the best constant predictor
             rmse = mse(y_pred, y).sqrt()
             den = y.std(correction=0)
-            return rmse/den
+            return rmse / den
         elif metric_name == 'mae':
             return (y_pred - y).abs().mean(dim=-1).mean(dim=-1)
         elif metric_name == 'nmae':
@@ -480,7 +481,7 @@ class Metrics:
             median = torch.median(y)
             mae = (y_pred - y).abs().mean(dim=-1).mean(dim=-1)
             den = (median - y).abs().mean(dim=-1).mean(dim=-1)
-            return mae/den
+            return mae / den
         elif metric_name == 'max_error':
             return (y_pred - y).abs().max(dim=-1)[0].max(dim=-1)[0]
         elif metric_name == 'n_max_error':
@@ -488,7 +489,7 @@ class Metrics:
             max_error = (y_pred - y).abs().max(dim=-1)[0].max(dim=-1)[0]
             max = y.max(dim=-1)[0].max(dim=-1)[0]
             min = y.min(dim=-1)[0].min(dim=-1)[0]
-            ref_error = (0.5 * (max-min))
+            ref_error = (0.5 * (max - min))
             return max_error / (ref_error + 1e-30)
         elif metric_name.startswith('pinball('):
             # expected format: pinball(number), e.g. pinball(0.95)
@@ -512,6 +513,29 @@ class Metrics:
             raw_loss = pinball_loss(y_pred + err_quantile, y, quantile)
             return raw_loss
         else:
+            try:
+                import probmetrics.metrics
+            except ImportError:
+                raise ValueError(f'Unknown metric {metric_name}')
+
+            try:
+                metric = probmetrics.metrics.Metric.from_name(metric_name)
+
+                # todo: doesn't work with soft target distributions for now
+                y_cat = get_y_categorical().cpu()
+                y_pred = y_pred.cpu()  # todo: moving to cpu to prevent temperature scaling from running on the GPU
+                if len(y_pred.shape) == 2:
+                    return metric.compute_from_labels_logits(y_cat, y_pred)
+                elif len(y_pred.shape) == 3:
+                    return torch.stack(
+                        [metric.compute_from_labels_logits(y_cat[i], y_pred[i]) for i in range(y_pred.shape[0])], dim=0)
+                else:
+                    raise AssertionError(f'{len(y_pred.shape)=}, but must be 2 or 3')
+            except ImportError:
+                pass
+            except ValueError as e:  # can be thrown if the name is unknown to Metric
+                traceback.print_exc()
+
             raise ValueError(f'Unknown metric {metric_name}')
 
     @staticmethod
@@ -554,7 +578,6 @@ class Metrics:
             return torch.as_tensor(model_scores, dtype=torch.float32)
         else:
             return torch.as_tensor(model_scores[0], dtype=torch.float32)
-
 
     @staticmethod
     def avg_preds(y_preds: List[torch.Tensor], task_type):
@@ -608,5 +631,3 @@ class Metrics:
             return 'nrmse'
         else:
             raise ValueError(f'Unknown task type {task_type}')
-
-

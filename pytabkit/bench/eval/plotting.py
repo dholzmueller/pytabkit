@@ -461,6 +461,9 @@ def _plot_scatter_with_labels(x_dict: Dict[str, float], y_dict: Dict[str, float]
                               arrow_alg_names: Optional[List[Tuple[str, str]]] = None,
                               pareto_frontier_width: float = 2.,
                               alg_names_to_hide: Optional[List[str]] = None):
+    if alg_names_to_hide is None:
+        alg_names_to_hide = []
+
     # First, convert dictionaries to a format suitable for seaborn
     # take shared models
     models = list(set(x_dict.keys()).intersection(set(y_dict.keys())))
@@ -865,7 +868,7 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
                 arrow_alg_names: Optional[List[Tuple[str, str]]] = None, plot_pareto_frontier: bool = True,
                 alg_names_to_hide: Optional[List[str]] = None,
                 subfolder: Optional[str] = None,
-                pareto_frontier_width: float = 2.):
+                pareto_frontier_width: float = 2., use_2x3: bool = False):
     print(f'Plotting pareto plot for {coll_names}')
     sns.set_theme(style="whitegrid", font_scale=2)
     if len(coll_names) == 1:
@@ -881,8 +884,12 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
         fig, axs = plt.subplots(2, 2, figsize=(20, 20))
         axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1]]
     elif len(coll_names) == 6:
-        fig, axs = plt.subplots(3, 2, figsize=(20, 30))
-        axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1], axs[2, 0], axs[2, 1]]
+        if use_2x3:
+            fig, axs = plt.subplots(2, 3, figsize=(30, 20))
+            axs_list = [axs[0, 0], axs[1, 0], axs[0, 1], axs[1, 1], axs[0, 2], axs[1, 2]]
+        else:
+            fig, axs = plt.subplots(3, 2, figsize=(20, 30))
+            axs_list = [axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1], axs[2, 0], axs[2, 1]]
     else:
         raise ValueError(f'{len(coll_names)=} is not in [1, 2, 3, 4, 6]')
 
@@ -909,6 +916,9 @@ def plot_pareto(paths: Paths, tables: ResultsTables, coll_names: List[str], alg_
     name_parts = shorten_coll_names(coll_names) + [mean_name]
     if use_validation_errors:
         name_parts = ['validation'] + name_parts
+
+    if use_2x3:
+        name_parts = ['2x3'] + name_parts
 
     plots_path = paths.plots()
     if subfolder is not None:

@@ -28,7 +28,7 @@ hyperparameter optimization methods beyond random search (hyperopt/SMAC),
 the benchmarking part, and testing/documentation. For the hpo part, 
 you might need to install *swig* (e.g. via pip) if the build of *pyrfr* fails.
 See also the [documentation](https://pytabkit.readthedocs.io).
-To run the data download, you need one of rar, unrar, or 7-zip 
+To run the data download for the meta-train benchmark, you need one of rar, unrar, or 7-zip 
 to be installed on the system.
 
 ## Using the ML models
@@ -135,6 +135,10 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.1.2: 
+  - Compatibility fixes for scikit-learn 1.6.
+  - Improved documentation for Pytorch-Lightning interface.
+  - Other small bugfixes and improvements.
 - v1.1.1:
   - Added parameters `weight_decay`, `tfms`,
     and `gradient_clipping_norm` to TabM. 

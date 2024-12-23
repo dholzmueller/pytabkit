@@ -250,6 +250,7 @@ class MultiSplitWrapperAlgInterface(AlgInterface):
         for split_idx in range(len(idxs_list)):
             self.single_split_interfaces[split_idx].fit(ds, [idxs_list[split_idx]], interface_resources, logger,
                                                         [tmp_folders[split_idx]], name)
+        self.fit_params = [ssi.fit_params[0] for ssi in self.single_split_interfaces]
         return None
 
     def fit_and_eval(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,

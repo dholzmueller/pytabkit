@@ -22,7 +22,7 @@ def plot_animations(coll_names: List[str]):
 
     alg_names_to_keep = ["MLP-RTDL-D", "MLP-PLR-D", "RealMLP-TD", "MLP-HPO", "MLP-PLR-HPO", "RealMLP-HPO",
                         "MLP-RTDL-HPO"]
-    #
+
     # #all
     # plot_pareto(paths, tables,
     #             coll_names=coll_names,
@@ -125,12 +125,29 @@ def plot_animations(coll_names: List[str]):
     #             subfolder='animations',
     #             alg_names_to_hide=[alg_name for alg_name in alg_names if alg_name not in alg_names_to_keep])
 
-    alg_names_to_keep = ["CatBoost-D", "CatBoost-TD", #"CatBoost-HPO",
-                         "XGB-D", "XGB-TD", #"XGB-HPO",
-                         "LGBM-D", "LGBM-TD", #"LGBM-HPO",
+    # alg_names_to_keep = ["CatBoost-D", "CatBoost-TD", #"CatBoost-HPO",
+    #                      "XGB-D", "XGB-TD", #"XGB-HPO",
+    #                      "LGBM-D", "LGBM-TD", #"LGBM-HPO",
+    #                      "MLP-PLR-D", "MLP-PLR-HPO",
+    #                      "RealMLP-TD", "RealMLP-HPO",
+    #                      "TabR-S-D", "RealTabR-D"]
+    #
+    # plot_pareto(paths, tables,
+    #             coll_names=coll_names,
+    #             alg_names=alg_names,
+    #             use_ranks=False, use_normalized_errors=False,
+    #             use_grinnorm_errors=False,
+    #             use_geometric_mean=True, arrow_alg_names=arrow_alg_names,
+    #             pareto_frontier_width=4.,
+    #             filename_suffix='_8',
+    #             subfolder='animations',
+    #             alg_names_to_hide=[alg_name for alg_name in alg_names if alg_name not in alg_names_to_keep])
+
+    alg_names_to_keep = ["CatBoost-D", "CatBoost-TD", "CatBoost-HPO",
                          "MLP-PLR-D", "MLP-PLR-HPO",
                          "RealMLP-TD", "RealMLP-HPO",
-                         "TabR-S-D", "RealTabR-D"]
+                         "TabR-S-D", "RealTabR-D", "TabR-HPO",
+                         "BestModel-D", "BestModel-TD", "BestModel-HPO"]
 
     plot_pareto(paths, tables,
                 coll_names=coll_names,
@@ -139,7 +156,7 @@ def plot_animations(coll_names: List[str]):
                 use_grinnorm_errors=False,
                 use_geometric_mean=True, arrow_alg_names=arrow_alg_names,
                 pareto_frontier_width=4.,
-                filename_suffix='_8',
+                filename_suffix='_9',
                 subfolder='animations',
                 alg_names_to_hide=[alg_name for alg_name in alg_names if alg_name not in alg_names_to_keep])
 
@@ -157,3 +174,5 @@ if __name__ == '__main__':
     plot_animations(['meta-test-class', 'meta-test-reg'])
     plot_animations(['grinsztajn-class-filtered', 'grinsztajn-reg'])
     plot_animations(['meta-train-class', 'meta-train-reg'])
+    plot_animations(['meta-test-class', 'grinsztajn-class-filtered'])
+    plot_animations(['meta-test-reg', 'grinsztajn-reg'])

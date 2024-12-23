@@ -26,7 +26,7 @@ class FunctionEvaluationTracker:
         start_time = time.time()
         result = self.f(params)
         if np.isnan(result[0]):
-            result = (np.Inf, result[1])
+            result = (np.inf, result[1])
         eval_time = time.time() - start_time
         if self.best_result is None or (result[0] <= self.best_result[0]):
             # print(f'new best result')

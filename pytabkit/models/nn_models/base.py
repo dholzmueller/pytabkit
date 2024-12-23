@@ -654,7 +654,7 @@ class Fitter(ContextAware, StringConvertible):
             return tfm
         elif self.__class__._fit_transform_subsample != Fitter._fit_transform_subsample:
             # avoid infinite recursion if the method is not overridden
-            tfm, ds = self._fit_transform_subsample(ds, ram_limit_gb=np.Inf, needs_tensors=False)
+            tfm, ds = self._fit_transform_subsample(ds, ram_limit_gb=np.inf, needs_tensors=False)
             return tfm
         if isinstance(self, Layer):
             return self
@@ -670,7 +670,7 @@ class Fitter(ContextAware, StringConvertible):
         :return: Initialized Layer object and transformed data set
         """
         if self.__class__._fit_transform_subsample != Fitter._fit_transform_subsample:
-            return self._fit_transform_subsample(ds, ram_limit_gb=np.Inf, needs_tensors=needs_tensors)
+            return self._fit_transform_subsample(ds, ram_limit_gb=np.inf, needs_tensors=needs_tensors)
         else:
             tfm = self._fit(ds)
             if needs_tensors:
@@ -683,7 +683,7 @@ class Fitter(ContextAware, StringConvertible):
         n_forward = self.get_n_forward(ds.tensor_infos)
 
         # check if subsampling is necessary
-        if ram_limit_gb < np.Inf and n_forward > 0 and ds.tensors is not None and (self.needs_tensors or needs_tensors):
+        if ram_limit_gb < np.inf and n_forward > 0 and ds.tensors is not None and (self.needs_tensors or needs_tensors):
             # optimistically assume 4 bytes per number, while 8 are needed for categorical values
             max_n_samples = max(1, int(ram_limit_gb * (1024 ** 3) / (4 * n_forward)))
             if max_n_samples < ds.n_samples:

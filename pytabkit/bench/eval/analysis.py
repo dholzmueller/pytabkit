@@ -116,7 +116,7 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
         if task_type_name == 'reg':
             errors = np.clip(errors, 0.0, 1.0)
         else:
-            errors = np.clip(errors, 0.0, np.Inf)
+            errors = np.clip(errors, 0.0, np.inf)
 
     idx_best = test_table.alg_names.index(rel_alg_name) if use_relative_score else 0
 

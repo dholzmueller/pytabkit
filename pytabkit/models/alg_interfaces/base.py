@@ -10,12 +10,17 @@ class SplitIdxs:
     """
     def __init__(self, train_idxs: torch.Tensor, val_idxs: Optional[torch.Tensor], test_idxs: Optional[torch.Tensor],
                  split_seed: int, sub_split_seeds: List[int], split_id: int):
-        # train_idxs: n_trainval_splits x n_train_idxs
-        # val_idxs: n_trainval_splits x n_val_idxs (optional)
-        # trainval_idxs: n_train_idxs + n_val_idxs
-        # test_idxs: n_test_idxs (optional)
-        # alg_seeds: n_trainval_splits
-        # split_id is useful for logging
+        """
+        :param train_idxs: Tensor of shape (n_trainval_splits, n_train_idxs).
+            Each of the train-val splits needs to have the same number of training samples.
+            The elements of the tensor should index the training set elements in a larger dataset.
+        :param val_idxs: Tensor of shape (n_trainval_splits, n_val_idxs), or None if no validation set should be used.
+        :param test_idxs: Tensor of shape (n_test_idxs,). The same test set will be used for all train-val splits.
+        :param split_seed: Random seed for algorithms on this split.
+        :param sub_split_seeds: Separate random seeds for algorithms on each train-val split
+            (length should be n_trainval_splits).
+        :param split_id: ID of this split (for logging/saving purposes).
+        """
         self.train_idxs = train_idxs
         self.val_idxs = val_idxs
         self.test_idxs = test_idxs

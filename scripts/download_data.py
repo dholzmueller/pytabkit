@@ -9,14 +9,15 @@ from pytabkit.bench.data.paths import Paths
 from pytabkit.bench.data.tasks import TaskCollection, TaskDescription, TaskInfo
 
 
-def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, import_meta_test: bool = True,
+def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, import_meta_test: bool = False,
                import_openml_class_bin_extra: bool = False,
-               import_grinsztajn: bool = False, import_grinsztajn_medium: bool = True,
-               import_tabzilla_hard: bool = False):
+               import_grinsztajn: bool = False, import_grinsztajn_medium: bool = False,
+               import_tabzilla_hard: bool = False, import_automl_class_small: bool = False):
     paths = Paths.from_env_variables()
     min_n_samples = 1000
 
     if import_meta_train:
+        print(f'Importing meta-train')
         # import UCI
         download_all_uci(paths)
         import_uci_tasks(paths)
@@ -37,7 +38,7 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
     # maybe could use faster pyarrow backend for pandas if v2 is available?
     # pd.options.mode.dtype_backend = "pyarrow"
 
-    if import_meta_test or import_openml_class_bin_extra:
+    if import_meta_test or import_openml_class_bin_extra or import_automl_class_small:
         # import AutoML Benchmark and CTR-23 benchmark
         # could also import the TabZilla suite
         # https://www.openml.org/search?type=study&study_type=task&id=379&sort=tasks_included
@@ -57,7 +58,24 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
         automl_reg_ds_names = get_openml_ds_names(automl_reg_task_ids)
         ctr23_reg_ds_names = get_openml_ds_names(ctr23_reg_task_ids)
 
+        def check_task(td: TaskDescription, min_n_samples: Optional[int] = None,
+                       max_one_hot_size: Optional[int] = None) -> bool:
+            task_info = td.load_info(paths)
+            if min_n_samples is not None and task_info.n_samples < min_n_samples:
+                print(f'Ignoring task {str(td)} because it has too few samples')
+                return False
+            n_cont = task_info.tensor_infos['x_cont'].get_n_features()
+            cat_sizes = task_info.tensor_infos['x_cat'].get_cat_sizes().numpy()
+            # ignore 'missing' categories
+            # todo: is this really the way we should handle this?
+            d_one_hot = n_cont + sum([1 if cs == 3 else cs - 1 for cs in cat_sizes])
+            if max_one_hot_size is not None and d_one_hot > max_one_hot_size:
+                print(f'Ignoring task {str(td)} because it is too high-dimensional after one-hot encoding')
+                return False
+            return True
+
         if import_meta_test:
+            print(f'Importing meta-test')
             # treat dionis separately because we want to subsample it to 100k instead of 500k samples for speed and RAM reasons
             automl_class_task_ids_not_dionis = [id for id, name in zip(automl_class_task_ids, automl_class_ds_names)
                                                 if name != 'dionis']
@@ -75,22 +93,6 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
                           max_n_samples=500000, rerun=False)
 
             class_descs = TaskCollection.from_source(TaskSource.OPENML_CLASS, paths).task_descs
-
-            def check_task(td: TaskDescription, min_n_samples: Optional[int] = None,
-                           max_one_hot_size: Optional[int] = None) -> bool:
-                task_info = td.load_info(paths)
-                if task_info.n_samples < min_n_samples:
-                    print(f'Ignoring task {str(td)} because it has too few samples')
-                    return False
-                n_cont = task_info.tensor_infos['x_cont'].get_n_features()
-                cat_sizes = task_info.tensor_infos['x_cat'].get_cat_sizes().numpy()
-                # ignore 'missing' categories
-                # todo: is this really the way we should handle this?
-                d_one_hot = n_cont + sum([1 if cs == 3 else cs - 1 for cs in cat_sizes])
-                if d_one_hot > max_one_hot_size:
-                    print(f'Ignoring task {str(td)} because it is too high-dimensional after one-hot encoding')
-                    return False
-                return True
 
             # generate task collections
             exclude_automl_class = ['kr-vs-kp', 'wilt', 'ozone-level-8hr', 'first-order-theorem-proving',
@@ -115,6 +117,7 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
             TaskCollection('meta-test-reg', filtered_reg_descs).save(paths)
 
         if import_openml_class_bin_extra:
+            print(f'Importing openml-class-bin-extra')
             # also import binary version of multiclass tasks
             # requires that meta_test has already been imported
             class_descs = TaskCollection.from_source(TaskSource.OPENML_CLASS, paths).task_descs
@@ -123,13 +126,24 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = True, imp
             import_openml(automl_class_task_ids, TaskSource.OPENML_CLASS_BIN_EXTRA, paths, openml_cache_dir,
                           max_n_classes=2, include_only_ds_names=multiclass_names)
 
+        if import_automl_class_small:
+            print(f'Importing automl-class-small')
+            import_openml(automl_class_task_ids, TaskSource.AUTOML_CLASS_SMALL, paths, openml_cache_dir,
+                          ignore_above_n_classes=50, min_n_samples=1000, max_n_samples=100_000)
+            descs = TaskCollection.from_source(TaskSource.AUTOML_CLASS_SMALL, paths).task_descs
+            filtered_descs = [td for td in descs if check_task(td, max_one_hot_size=1000)]
+            TaskCollection('automl-class-small-filtered', filtered_descs).save(paths)
+
     if import_grinsztajn:
+        print(f'Importing grinsztain benchmark')
         import_grinsztajn_datasets(openml_cache_dir)
 
     if import_grinsztajn_medium:
+        print(f'Importing grinsztain medium benchmark')
         import_grinsztajn_medium_datasets(openml_cache_dir)
 
     if import_tabzilla_hard:
+        print(f'Importing TabZilla hard benchmark')
         import_tabzilla_hard_datasets(openml_cache_dir)
 
 
@@ -225,7 +239,7 @@ def split_meta_test(paths: Paths):
 if __name__ == '__main__':
     fire.Fire(run_import)
     # import_grinsztajn_datasets()
-    paths = Paths.from_env_variables()
+    # paths = Paths.from_env_variables()
     # split_meta_test(paths)
 
     # meta_train = TaskCollection.from_name('meta-train-class', paths).load_infos(paths)

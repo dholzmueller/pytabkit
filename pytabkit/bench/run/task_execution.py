@@ -252,7 +252,7 @@ def run_alg_selection(paths: Paths, config: RunConfig, task_infos: List[TaskInfo
 
             print(f'Running algorithm selection for {target_alg_name} on split {split_id} of task {task_desc}')
             best_alg_name = None
-            best_val_score = np.Inf
+            best_val_score = np.inf
             best_alg_idx = None
 
             # find best alg

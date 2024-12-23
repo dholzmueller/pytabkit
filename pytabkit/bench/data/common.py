@@ -6,6 +6,7 @@ class TaskSource:
     OPENML_CLASS = 'openml-class'
     OPENML_CLASS_BIN_EXTRA = 'openml-class-bin-extra'
     OPENML_REGRESSION = 'openml-reg'
+    AUTOML_CLASS_SMALL = 'automl-class-small'
     CUSTOM = 'custom'
 
 

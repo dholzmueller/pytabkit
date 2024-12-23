@@ -93,11 +93,11 @@ class TabNNModule(pl.LightningModule):
         self.model.train()
         self.optimizers().train()
         # mean val errors will not be accurate if all epochs after this yield NaN
-        self.best_mean_val_errors = [np.Inf] * self.creator.n_tt_splits
+        self.best_mean_val_errors = [np.inf] * self.creator.n_tt_splits
         # epoch 0 counts as before training, epoch 1 is first epoch
         self.best_mean_val_epochs = [0] * self.creator.n_tt_splits
         # don't use simpler notation of the form [[]] * 2 because this will have two references to the same inner array!
-        self.best_val_errors = [[np.Inf] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
+        self.best_val_errors = [[np.inf] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
         self.best_val_epochs = [[0] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
         self.has_stopped_list = [[False] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
 
