@@ -87,7 +87,10 @@ class ToDictDatasetConverter:
 
         if set(x.columns) != self.fitted_columns:
             print('Raising column error')
-            raise ValueError(f'Different columns during fit() and predict(): {self.fitted_columns} and {set(x.columns)}')
+            # second line is to satisfy the sklearn test
+            # check_n_features_in_after_fitting in scikit-learn >= 1.6
+            raise ValueError(f'Different columns during fit() and predict(): {self.fitted_columns} and {set(x.columns)}\n'
+                             f'X has {len(x.columns)} features, but estimator is expecting {len(self.fitted_columns)} features as input')
 
         x_cont = torch.as_tensor(self.num_tf.transform(x), dtype=torch.float32)
         x_cat = torch.as_tensor(self.cat_tf.transform(x) + 1, dtype=torch.long)

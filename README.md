@@ -136,7 +136,8 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 ## Releases (see git tags)
 
 - v1.1.2: 
-  - Compatibility fixes for scikit-learn 1.6.
+  - Some compatibility improvements for scikit-learn 1.6 
+    (but disabled 1.6 since skorch is not compatible with it).
   - Improved documentation for Pytorch-Lightning interface.
   - Other small bugfixes and improvements.
 - v1.1.1:
