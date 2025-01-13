@@ -138,7 +138,7 @@ class AlgInterfaceEstimator(BaseEstimator):
         """
 
         # do a first check, this includes to check if X or y are not None before other things are done to them
-        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
+        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
 
         # if X is None:
         #     raise ValueError(f'This estimator requires X to be passed, but X is None')
@@ -173,8 +173,6 @@ class AlgInterfaceEstimator(BaseEstimator):
         if X_val is not None and y_val is not None:
             if val_idxs is not None:
                 raise ValueError(f'both val_idxs and X_val, y_val were provided')
-            if n_cv != 1:
-                raise ValueError(f'X_val can only be specified for n_cv=1, but got {n_cv=}')
 
             X_val = to_normal_type(X_val)
             y_val = to_normal_type(y_val)
@@ -185,7 +183,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             y = concat_arrays(y, y_val)
 
         # check again with the validation set concatenated
-        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True)
+        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
 
         if self._is_classification():
             # classes_ is overridden later, but this raises an error when y is a regression target, so it is useful

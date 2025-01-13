@@ -135,6 +135,12 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.1.3:
+  - Fixed a bug where the categorical encoding was incorrect if categories 
+    were missing in the training or validation set. The bug affected XGBoost 
+    and potentially many other models except RealMLP.
+  - Scikit-learn interfaces now accept and auto-detect categorical datatypes
+    (category, string, object) in dataframes.
 - v1.1.2: 
   - Some compatibility improvements for scikit-learn 1.6 
     (but disabled 1.6 since skorch is not compatible with it).

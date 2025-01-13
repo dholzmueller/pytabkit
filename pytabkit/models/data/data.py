@@ -102,9 +102,15 @@ class DictDataset:
         for key in self.tensors:
             val_np = self.tensors[key].detach().cpu().numpy()
             col_names = [f'{key}_{i}' for i in range(val_np.shape[1])]
-            df = pd.DataFrame(val_np, columns=col_names)
+
             if self.tensor_infos[key].is_cat():
-                df = df.astype('category')
+                cat_sizes = self.tensor_infos[key].get_cat_sizes().numpy()
+                df = pd.DataFrame(
+                    {col_names[i]: pd.Categorical(val_np[:, i], categories=list(range(cat_sizes[i]))) for i in
+                     range(len(col_names))})
+            else:
+                df = pd.DataFrame(val_np, columns=col_names)
+
             tensor_dfs.append(df)
 
         return pd.concat(tensor_dfs, axis=1)
