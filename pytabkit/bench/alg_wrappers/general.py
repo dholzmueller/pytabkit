@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Optional
 
 from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
@@ -7,6 +7,7 @@ from pytabkit.models.training.logging import Logger
 
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.base import RequiredResources
+from pytabkit.models.training.metrics import Metrics
 
 
 class AlgWrapper:
@@ -22,7 +23,7 @@ class AlgWrapper:
         self.config = config
 
     def run(self, task_package: TaskPackage, logger: Logger, assigned_resources: NodeResources,
-            tmp_folders: List[Path]) -> List[ResultManager]:
+            tmp_folders: List[Path], metrics: Optional[Metrics] = None) -> Dict[str, List[ResultManager]]:
         """
         Run the ML method on the given task. Should be overridden in subclasses.
 
@@ -30,7 +31,9 @@ class AlgWrapper:
         :param logger: Logger.
         :param assigned_resources: Assigned resources (e.g. number of threads).
         :param tmp_folders: Temporary folders, one for each train/test split, to save temporary data to.
-        :return: A List of ResultManager objects, one for each train/test split, that contain the results of the run.
+        :return: A dictionary of lists of ResultManager objects.
+            The dict key is the predict params name, which is used as a suffix for the alg_name,
+             and each list contains ResultManagers for each train/test split.
         """
         raise NotImplementedError()
 
@@ -51,6 +54,14 @@ class AlgWrapper:
         :return: Maximum number of train/test splits that this method can be run on at once.
         """
         return 1
+
+    def get_pred_param_names(self, task_package: TaskPackage) -> List[str]:
+        """
+        Return the possible prediction parameter names, used as suffixes for alg names
+        :param task_package: Task package.
+        :return: List of the possible names.
+        """
+        raise NotImplementedError()
 
 
 # want to have:

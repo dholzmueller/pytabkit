@@ -1,3 +1,4 @@
+import warnings
 from typing import Union, List, Optional
 
 import numpy as np
@@ -11,7 +12,7 @@ from pytabkit.models.data.data import DictDataset, TensorInfo
 
 
 class ToDictDatasetConverter:
-    def __init__(self, cat_features: Optional[Union[List[bool], np.ndarray]] = None):
+    def __init__(self, cat_features: Optional[Union[List[bool], np.ndarray]] = None, verbosity: int = 0):
         self.cat_features = cat_features if cat_features is None else np.asarray(cat_features, dtype=np.bool_)
         self.num_tf = None
         self.cat_tf = None
@@ -19,6 +20,7 @@ class ToDictDatasetConverter:
         self.tensor_infos = None
         self.fitted_columns = None
         self.fitted_type = None
+        self.verbosity = verbosity
 
     def fit_transform(self, x: Union[np.ndarray, pd.DataFrame, pd.Series, DictDataset]) -> DictDataset:
         self.fitted = True
@@ -43,13 +45,14 @@ class ToDictDatasetConverter:
         else:
             self.num_tf = ColumnTransformer(transformers=[
                 ('continuous', FunctionTransformer(), make_column_selector(dtype_include='number')),
+                # ('continuous', FunctionTransformer(), make_column_selector(dtype_exclude=["string", "object", "category", "boolean"])),
                 # todo: include this if we can make skrub a dependency
                 # ('datetime', DatetimeEncoder(), make_column_selector(dtype_include=['datetime', 'datetimetz']))
             ])
             self.cat_tf = ColumnTransformer(transformers=[
                 ('categorical', OrdinalEncoder(dtype=np.int64, handle_unknown='use_encoded_value', unknown_value=-1,
                                                encoded_missing_value=-1),
-                 make_column_selector(dtype_include=["string", "object", "category"]))
+                 make_column_selector(dtype_include=["string", "object", "category", "boolean"]))
             ])
 
         x_cont = torch.as_tensor(self.num_tf.fit_transform(x), dtype=torch.float32)
@@ -58,12 +61,18 @@ class ToDictDatasetConverter:
         # print(f'{self.num_tf.transformers_=}')
         # print(f'{self.cat_tf.transformers_=}')
 
+        selected_cols = []
+
         for col_tfm in [self.num_tf, self.cat_tf]:
             for name, tfm, cols in col_tfm.transformers_:
                 if tfm != 'drop':
-                    # todo: log this at an appropriate level instead of printing
-                    # print(f'Columns classified as {name}: {list(cols)}')
-                    pass
+                    selected_cols.extend(list(cols))
+                    if self.verbosity >= 1:
+                        print(f'Columns classified as {name}: {list(cols)}')
+
+        non_selected_cols = self.fitted_columns.difference(set(selected_cols))
+        if len(non_selected_cols) >= 1:
+            warnings.warn(f'The following columns are not used due to their data type: {list(non_selected_cols)}')
 
         cat_sizes = torch.max(x_cat, dim=0)[0] + 1
         self.tensor_infos = {'x_cont': TensorInfo(feat_shape=x_cont.shape[1:]),

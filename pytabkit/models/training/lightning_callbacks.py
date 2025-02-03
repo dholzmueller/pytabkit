@@ -2,10 +2,13 @@ from typing import List, Any, Optional
 
 import numpy as np
 import torch
+
 try:
     from lightning.pytorch.callbacks import Callback
+    import lightning.pytorch as pl
 except ImportError:
     from pytorch_lightning.callbacks import Callback
+    import pytorch_lightning as pl
 from torch import Tensor
 
 from pytabkit.models.nn_models.base import Variable, Layer
@@ -55,7 +58,7 @@ class HyperparamCallback(Callback):
         self.hp_manager = hp_manager
 
     def on_train_batch_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int
     ) -> None:
         # print(list(pl_module.model.parameters())[-1][0, -1].item())
         self.hp_manager.update_hypers(pl_module)
@@ -89,9 +92,11 @@ class L1L2RegCallback(Callback):
 
 
 class ModelCheckpointCallback(Callback):
-    def __init__(self, n_tt_splits: int, n_tv_splits: int, use_best_mean_epoch: bool, restore_best: bool = False):
+    def __init__(self, n_tt_splits: int, n_tv_splits: int, use_best_mean_epoch: bool, val_metric_name: str,
+                 restore_best: bool = False):
         self.n_tt_splits = n_tt_splits
         self.n_tv_splits = n_tv_splits
+        self.val_metric_name = val_metric_name
         self.restore_best = restore_best
         self.use_best_mean_epoch = use_best_mean_epoch
         self.ckpt = ParamCheckpointer(n_tv_splits=n_tv_splits, n_tt_splits=self.n_tt_splits)
@@ -103,16 +108,20 @@ class ModelCheckpointCallback(Callback):
         for tt_split_idx in range(self.n_tt_splits):
             for tv_split_idx in range(self.n_tv_splits):
                 if self.use_best_mean_epoch:
-                    if pl_module.best_mean_val_epochs[tt_split_idx] == pl_module.progress.epoch:
+                    if pl_module.best_mean_val_epochs[self.val_metric_name][tt_split_idx] == pl_module.progress.epoch:
                         # if this is the best epoch, save the model
                         self.ckpt.save(tt_split_idx, tv_split_idx, pl_module.model)
                 else:
-                    if pl_module.best_val_epochs[tt_split_idx][tv_split_idx] == pl_module.progress.epoch:
+                    if pl_module.best_val_epochs[self.val_metric_name][tt_split_idx][tv_split_idx] == pl_module.progress.epoch:
                         # print(f'found improvement')
                         # if this is the best epoch, save the model
                         self.ckpt.save(tt_split_idx, tv_split_idx, pl_module.model)
 
     def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        # restore at the end. In case of multiple val metrics, can use restore() separately to restore the desired one.
+        self.restore(pl_module)
+
+    def restore(self, pl_module: "pl.LightningModule") -> None:
         # restore best params
         for key, state in pl_module.optimizers().opt.state.items():
             # lightning automatically moves the model to the CPU after training,
@@ -161,4 +170,4 @@ class StopAtEpochsCallback(Callback):
         self._handle_epoch(trainer, epoch=0)
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        self._handle_epoch(trainer, epoch=trainer.current_epoch+1)
+        self._handle_epoch(trainer, epoch=trainer.current_epoch + 1)

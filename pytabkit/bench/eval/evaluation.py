@@ -335,6 +335,7 @@ class MultiResultsTable:
                                alg_task_results=utils.map_nested(alg_task_results,
                                                                  lambda dct: select_valtest(dct, name), dim=3))
                   for name in ['train', 'val', 'test']}
+
         # does not work since 'refit' does not have 'val'
         # tables = [AlgTaskTable(alg_names=alg_names, task_infos=task_infos,
         #                        alg_task_results=utils.select_nested(alg_task_results, name, dim=4))

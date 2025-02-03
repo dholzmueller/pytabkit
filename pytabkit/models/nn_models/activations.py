@@ -119,8 +119,11 @@ class ActivationFactory(FitterFactory):
             f = lambda x: 1.6 * mish(x)
         elif act_name == 'gelu':
             f = F.gelu
+        elif act_name == 'elu':
+            f = F.elu
         else:
             raise ValueError(f'Activation {act_name} unknown')
+
 
         if self.config.get('use_parametric_act', False):
             return ParametricActivationFitter(f, **self.config)

@@ -1,3 +1,4 @@
+import numbers
 import time
 from collections.abc import Callable
 from typing import Dict, Union, List, Any, Tuple, Optional
@@ -58,7 +59,7 @@ def get_resource_features(config: Dict, ds: DictDataset, n_cv: int, n_refit: int
     features['n_cv_refit'] = n_cv + n_refit
     features['n_splits'] = n_splits
     max_depth = config.get('max_depth', 6)
-    if isinstance(max_depth, int):
+    if isinstance(max_depth, numbers.Number):
         features['2_power_maxdepth'] = 2 ** max_depth
     features['log_num_leaves'] = np.log(max(1, config.get('num_leaves', 31)))
     features['cat_size_sum'] = cat_size_sum

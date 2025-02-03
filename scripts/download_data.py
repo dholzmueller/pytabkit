@@ -4,6 +4,7 @@ import fire
 
 from pytabkit.bench.data.common import TaskSource
 from pytabkit.bench.data.get_uci import download_all_uci
+from pytabkit.bench.data.import_talent_benchmark import import_talent_benchmark
 from pytabkit.bench.data.import_tasks import import_uci_tasks, get_openml_task_ids, import_openml, get_openml_ds_names
 from pytabkit.bench.data.paths import Paths
 from pytabkit.bench.data.tasks import TaskCollection, TaskDescription, TaskInfo
@@ -12,7 +13,9 @@ from pytabkit.bench.data.tasks import TaskCollection, TaskDescription, TaskInfo
 def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, import_meta_test: bool = False,
                import_openml_class_bin_extra: bool = False,
                import_grinsztajn: bool = False, import_grinsztajn_medium: bool = False,
-               import_tabzilla_hard: bool = False, import_automl_class_small: bool = False):
+               import_tabzilla_hard: bool = False, import_automl_class_small: bool = False,
+               import_talent_class_small: bool = False, import_talent_reg_small: bool = False,
+               talent_folder: Optional[str] = None):
     paths = Paths.from_env_variables()
     min_n_samples = 1000
 
@@ -146,6 +149,43 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
         print(f'Importing TabZilla hard benchmark')
         import_tabzilla_hard_datasets(openml_cache_dir)
 
+    if import_talent_class_small:
+        if talent_folder is None:
+            raise ValueError(f'Please specify talent_folder to import datasets from the TALENT benchmark')
+        import_talent_benchmark(paths, talent_folder=talent_folder, source_name='talent-class-small',
+                                allow_regression=False,
+                                min_n_samples=1000, max_n_samples=100_000, ignore_above_n_classes=100)
+        task_infos = TaskCollection.from_source('talent-class-small', paths).load_infos(paths)
+        bin_task_descs = [ti.task_desc for ti in task_infos if ti.get_n_classes() == 2]
+        multi_task_descs = [ti.task_desc for ti in task_infos if ti.get_n_classes() != 2]
+        TaskCollection('talent-bin-class-small', bin_task_descs).save(paths)
+        TaskCollection('talent-multi-class-small', multi_task_descs).save(paths)
+        above10k_descs = [ti.task_desc for ti in task_infos if ti.n_samples >= 10_000]
+        below10k_descs = [ti.task_desc for ti in task_infos if ti.n_samples < 10_000]
+        TaskCollection('talent-class-small-above10k', above10k_descs).save(paths)
+        TaskCollection('talent-class-small-below10k', below10k_descs).save(paths)
+
+        talent_reg_tabpfn_task_descs = [ti.task_desc for ti in task_infos if
+                                          ti.get_n_classes() <= 10 and ti.n_samples <= 10_000 and ti.tensor_infos[
+                                              'x_cont'].get_n_features() + ti.tensor_infos[
+                                              'x_cat'].get_n_features() <= 500]
+
+        TaskCollection('talent-class-tabpfn', talent_reg_tabpfn_task_descs).save(paths)
+
+    if import_talent_reg_small:
+        if talent_folder is None:
+            raise ValueError(f'Please specify talent_folder to import datasets from the TALENT benchmark')
+        import_talent_benchmark(paths, talent_folder=talent_folder, source_name='talent-reg-small',
+                                allow_regression=True, allow_classification=False,
+                                min_n_samples=1000, max_n_samples=100_000)
+
+        task_infos = TaskCollection.from_source('talent-reg-small', paths).load_infos(paths)
+        talent_reg_tabpfn_task_descs = [ti.task_desc for ti in task_infos if
+                                          ti.n_samples <= 10_000 and ti.tensor_infos[
+                                              'x_cont'].get_n_features() + ti.tensor_infos[
+                                              'x_cat'].get_n_features() <= 500]
+
+        TaskCollection('talent-reg-tabpfn', talent_reg_tabpfn_task_descs).save(paths)
 
 
 def import_grinsztajn_datasets(openml_cache_dir: str = None):
@@ -185,7 +225,7 @@ def import_grinsztajn_medium_datasets(openml_cache_dir: str = None):
         task_ids_num = get_openml_task_ids(bench_id_num)
         task_ids = task_ids_cat + [task_id for task_id in task_ids_num if task_id not in task_ids_cat]
         import_openml(task_ids, bench_name, paths, openml_cache_dir,
-                      max_n_samples=500_000, #normalize_y=(bench_name=='grinsztajn-reg'),
+                      max_n_samples=500_000,  # normalize_y=(bench_name=='grinsztajn-reg'),
                       rerun=False)
         task_infos = TaskCollection.from_source(bench_name, paths).load_infos(paths)
         for task_info in task_infos:

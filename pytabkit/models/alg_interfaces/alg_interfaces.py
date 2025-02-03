@@ -52,6 +52,7 @@ class AlgInterface:
         """
         self.config = config
         self.fit_params = fit_params
+        self.curr_pred_params_name = ''
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> Optional[
@@ -135,6 +136,9 @@ class AlgInterface:
         X, y = ds.split_xy()
         y = y.tensors['y']
         y_pred_full = self.predict(X).detach().cpu()
+        # print(f'{y_pred_full[0, idxs_list[0].val_idxs[0, 4]]=}')
+        # print(f'{self.predict(X.get_sub_dataset(idxs_list[0].val_idxs[0]))[0, 4]=}')
+        # print(f'{idxs_list[0].val_idxs[0, 4]=}')
         # print(f'{y=}')
         # print(f'{y_pred_full=}')
         # print(f'{y.shape=}')
@@ -164,9 +168,15 @@ class AlgInterface:
                 train_metrics['1', str(i)] = train_dict['1', '0']
 
                 if idxs.val_idxs is not None and idxs.val_idxs.shape[-1] > 0:
+                    # print(f'{y_preds[0, idxs.val_idxs[0, 4]]=}')
                     val_dict = metrics.compute_metrics_dict([y_preds[i, idxs.val_idxs[i]]], y[idxs.val_idxs[i]],
                                                             use_ens=False)
                     val_metrics['1', str(i)] = val_dict['1', '0']
+                    # print(f'{val_metrics=}')
+                    # print(f'{idxs.val_idxs.shape[-1]=}')
+                    # print(f'{torch.min(y_preds[0, idxs.val_idxs[0]]).item()=}')
+                    # print(f'{ds.tensors["x_cont"][idxs.val_idxs[0, 4]]=}')
+                    # print(f'{ds.tensors["x_cat"][idxs.val_idxs[0, 4]]=}')
 
             results['metrics', 'train'] = train_metrics
             if idxs.val_idxs is not None:
@@ -220,6 +230,21 @@ class AlgInterface:
         :return: Returns estimated required resources.
         """
         raise NotImplementedError()
+
+    # ------- for alg interfaces that can predict with multiple versions of an algorithm
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        # override in subclasses if more options are available
+        return {'': dict()}
+
+    def get_current_predict_params_name(self):
+        return self.curr_pred_params_name
+
+    def get_current_predict_params_dict(self):
+        return self.get_available_predict_params()[self.curr_pred_params_name]
+
+    def set_current_predict_params(self, name: str) -> None:
+        self.curr_pred_params_name = name
 
 
 class MultiSplitWrapperAlgInterface(AlgInterface):
@@ -277,6 +302,14 @@ class MultiSplitWrapperAlgInterface(AlgInterface):
             ssi.get_required_resources(ds, n_cv, n_refit, n_splits=1, split_seeds=[split_seeds[i]], n_train=n_train)
             for i, ssi in enumerate(self.single_split_interfaces)]
         return RequiredResources.combine_sequential(single_resources)
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        return self.single_split_interfaces[0].get_available_predict_params()
+
+    def set_current_predict_params(self, name: str) -> None:
+        super().set_current_predict_params(name)
+        for ssi in self.single_split_interfaces:
+            ssi.set_current_predict_params(name)
 
 
 class SingleSplitAlgInterface(AlgInterface):
@@ -455,12 +488,15 @@ class RandomParamsAlgInterface(SingleSplitAlgInterface):
         self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed, n_train=idxs_list[0].n_train,
                                                         n_tv_splits=n_tv_splits)
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
+        self.fit_params[0]['sub_fit_params'] = self.alg_interface.fit_params[0]
+
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
+        self.alg_interface.set_current_predict_params(self.get_current_predict_params_name())
         return self.alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:
         assert len(split_seeds) == 1
-        alg_interface = self._create_sub_interface(ds, split_seeds[0], n_train=n_train, n_tv_splits=n_cv, )
+        alg_interface = self._create_sub_interface(ds, split_seeds[0], n_train=n_train, n_tv_splits=n_cv)
         return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)

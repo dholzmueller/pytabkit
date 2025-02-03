@@ -1,6 +1,6 @@
 import shutil
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict
 
 import torch
 
@@ -17,7 +17,8 @@ from pytabkit.bench.alg_wrappers.general import AlgWrapper
 from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
-    KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface
+    KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
+    TabPFN2SubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -28,7 +29,8 @@ from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapp
 from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
 from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface, \
     RandomParamsTabRAlgInterface
-from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomParamsNNAlgInterface, NNHyperoptAlgInterface
+from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomParamsNNAlgInterface, \
+    NNHyperoptAlgInterface
 from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface, XGBHyperoptAlgInterface, \
     XGBSklearnSubSplitInterface, RandomParamsXGBAlgInterface
 from pytabkit.models.data.data import TaskType, DictDataset
@@ -54,6 +56,7 @@ class AlgInterfaceWrapper(AlgWrapper):
     """
     Base class for wrapping AlgInterface classes for benchmarking.
     """
+
     def __init__(self, create_alg_interface_fn: Optional[Callable[[...], AlgInterface]], **config):
         """
         Constructor.
@@ -103,38 +106,44 @@ class AlgInterfaceWrapper(AlgWrapper):
         return alg_interface
 
     def run(self, task_package: TaskPackage, logger: Logger, assigned_resources: NodeResources,
-            tmp_folders: List[Path]) -> List[ResultManager]:
+            tmp_folders: List[Path], metrics: Optional[Metrics] = None) -> Dict[str, List[ResultManager]]:
         task = task_package.task_info.load_task(task_package.paths)
         task_desc = task_package.task_info.task_desc
         n_cv = task_package.n_cv
         n_refit = task_package.n_refit
-        n_splits = len(task_package.split_infos)
 
         interface_resources = assigned_resources.get_interface_resources()
 
+
         old_torch_n_threads = torch.get_num_threads()
+        old_torch_n_interop_threads = torch.get_num_interop_threads()
         torch.set_num_threads(interface_resources.n_threads)
+        # don't set this because it can throw
+        # Error: cannot set number of interop threads after parallel work has started or set_num_interop_threads called
+        # torch.set_num_interop_threads(interface_resources.n_threads)
+
 
         ds = task.ds
         name = 'alg ' + task_package.alg_name + ' on task ' + str(task_desc)
 
         # return_preds = self.config.get(f'save_y_pred', False)
         return_preds = task_package.save_y_pred
-        metrics = Metrics.defaults(ds.tensor_infos['y'].cat_sizes,
-                                   val_metric_name=self.config.get('val_metric_name', None))
+        if metrics is None:
+            metrics = Metrics.defaults(ds.tensor_infos['y'].cat_sizes,
+                                       val_metric_name=self.config.get('val_metric_name', None))
 
         cv_idxs_list = []
         refit_idxs_list = []
 
-        rms = [ResultManager() for split_info in task_package.split_infos]
+        n_splits = len(task_package.split_infos)
 
-        if len(rms) == 1:
+        if n_splits == 1:
             logger.log(1,
                        f'Running on split {task_package.split_infos[0].id} of task {task_package.task_info.task_desc}')
         else:
-            logger.log(1, f'Running on {len(rms)} splits of task {task_package.task_info.task_desc}')
+            logger.log(1, f'Running on {n_splits} splits of task {task_package.task_info.task_desc}')
 
-        for split_id, (rm, split_info) in enumerate(zip(rms, task_package.split_infos)):
+        for split_id, split_info in enumerate(task_package.split_infos):
             # this will usually be called with len(task_package.split_infos) == 1, but do a loop for safety
             test_split = split_info.splitter.split_ds(task.ds)
             trainval_idxs, test_idxs = test_split.idxs[0], test_split.idxs[1]
@@ -167,20 +176,33 @@ class AlgInterfaceWrapper(AlgWrapper):
         refit_tmp_folders = [tmp_folder / 'refit' for tmp_folder in tmp_folders]
 
         cv_alg_interface = self.create_alg_interface(task_package)
-        cv_results_list = cv_alg_interface.fit_and_eval(ds, cv_idxs_list, interface_resources, logger, cv_tmp_folders,
-                                                        name,
-                                                        metrics, return_preds)
-        for rm, cv_results in zip(rms, cv_results_list):
-            rm.add_results(is_cv=True, results_dict=cv_results.get_dict())
 
-        if n_refit > 0:
-            refit_alg_interface = cv_alg_interface.get_refit_interface(n_refit)
-            refit_results_list = refit_alg_interface.fit_and_eval(ds, refit_idxs_list, interface_resources, logger,
-                                                                  refit_tmp_folders, name, metrics, return_preds)
-            for rm, refit_results in zip(rms, refit_results_list):
-                rm.add_results(is_cv=False, results_dict=refit_results.get_dict())
+        pred_param_names = list(cv_alg_interface.get_available_predict_params().keys())
+
+        if n_refit > 0 and len(pred_param_names) > 1:
+            raise NotImplementedError('Refitting with multiple prediction parameters is currently not implemented')
+
+        rms = {name: [ResultManager() for _ in task_package.split_infos] for name in pred_param_names}
+
+        cv_alg_interface.fit(ds, cv_idxs_list, interface_resources, logger, cv_tmp_folders, name)
+
+        for pred_param_name in pred_param_names:
+            cv_alg_interface.set_current_predict_params(pred_param_name)
+
+            cv_results_list = cv_alg_interface.eval(ds, cv_idxs_list, metrics, return_preds)
+
+            for rm, cv_results in zip(rms[pred_param_name], cv_results_list):
+                rm.add_results(is_cv=True, results_dict=cv_results.get_dict())
+
+            if n_refit > 0:
+                refit_alg_interface = cv_alg_interface.get_refit_interface(n_refit)
+                refit_results_list = refit_alg_interface.fit_and_eval(ds, refit_idxs_list, interface_resources, logger,
+                                                                      refit_tmp_folders, name, metrics, return_preds)
+                for rm, refit_results in zip(rms[pred_param_name], refit_results_list):
+                    rm.add_results(is_cv=False, results_dict=refit_results.get_dict())
 
         torch.set_num_threads(old_torch_n_threads)
+        # torch.set_num_interop_threads(old_torch_n_interop_threads)
 
         return rms
 
@@ -196,6 +218,9 @@ class AlgInterfaceWrapper(AlgWrapper):
                                                     n_splits=len(task_package.split_infos),
                                                     split_seeds=[si.alg_seed for si in task_package.split_infos],
                                                     n_train=n_train)
+
+    def get_pred_param_names(self, task_package: TaskPackage) -> List[str]:
+        return list(self.create_alg_interface(task_package).get_available_predict_params().keys())
 
 
 class LoadResultsWrapper(AlgInterfaceWrapper):
@@ -214,9 +239,13 @@ class LoadResultsWrapper(AlgInterfaceWrapper):
                                                     n_cv=task_package.n_cv, split_type=split_info.split_type,
                                                     split_id=split_id)
         rm = ResultManager.load(results_path)
-        y_preds_cv = torch.as_tensor(rm.other_dict['cv']['y_preds'], dtype=torch.float32)
-        y_preds_refit = None if 'refit' not in rm.other_dict else torch.as_tensor(
-            rm.other_dict['refit']['y_preds'], dtype=torch.float32)
+        y_preds_cv = rm.y_preds_cv if rm.y_preds_cv is not None else rm.other_dict['cv']['y_preds']
+        y_preds_cv = torch.as_tensor(y_preds_cv, dtype=torch.float32)
+        y_preds_refit = None
+        if rm.y_preds_refit is not None:
+            y_preds_refit = torch.as_tensor(rm.y_preds_refit, dtype=torch.float32)
+        elif 'refit' in rm.other_dict:
+            y_preds_refit = torch.as_tensor(rm.other_dict['refit']['y_preds'], dtype=torch.float32)
         fit_params_cv = rm.other_dict['cv']['fit_params']
         fit_params_refit = None if 'refit' not in rm.other_dict else rm.other_dict['refit']['fit_params']
         return PrecomputedPredictionsAlgInterface(y_preds_cv=y_preds_cv, y_preds_refit=y_preds_refit,
@@ -444,6 +473,11 @@ class KANInterfaceWrapper(SubSplitInterfaceWrapper):
 class GrandeInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return GrandeSubSplitInterface(**self.config)
+
+
+class TabPFN2InterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return TabPFN2SubSplitInterface(**self.config)
 
 
 class MLPRTDLInterfaceWrapper(SubSplitInterfaceWrapper):

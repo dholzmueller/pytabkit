@@ -168,14 +168,15 @@ def get_openml_task_ids(suite_id: Union[str, int]) -> List[int]:
 
 
 class PandasTask:
-    def __init__(self, x_df, y_df, cat_indicator: List[bool], task_type: str, more_info: Dict):
+    def __init__(self, x_df: pd.DataFrame, y_df: pd.Series, cat_indicator: List[bool], task_type: str, more_info: Dict):
         if len(x_df.columns) != len(cat_indicator):
             raise ValueError('x.shape[1] != len(category_indicator)')
 
         self.x_df = x_df  # should be (sparse) pd.DataFrame
         # should be (sparse) pd.Series  (i.e. a single column of a DataFrame)
         self.y_df = y_df if task_type == TaskType.REGRESSION else y_df.astype('category')
-        if pd.api.types.is_sparse(self.y_df):
+        # if pd.api.types.is_sparse(self.y_df):
+        if isinstance(self.y_df.dtype, pd.SparseDtype):
             self.y_df = self.y_df.sparse.to_dense()
 
         # this is a fix because category_indicator[0] was False for the dataset MIP-2016-regression
@@ -247,7 +248,11 @@ class PandasTask:
         cat_sizes = []
         for i, is_cat in enumerate(self.cat_indicator):
             if is_cat:
+                # this fails if column names are also row names,
+                # but this is maybe a good check because this might otherwise cause problems in other places...
                 col = self.x_df[self.x_df.columns[i]].astype('category')
+                # print(f'{type(self.x_df.iloc[:, i])=}')
+                # print(f'{type(col)=}')
                 col = col.cat.remove_unused_categories()
                 # detect missing values
                 col = col.cat.remove_categories([s for s in ['', '?'] if s in col.cat.categories])

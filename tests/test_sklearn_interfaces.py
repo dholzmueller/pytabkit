@@ -13,6 +13,7 @@ from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_TD_Classifier, Re
 # because LGBM only predicts a single class on the training set
 # also increase subsample to 1.0 because otherwise LightGBM fails with n_samples=1.
 @parametrize_with_checks([
+    LGBM_TD_Classifier(min_data_in_leaf=2, subsample=1.0, calibration_method='ts-mix', val_metric_name='ref-ll-ts'),
     LGBM_TD_Classifier(min_data_in_leaf=2, subsample=1.0), LGBM_TD_Regressor(subsample=1.0),
     XGB_TD_Classifier(), XGB_TD_Regressor(),
     CatBoost_TD_Classifier(), CatBoost_TD_Regressor(),

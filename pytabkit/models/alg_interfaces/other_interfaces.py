@@ -65,7 +65,7 @@ class RandomParamsRFAlgInterface(RandomParamsAlgInterface):
             'n_estimators': 250,
             'max_depth': rng.choice([None, 2, 3, 4], p=[0.7, 0.1, 0.1, 0.1]),
             'criterion': rng.choice(['gini', 'entropy']) if is_classification
-                            else rng.choice(['squared_error', 'absolute_error']),
+            else rng.choice(['squared_error', 'absolute_error']),
             'max_features': rng.choice(['sqrt', 'sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
             'min_samples_split': rng.choice([2, 3], p=[0.95, 0.05]),
             'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(50.5)))),
@@ -192,6 +192,7 @@ class GrandeWrapper:
     """
     Wrapper class for GRANDE that allows to pass cat_features in fit() instead of the constructor.
     """
+
     def __init__(self, **config):
         self.config = config
 
@@ -257,7 +258,6 @@ class GrandeWrapper:
             os.environ['CUDA_VISIBLE_DEVICES'] = gpu_idx_str
             os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
-
         from GRANDE import GRANDE
 
         self.model_ = GRANDE(params=params, args=args)
@@ -308,3 +308,52 @@ class GrandeSubSplitInterface(SklearnSubSplitInterface):
         else:
             self.model.fit(x_df, y, x_val_df, y_val_df)
 
+
+class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [
+            # ('n_jobs', ['n_jobs', 'n_threads'], n_threads),
+            ('softmax_temperature', None),
+            ('average_before_softmax', None),
+            ('inference_precision', None),
+            ('fit_mode', None),
+        ]
+
+        params = utils.extract_params(self.config, params_config)
+        print(f'{gpu_devices=}')
+        if self.n_classes > 0:
+            from tabpfn import TabPFNClassifier
+            return TabPFNClassifier(random_state=seed,
+                                    device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                    # device='cuda' if len(gpu_devices) > 0 else 'cpu',
+                                    ignore_pretraining_limits=True, **params)
+        else:
+            from tabpfn import TabPFNRegressor
+            return TabPFNRegressor(random_state=seed,
+                                   device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                   # device='cuda' if len(gpu_devices) > 0 else 'cpu',
+                                   ignore_pretraining_limits=True, **params)
+
+    def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
+                     cat_col_names: Optional[List[str]] = None):
+        # by default, we ignore the validation set since most sklearn methods do not support it
+        if not self.config.get('fit_on_valid', False):
+            n_samples = len(x_df)
+            train_mask = np.ones(shape=(n_samples,), dtype=np.bool_)
+            train_mask[val_idxs] = False
+            x_df = x_df.iloc[train_mask, :]
+            y = y[train_mask]
+        # don't provide a categorical indicator, it should work like this as well
+        self.model.fit(x_df, y)
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0, 'n_samples*n_estimators*n_tree_repeats': 3e-9}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
+        return rc.get_required_resources(ds)

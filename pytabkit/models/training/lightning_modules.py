@@ -1,3 +1,5 @@
+from pytabkit.models.training.lightning_callbacks import ModelCheckpointCallback
+
 try:
     import lightning.pytorch as pl
 except ImportError:
@@ -47,13 +49,16 @@ class TabNNModule(pl.LightningModule):
         self.old_training = None
         self.val_dl = None
         self.save_best_params = True
-        self.val_metric_name = None
+        self.val_metric_names = None
         self.epoch_mean_val_errors = None
         self.best_mean_val_errors = None
         self.best_mean_val_epochs = None
         self.best_val_errors = None
         self.best_val_epochs = None
         self.has_stopped_list = None
+        self.callbacks = None
+        # will contain {val_metric_name: ModelCheckpointCallback(..., val_metric_name)}
+        self.ckpt_callbacks = dict()
 
         # LightningModule
         self.automatic_optimization = False
@@ -70,11 +75,17 @@ class TabNNModule(pl.LightningModule):
         )
         self.model = self.creator.create_model(ds, idxs_list=idxs_list)
         self.train_dl, self.val_dl = self.creator.create_dataloaders(ds)
-        self.criterion, self.val_metric_name = self.creator.get_criterions()
+        self.criterion, self.val_metric_names = self.creator.get_criterions()
 
     def create_callbacks(self):
         """ Helper method to return callbacks for the trainer.fit callback argument."""
-        return self.creator.create_callbacks(self.model, self.my_logger)
+        assert self.val_metric_names is not None
+        self.callbacks = self.creator.create_callbacks(self.model, self.my_logger, self.val_metric_names)
+        self.ckpt_callbacks = {}
+        for callback in self.callbacks:
+            if isinstance(callback, ModelCheckpointCallback):
+                self.ckpt_callbacks[callback.val_metric_name] = callback
+        return self.callbacks
 
     def get_predict_dataloader(self, ds: DictDataset):
         """ Helper method to create a dataloader for inference."""
@@ -93,13 +104,21 @@ class TabNNModule(pl.LightningModule):
         self.model.train()
         self.optimizers().train()
         # mean val errors will not be accurate if all epochs after this yield NaN
-        self.best_mean_val_errors = [np.inf] * self.creator.n_tt_splits
+        self.best_mean_val_errors = {val_metric_name: [np.inf] * self.creator.n_tt_splits for val_metric_name in
+                                     self.val_metric_names}
         # epoch 0 counts as before training, epoch 1 is first epoch
-        self.best_mean_val_epochs = [0] * self.creator.n_tt_splits
+        self.best_mean_val_epochs = {val_metric_name: [0] * self.creator.n_tt_splits for val_metric_name in
+                                     self.val_metric_names}
         # don't use simpler notation of the form [[]] * 2 because this will have two references to the same inner array!
-        self.best_val_errors = [[np.inf] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
-        self.best_val_epochs = [[0] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
-        self.has_stopped_list = [[False] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)]
+        self.best_val_errors = {
+            val_metric_name: [[np.inf] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)] for
+            val_metric_name in self.val_metric_names}
+        self.best_val_epochs = {
+            val_metric_name: [[0] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)] for
+            val_metric_name in self.val_metric_names}
+        self.has_stopped_list = {
+            val_metric_name: [[False] * self.creator.n_tv_splits for i in range(self.creator.n_tt_splits)] for
+            val_metric_name in self.val_metric_names}
 
     def training_step(self, batch, batch_idx):
         output = self.model(batch)
@@ -129,83 +148,96 @@ class TabNNModule(pl.LightningModule):
         self.model.train(self.old_training)
         self.old_training = None
         y_pred = torch.cat(self.val_preds, dim=-2)
-        val_errors = torch.as_tensor(
-            [
-                Metrics.apply(
-                    y_pred[i, :, :], self.val_dl.val_y[i, :, :], self.val_metric_name
-                )
-                for i in range(y_pred.shape[0])
-            ]
-        )
-        val_errors = val_errors.view(
-            self.creator.n_tt_splits, self.creator.n_tv_splits
-        )
-        mean_val_errors = val_errors.mean(dim=-1)  # mean over cv/refit dimension
-        mean_val_error = mean_val_errors.mean().item()
-
-        self.my_logger.log(
-            2,
-            f"Epoch {self.progress.epoch + 1}/{self.progress.max_epochs}: val error = {mean_val_error:6.6f}",
-        )
 
         use_early_stopping = self.config.get('use_early_stopping', False)
         early_stopping_additive_patience = self.config.get('early_stopping_additive_patience', 20)
         early_stopping_multiplicative_patience = self.config.get('early_stopping_multiplicative_patience', 2)
 
-        current_epoch = self.progress.epoch + 1
+        for val_metric_name in self.val_metric_names:
+            val_errors = torch.as_tensor(
+                [
+                    Metrics.apply(
+                        y_pred[i, :, :], self.val_dl.val_y[i, :, :], val_metric_name
+                    )
+                    for i in range(y_pred.shape[0])
+                ]
+            )
+            val_errors = val_errors.view(
+                self.creator.n_tt_splits, self.creator.n_tv_splits
+            )
+            mean_val_errors = val_errors.mean(dim=-1)  # mean over cv/refit dimension
+            mean_val_error = mean_val_errors.mean().item()
 
-        for tt_split_idx in range(self.creator.n_tt_splits):
-            use_last_best_epoch = self.config.get('use_last_best_epoch', True)
+            self.my_logger.log(
+                2,
+                f"Epoch {self.progress.epoch + 1}/{self.progress.max_epochs}: val {val_metric_name} = {mean_val_error:6.6f}",
+            )
 
-            has_stopped = self.has_stopped_list[tt_split_idx]
+            current_epoch = self.progress.epoch + 1
 
-            # compute best single-split validation errors
-            for tv_split_idx in range(self.creator.n_tv_splits):
-                if use_early_stopping and not has_stopped[tv_split_idx]:
-                    if current_epoch > early_stopping_multiplicative_patience \
-                            * self.best_val_epochs[tt_split_idx][tv_split_idx] \
-                            + early_stopping_additive_patience:
-                        has_stopped[tv_split_idx] = True
+            for tt_split_idx in range(self.creator.n_tt_splits):
+                use_last_best_epoch = self.config.get('use_last_best_epoch', True)
 
-                if not has_stopped[tv_split_idx]:
-                    # compute best validation errors
-                    current_err = val_errors[tt_split_idx, tv_split_idx].item()
-                    best_err = self.best_val_errors[
-                        tt_split_idx][tv_split_idx]
+                has_stopped = self.has_stopped_list[val_metric_name][tt_split_idx]
+
+                # compute best single-split validation errors
+                for tv_split_idx in range(self.creator.n_tv_splits):
+                    if use_early_stopping and not has_stopped[tv_split_idx]:
+                        if current_epoch > early_stopping_multiplicative_patience \
+                                * self.best_val_epochs[val_metric_name][tt_split_idx][tv_split_idx] \
+                                + early_stopping_additive_patience:
+                            has_stopped[tv_split_idx] = True
+
+                    if not has_stopped[tv_split_idx]:
+                        # compute best validation errors
+                        current_err = val_errors[tt_split_idx, tv_split_idx].item()
+                        best_err = self.best_val_errors[val_metric_name][tt_split_idx][tv_split_idx]
+                        # use <= on purpose such that latest epoch among tied best epochs is kept
+                        # this has been slightly beneficial for accuracy in previous experiments
+                        improved = current_err <= best_err if use_last_best_epoch \
+                            else current_err < best_err
+                        if improved:
+                            self.best_val_errors[val_metric_name][tt_split_idx][tv_split_idx] = current_err
+                            self.best_val_epochs[val_metric_name][tt_split_idx][tv_split_idx] = (
+                                    self.progress.epoch + 1
+                            )
+
+                if not any(has_stopped):
+                    # compute best mean validation errors (averaged over sub-splits (cv/refit))
                     # use <= on purpose such that latest epoch among tied best epochs is kept
                     # this has been slightly beneficial for accuracy in previous experiments
-                    improved = current_err <= best_err if use_last_best_epoch \
-                        else current_err < best_err
+                    improved = mean_val_errors[tt_split_idx] <= self.best_mean_val_errors[val_metric_name][
+                        tt_split_idx] if use_last_best_epoch \
+                        else mean_val_errors[tt_split_idx] < self.best_mean_val_errors[val_metric_name][tt_split_idx]
                     if improved:
-                        self.best_val_errors[tt_split_idx][tv_split_idx] = current_err
-                        self.best_val_epochs[tt_split_idx][tv_split_idx] = (
+                        self.best_mean_val_errors[val_metric_name][tt_split_idx] = mean_val_errors[tt_split_idx]
+                        self.best_mean_val_epochs[val_metric_name][tt_split_idx] = (
                                 self.progress.epoch + 1
                         )
-
-            if not any(has_stopped):
-                # compute best mean validation errors (averaged over sub-splits (cv/refit))
-                # use <= on purpose such that latest epoch among tied best epochs is kept
-                # this has been slightly beneficial for accuracy in previous experiments
-                improved = mean_val_errors[tt_split_idx] <= self.best_mean_val_errors[
-                    tt_split_idx] if use_last_best_epoch \
-                    else mean_val_errors[tt_split_idx] < self.best_mean_val_errors[tt_split_idx]
-                if improved:
-                    self.best_mean_val_errors[tt_split_idx] = mean_val_errors[tt_split_idx]
-                    self.best_mean_val_epochs[tt_split_idx] = (
-                            self.progress.epoch + 1
-                    )
         self.progress.epoch += 1
 
-        if use_early_stopping and all(sum(self.has_stopped_list, [])):
+        if use_early_stopping and all(all([all(sub_lst) for sub_lst in lst]) for lst in self.has_stopped_list.values()):
             self.trainer.should_stop = True
 
     def on_fit_end(self):
+        # if self.creator.config.get("use_best_epoch", True):
+        #     self.fit_params = [{'stop_epoch': mean_ep, 'best_indiv_stop_epochs': single_eps}
+        #                        for mean_ep, single_eps in zip(self.best_mean_val_epochs, self.best_val_epochs)]
+        # else:
+        #     self.fit_params = [
+        #         {"stop_epoch": self.progress.max_epochs}
+        #         for i in range(self.creator.n_tt_splits)
+        #     ]
+
         if self.creator.config.get("use_best_epoch", True):
-            self.fit_params = [{'stop_epoch': mean_ep, 'best_indiv_stop_epochs': single_eps}
-                               for mean_ep, single_eps in zip(self.best_mean_val_epochs, self.best_val_epochs)]
+            self.fit_params = [{'stop_epoch': {val_metric_name: self.best_mean_val_epochs[val_metric_name][i] for
+                                               val_metric_name in self.val_metric_names},
+                                'best_indiv_stop_epochs': {val_metric_name: self.best_val_epochs[val_metric_name][i] for
+                                                           val_metric_name in self.val_metric_names}}
+                               for i in range(self.creator.n_tt_splits)]
         else:
             self.fit_params = [
-                {"stop_epoch": self.progress.max_epochs}
+                {"stop_epoch": {val_metric_name: self.progress.max_epochs for val_metric_name in self.val_metric_names}}
                 for i in range(self.creator.n_tt_splits)
             ]
 
@@ -218,6 +250,8 @@ class TabNNModule(pl.LightningModule):
         param_groups = [{"params": [p], "lr": 0.01} for p in self.model.parameters()]
         return get_opt_class(self.config.get('opt', 'adam'))(param_groups, self.hp_manager)
 
+    def restore_ckpt_for_val_metric_name(self, val_metric_name: str):
+        self.ckpt_callbacks[val_metric_name].restore(self)
 
     # from https://github.com/Lightning-AI/pytorch-lightning/discussions/19759
     # def on_fit_start(self) -> None:

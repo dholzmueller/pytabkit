@@ -52,7 +52,8 @@ class TensorInfo:
         return not self.is_cont()
 
     def to_dict(self) -> Dict:
-        return {'feat_shape': self.feat_shape, 'cat_sizes': self.cat_sizes}
+        # convert to list for yaml serialization
+        return {'feat_shape': self.get_feat_shape().tolist(), 'cat_sizes': self.get_cat_sizes().numpy().tolist()}
 
     @staticmethod
     def from_dict(data: Dict) -> 'TensorInfo':

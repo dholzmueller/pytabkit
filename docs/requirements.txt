@@ -13,6 +13,7 @@ openml>=0.14
 openpyxl>=3.0
 pandas>=2.0
 patool>=1.0
+probmetrics>=0.0.1
 psutil>=5.0
 pynvml>=11.0
 pytest-cov>=4.0

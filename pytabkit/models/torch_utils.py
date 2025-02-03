@@ -79,7 +79,7 @@ def torch_np_quantile(tensor: torch.Tensor, q: float, dim: int, keepdim: bool = 
     :param q: Quantile value.
     :param dim: As in torch.quantile()
     :param keepdim: As in torch.quantile()
-    :return:
+    :return: Tensor with quantiles.
     """
     x_np = tensor.detach().cpu().numpy()
     q_np = np.quantile(x_np, q=q, axis=dim, keepdims=keepdim)

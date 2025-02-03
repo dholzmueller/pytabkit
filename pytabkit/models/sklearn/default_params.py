@@ -1,3 +1,8 @@
+import numpy as np
+
+from pytabkit.models import utils
+
+
 class DefaultParams:
     RealMLP_TD_CLASS = dict(
         hidden_sizes=[256] * 3,
@@ -362,6 +367,27 @@ class DefaultParams:
     }
 
     TABM_D_REG = TABM_D_CLASS
+
+    VANILLA_MLP_CLASS = dict(
+        hidden_sizes=[256] * 3,
+        p_drop=0.0,
+        wd=0.0,
+        block_str='w-b-a-d',
+        opt='adam',
+        tfms=['quantile', 'one_hot'],
+        batch_size=256,
+        n_epochs=256,
+        act='relu',
+        weight_param='standard',
+        weight_init_mode='uniform',
+        weight_init_gain=1. / np.sqrt(3.),
+        bias_init_mode='pytorch-default',
+        lr=1e-3,
+        lr_sched='constant',
+        max_n_vectorized=1,  # this is because of the preprocessing
+        use_last_best_epoch=False,
+    )
+    VANILLA_MLP_REG = utils.join_dicts(VANILLA_MLP_CLASS, dict(normalize_output=True))
 
     # ----- sklearn versions ------
 

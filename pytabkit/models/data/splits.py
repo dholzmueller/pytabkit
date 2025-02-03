@@ -124,11 +124,12 @@ class KFoldSplitter(MultiSplitter):
 
 
 class SplitInfo:
-    def __init__(self, splitter: Splitter, split_type: str, id: int, alg_seed: int):
+    def __init__(self, splitter: Splitter, split_type: str, id: int, alg_seed: int, train_fraction: float = 0.75):
         self.splitter = splitter
         self.split_type = split_type  # one of "random", "default"
         self.id = id
         self.alg_seed = alg_seed
+        self.train_fraction = train_fraction
 
     def get_sub_seed(self, split_idx: int, is_cv: bool):
         return utils.combine_seeds(self.alg_seed, 2 * split_idx + int(is_cv))
@@ -140,7 +141,7 @@ class SplitInfo:
             return [split] * n_splits
 
         if n_splits <= 1:
-            return [RandomSplitter(seed=self.alg_seed, first_fraction=0.75).split_ds(ds)]
+            return [RandomSplitter(seed=self.alg_seed, first_fraction=self.train_fraction).split_ds(ds)]
         else:
             is_classification = ds.tensor_infos['y'].get_cat_sizes()[0].item() > 0
             return KFoldSplitter(n_splits, seed=self.alg_seed, stratified=is_classification).split_ds(ds)
@@ -150,7 +151,7 @@ class SplitInfo:
         if not is_cv:
             return n_trainval, 0
         elif n_splits <= 1:
-            return RandomSplitter(seed=self.alg_seed, first_fraction=0.75).get_split_sizes(n_trainval)
+            return RandomSplitter(seed=self.alg_seed, first_fraction=self.train_fraction).get_split_sizes(n_trainval)
         else:
             # stratified doesn't influence split sizes
             return KFoldSplitter(n_splits, seed=self.alg_seed, stratified=False).get_split_sizes(n_samples)

@@ -27,20 +27,30 @@ from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterfa
     RandomParamsXGBAlgInterface
 
 # the list of methods can be auto-generated using scripts/get_sklearn_names.py
-__all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classifier", \
-    "CatBoost_HPO_Regressor", "CatBoost_HPO_TPE_Classifier", "CatBoost_HPO_TPE_Regressor", "CatBoost_TD_Classifier", \
-    "CatBoost_TD_Regressor", "Ensemble_TD_Classifier", "Ensemble_TD_Regressor", "FTT_D_Classifier", "FTT_D_Regressor", \
-    "FTT_HPO_Classifier", "FTT_HPO_Regressor", "LGBM_D_Classifier", "LGBM_D_Regressor", "LGBM_HPO_Classifier", "LGBM_HPO_Regressor", \
-    "LGBM_HPO_TPE_Classifier", "LGBM_HPO_TPE_Regressor", "LGBM_TD_Classifier", "LGBM_TD_Regressor", "MLP_PLR_D_Classifier", \
-    "MLP_PLR_D_Regressor", "MLP_PLR_HPO_Classifier", "MLP_PLR_HPO_Regressor", "MLP_RTDL_D_Classifier", "MLP_RTDL_D_Regressor", \
-    "MLP_RTDL_HPO_Classifier", "MLP_RTDL_HPO_Regressor", "MLP_SKL_D_Classifier", "MLP_SKL_D_Regressor", "RF_HPO_Classifier", \
-    "RF_HPO_Regressor", "RF_SKL_D_Classifier", "RF_SKL_D_Regressor", "RealMLP_HPO_Classifier", "RealMLP_HPO_Regressor", \
-    "RealMLP_TD_Classifier", "RealMLP_TD_Regressor", "RealMLP_TD_S_Classifier", "RealMLP_TD_S_Regressor", "RealTabR_D_Classifier", \
-    "RealTabR_D_Regressor", "Resnet_RTDL_D_Classifier", "Resnet_RTDL_D_Regressor", "Resnet_RTDL_HPO_Classifier", \
-    "Resnet_RTDL_HPO_Regressor", "TabR_HPO_Classifier", "TabR_HPO_Regressor", "TabR_S_D_Classifier", "TabR_S_D_Regressor", \
-    "TabM_D_Classifier", "TabM_D_Regressor",
-    "XGB_D_Classifier", "XGB_D_Regressor", "XGB_HPO_Classifier", "XGB_HPO_Regressor", "XGB_HPO_TPE_Classifier", \
-    "XGB_HPO_TPE_Regressor", "XGB_PBB_D_Classifier", "XGB_TD_Classifier", "XGB_TD_Regressor"]
+__all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classifier",
+           "CatBoost_HPO_Regressor", "CatBoost_HPO_TPE_Classifier", "CatBoost_HPO_TPE_Regressor",
+           "CatBoost_TD_Classifier",
+           "CatBoost_TD_Regressor", "Ensemble_TD_Classifier", "Ensemble_TD_Regressor", "Ensemble_HPO_Classifier",
+           "Ensemble_HPO_Regressor", "FTT_D_Classifier",
+           "FTT_D_Regressor",
+           "FTT_HPO_Classifier", "FTT_HPO_Regressor", "LGBM_D_Classifier", "LGBM_D_Regressor", "LGBM_HPO_Classifier",
+           "LGBM_HPO_Regressor",
+           "LGBM_HPO_TPE_Classifier", "LGBM_HPO_TPE_Regressor", "LGBM_TD_Classifier", "LGBM_TD_Regressor",
+           "MLP_PLR_D_Classifier",
+           "MLP_PLR_D_Regressor", "MLP_PLR_HPO_Classifier", "MLP_PLR_HPO_Regressor", "MLP_RTDL_D_Classifier",
+           "MLP_RTDL_D_Regressor",
+           "MLP_RTDL_HPO_Classifier", "MLP_RTDL_HPO_Regressor", "MLP_SKL_D_Classifier", "MLP_SKL_D_Regressor",
+           "RF_HPO_Classifier",
+           "RF_HPO_Regressor", "RF_SKL_D_Classifier", "RF_SKL_D_Regressor", "RealMLP_HPO_Classifier",
+           "RealMLP_HPO_Regressor",
+           "RealMLP_TD_Classifier", "RealMLP_TD_Regressor", "RealMLP_TD_S_Classifier", "RealMLP_TD_S_Regressor",
+           "RealTabR_D_Classifier",
+           "RealTabR_D_Regressor", "Resnet_RTDL_D_Classifier", "Resnet_RTDL_D_Regressor", "Resnet_RTDL_HPO_Classifier",
+           "Resnet_RTDL_HPO_Regressor", "TabR_HPO_Classifier", "TabR_HPO_Regressor", "TabR_S_D_Classifier",
+           "TabR_S_D_Regressor",
+           "TabM_D_Classifier", "TabM_D_Regressor",
+           "XGB_D_Classifier", "XGB_D_Regressor", "XGB_HPO_Classifier", "XGB_HPO_Regressor", "XGB_HPO_TPE_Classifier",
+           "XGB_HPO_TPE_Regressor", "XGB_PBB_D_Classifier", "XGB_TD_Classifier", "XGB_TD_Regressor"]
 
 
 class RealMLPConstructorMixin:
@@ -83,6 +93,7 @@ class RealMLPConstructorMixin:
                  use_early_stopping: Optional[bool] = None,
                  early_stopping_additive_patience: Optional[int] = None,
                  early_stopping_multiplicative_patience: Optional[float] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
@@ -227,6 +238,9 @@ class RealMLPConstructorMixin:
         :param early_stopping_multiplicative_patience: See use_early_stopping (default=2).
             We recommend to set it to 1 for monotone learning rate schedules
             but to keep it at 2 for the default schedule.
+        :param calibration_method: Post-hoc calibration method (only for classification).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
         """
         super().__init__()  # call the constructor of the other superclass for multiple inheritance
         self.device = device
@@ -292,6 +306,7 @@ class RealMLPConstructorMixin:
         self.use_early_stopping = use_early_stopping
         self.early_stopping_additive_patience = early_stopping_additive_patience
         self.early_stopping_multiplicative_patience = early_stopping_multiplicative_patience
+        self.calibration_method = calibration_method
 
 
 class RealMLP_TD_Classifier(RealMLPConstructorMixin, AlgInterfaceClassifier):
@@ -377,6 +392,7 @@ class LGBMConstructorMixin:
                  cat_smooth: Optional[float] = None,
                  cat_l2: Optional[float] = None,
                  val_metric_name: Optional[str] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -402,6 +418,7 @@ class LGBMConstructorMixin:
         self.cat_smooth = cat_smooth
         self.cat_l2 = cat_l2
         self.val_metric_name = val_metric_name
+        self.calibration_method = calibration_method
 
 
 class LGBM_TD_Classifier(LGBMConstructorMixin, AlgInterfaceClassifier):
@@ -464,6 +481,7 @@ class XGBConstructorMixin:
                  num_parallel_tree: Optional[int] = None,
                  max_bin: Optional[int] = None,
                  multi_strategy: Optional[str] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -492,6 +510,7 @@ class XGBConstructorMixin:
         self.num_parallel_tree = num_parallel_tree
         self.max_bin = max_bin
         self.multi_strategy = multi_strategy
+        self.calibration_method = calibration_method
 
 
 class XGB_TD_Classifier(XGBConstructorMixin, AlgInterfaceClassifier):
@@ -572,11 +591,13 @@ class CatBoostConstructorMixin:
                  min_data_in_leaf: Optional[int] = None,
                  grow_policy: Optional[str] = None,
                  num_leaves: Optional[int] = None,
-                 max_bin: Optional[int] = None,  # renamed from border_count since it is named max_bin in the default parameters
+                 max_bin: Optional[int] = None,
+                 # renamed from border_count since it is named max_bin in the default parameters
                  l2_leaf_reg: Optional[float] = None,
                  one_hot_max_size: Optional[int] = None,
                  val_metric_name: Optional[str] = None,
                  train_metric_name: Optional[str] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -604,6 +625,7 @@ class CatBoostConstructorMixin:
         self.one_hot_max_size = one_hot_max_size
         self.val_metric_name = val_metric_name
         self.train_metric_name = train_metric_name
+        self.calibration_method = calibration_method
 
 
 class CatBoost_TD_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
@@ -667,6 +689,7 @@ class RFConstructorMixin:
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_estimators: Optional[int] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         """
         Validation set is not used.
@@ -679,6 +702,9 @@ class RFConstructorMixin:
         :param tmp_folder:
         :param verbosity:
         :param n_estimators:
+        :param calibration_method: Post-hoc calibration method (only for classification).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
         """
         self.device = device
         self.random_state = random_state
@@ -689,6 +715,7 @@ class RFConstructorMixin:
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
         self.n_estimators = n_estimators
+        self.calibration_method = calibration_method
 
 
 class RF_SKL_D_Classifier(RFConstructorMixin, AlgInterfaceClassifier):
@@ -711,6 +738,7 @@ class MLPSKLConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -720,6 +748,7 @@ class MLPSKLConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class MLP_SKL_D_Classifier(MLPSKLConstructorMixin, AlgInterfaceClassifier):
@@ -747,6 +776,7 @@ class GBDTHPOConstructorMixin:
                  n_estimators: Optional[int] = None,
                  space: Optional[str] = None,
                  n_hyperopt_steps: Optional[int] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -759,6 +789,7 @@ class GBDTHPOConstructorMixin:
         self.n_estimators = n_estimators
         self.space = space
         self.n_hyperopt_steps = n_hyperopt_steps
+        self.calibration_method = calibration_method
 
 
 class XGB_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
@@ -883,7 +914,7 @@ class CatBoost_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsCatBoostAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)])
 
     def _supports_single_class(self) -> bool:
         return False
@@ -953,7 +984,7 @@ class RF_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsRFAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)])
 
     def _supports_single_class(self) -> bool:
         return False
@@ -986,6 +1017,7 @@ class RealMLPHPOConstructorMixin:
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_hyperopt_steps: Optional[int] = None, val_metric_name: Optional[str] = None,
+                 calibration_method: Optional[str] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -997,6 +1029,7 @@ class RealMLPHPOConstructorMixin:
         self.verbosity = verbosity
         self.n_hyperopt_steps = n_hyperopt_steps
         self.val_metric_name = val_metric_name
+        self.calibration_method = calibration_method
 
 
 class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
@@ -1037,7 +1070,7 @@ class ResnetConstructorMixin:
                  module_normalization: Optional[str] = None,
                  module_hidden_dropout: Optional[float] = None,
                  module_residual_dropout: Optional[float] = None,
-                 
+
                  verbose: Optional[int] = None,
                  max_epochs: Optional[int] = None,
                  batch_size: Optional[int] = None,
@@ -1055,6 +1088,7 @@ class ResnetConstructorMixin:
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 calibration_method: Optional[str] = None,
                  ):
         self.module_d_embedding = module_d_embedding
         self.module_d = module_d
@@ -1086,6 +1120,7 @@ class ResnetConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class Resnet_RTDL_D_Classifier(ResnetConstructorMixin, AlgInterfaceClassifier):
@@ -1159,6 +1194,7 @@ class FTTransformerConstructorMixin:
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 calibration_method: Optional[str] = None,
                  ):
         self.module_d_token = module_d_token
         self.module_d_ffn_factor = module_d_ffn_factor
@@ -1195,6 +1231,7 @@ class FTTransformerConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class FTT_D_Classifier(FTTransformerConstructorMixin, AlgInterfaceClassifier):
@@ -1202,7 +1239,8 @@ class FTT_D_Classifier(FTTransformerConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.FTT_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
-        return SingleSplitWrapperAlgInterface([FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
+        return SingleSplitWrapperAlgInterface(
+            [FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1219,7 +1257,8 @@ class FTT_D_Regressor(FTTransformerConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.FTT_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
-        return SingleSplitWrapperAlgInterface([FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
+        return SingleSplitWrapperAlgInterface(
+            [FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1266,6 +1305,7 @@ class RTDL_MLPConstructorMixin:
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 calibration_method: Optional[str] = None,
                  ):
         self.module_d_embedding = module_d_embedding
         self.module_d_layers = module_d_layers
@@ -1300,6 +1340,7 @@ class RTDL_MLPConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class MLP_RTDL_D_Classifier(RTDL_MLPConstructorMixin, AlgInterfaceClassifier):
@@ -1416,6 +1457,7 @@ class TabrConstructorMixin:
                  random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 calibration_method: Optional[str] = None,
                  ):
         self.num_embeddings = num_embeddings
         self.d_main = d_main
@@ -1456,6 +1498,7 @@ class TabrConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class TabR_S_D_Classifier(TabrConstructorMixin, AlgInterfaceClassifier):
@@ -1522,7 +1565,8 @@ class TabMConstructorMixin:
                  compile_model: Optional[bool] = None,
                  allow_amp: Optional[bool] = None,
                  tfms: Optional[List[str]] = None,
-                 gradient_clipping_norm: Optional[Union[float, Literal['none']]] = None
+                 gradient_clipping_norm: Optional[Union[float, Literal['none']]] = None,
+                 calibration_method: Optional[str] = None
                  ):
         """
 
@@ -1572,6 +1616,9 @@ class TabMConstructorMixin:
             the ordinal-encoded categorical values will later be one-hot encoded by the model.
         :param gradient_clipping_norm: Norm for gradient clipping.
             Default is None from the example code (no gradient clipping), but the experiments from the paper use 1.0.
+        :param calibration_method: Post-hoc calibration method (only for classification).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
         """
         self.arch_type = arch_type
         self.num_emb_type = num_emb_type
@@ -1599,6 +1646,7 @@ class TabMConstructorMixin:
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.calibration_method = calibration_method
 
 
 class TabM_D_Classifier(TabMConstructorMixin, AlgInterfaceClassifier):
@@ -1633,6 +1681,7 @@ class TabM_D_Regressor(TabMConstructorMixin, AlgInterfaceRegressor):
 
     def _supports_single_sample(self) -> bool:
         return False
+
 
 # ------------------------------
 
@@ -1785,7 +1834,8 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
-                 val_metric_name: Optional[str] = None, use_ls: Optional[bool] = None):
+                 val_metric_name: Optional[str] = None, use_ls: Optional[bool] = None,
+                 calibration_method: Optional[str] = None):
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
@@ -1796,6 +1846,7 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
         self.verbosity = verbosity
         self.val_metric_name = val_metric_name
         self.use_ls = use_ls
+        self.calibration_method = calibration_method
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
         extra_params = dict()
@@ -1803,16 +1854,21 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
             extra_params['val_metric_name'] = self.val_metric_name
         if self.use_ls is not None:
             extra_params['use_ls'] = self.use_ls
+        if self.calibration_method is not None:
+            extra_params['calibration_method'] = self.calibration_method
         td_interfaces = [
             SingleSplitWrapperAlgInterface(
-                [LGBMSubSplitInterface(**DefaultParams.LGBM_TD_CLASS, **extra_params, allow_gpu=False) for i in range(n_cv)]),
+                [LGBMSubSplitInterface(**DefaultParams.LGBM_TD_CLASS, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
             SingleSplitWrapperAlgInterface(
-                [XGBSubSplitInterface(**DefaultParams.XGB_TD_CLASS, **extra_params, allow_gpu=False) for i in range(n_cv)]),
+                [XGBSubSplitInterface(**DefaultParams.XGB_TD_CLASS, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
             SingleSplitWrapperAlgInterface(
-                [CatBoostSubSplitInterface(**DefaultParams.CB_TD_CLASS, **extra_params, allow_gpu=False) for i in range(n_cv)]),
+                [CatBoostSubSplitInterface(**DefaultParams.CB_TD_CLASS, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
             NNAlgInterface(**utils.join_dicts(DefaultParams.RealMLP_TD_CLASS, extra_params)),
         ]
-        return CaruanaEnsembleAlgInterface(td_interfaces)
+        return CaruanaEnsembleAlgInterface(td_interfaces, **extra_params)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1821,7 +1877,8 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
 class Ensemble_TD_Regressor(AlgInterfaceRegressor):
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
-                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0):
+                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 val_metric_name: Optional[str] = None):
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
@@ -1830,18 +1887,116 @@ class Ensemble_TD_Regressor(AlgInterfaceRegressor):
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
+        self.val_metric_name = val_metric_name
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        extra_params = dict()
+        if self.val_metric_name is not None:
+            extra_params['val_metric_name'] = self.val_metric_name
         td_interfaces = [
             SingleSplitWrapperAlgInterface(
-                [LGBMSubSplitInterface(**DefaultParams.LGBM_TD_REG, allow_gpu=False) for i in range(n_cv)]),
+                [LGBMSubSplitInterface(**DefaultParams.LGBM_TD_REG, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
             SingleSplitWrapperAlgInterface(
-                [XGBSubSplitInterface(**DefaultParams.XGB_TD_REG, allow_gpu=False) for i in range(n_cv)]),
+                [XGBSubSplitInterface(**DefaultParams.XGB_TD_REG, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
             SingleSplitWrapperAlgInterface(
-                [CatBoostSubSplitInterface(**DefaultParams.CB_TD_REG, allow_gpu=False) for i in range(n_cv)]),
-            NNAlgInterface(**DefaultParams.RealMLP_TD_REG),
+                [CatBoostSubSplitInterface(**DefaultParams.CB_TD_REG, **extra_params, allow_gpu=False) for i in
+                 range(n_cv)]),
+            NNAlgInterface(**DefaultParams.RealMLP_TD_REG, **extra_params),
         ]
         return CaruanaEnsembleAlgInterface(td_interfaces)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
+class Ensemble_HPO_Classifier(AlgInterfaceClassifier):
+    def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
+                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 val_metric_name: Optional[str] = None, use_ls: Optional[bool] = None,
+                 n_hpo_steps: Optional[int] = None,
+                 calibration_method: Optional[str] = None):
+        self.device = device
+        self.random_state = random_state
+        self.n_cv = n_cv
+        self.n_refit = n_refit
+        self.val_fraction = val_fraction
+        self.n_threads = n_threads
+        self.tmp_folder = tmp_folder
+        self.verbosity = verbosity
+        self.val_metric_name = val_metric_name
+        self.use_ls = use_ls
+        self.n_hpo_steps = n_hpo_steps
+        self.calibration_method = calibration_method
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        extra_params = dict()
+        if self.val_metric_name is not None:
+            extra_params['val_metric_name'] = self.val_metric_name
+        if self.use_ls is not None:
+            extra_params['use_ls'] = self.use_ls
+        if self.calibration_method is not None:
+            extra_params['calibration_method'] = self.calibration_method
+        n_hpo_steps = self.n_hpo_steps or 50
+        hpo_interfaces = [
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
+                **extra_params),
+        ]
+        return CaruanaEnsembleAlgInterface(hpo_interfaces, **extra_params)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
+class Ensemble_HPO_Regressor(AlgInterfaceRegressor):
+    def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
+                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 val_metric_name: Optional[str] = None,
+                 n_hpo_steps: Optional[int] = None):
+        self.device = device
+        self.random_state = random_state
+        self.n_cv = n_cv
+        self.n_refit = n_refit
+        self.val_fraction = val_fraction
+        self.n_threads = n_threads
+        self.tmp_folder = tmp_folder
+        self.verbosity = verbosity
+        self.val_metric_name = val_metric_name
+        self.n_hpo_steps = n_hpo_steps
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        extra_params = dict()
+        if self.val_metric_name is not None:
+            extra_params['val_metric_name'] = self.val_metric_name
+        n_hpo_steps = self.n_hpo_steps or 50
+        hpo_interfaces = [
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)], **extra_params),
+            AlgorithmSelectionAlgInterface(
+                [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
+                **extra_params),
+        ]
+        return CaruanaEnsembleAlgInterface(hpo_interfaces, **extra_params)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']

@@ -173,6 +173,8 @@ class AlgInterfaceEstimator(BaseEstimator):
         if X_val is not None and y_val is not None:
             if val_idxs is not None:
                 raise ValueError(f'both val_idxs and X_val, y_val were provided')
+            if n_cv != 1:
+                raise ValueError(f'X_val can only be specified for n_cv=1, but got {n_cv=}')
 
             X_val = to_normal_type(X_val)
             y_val = to_normal_type(y_val)
@@ -206,7 +208,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             if cat_indicator is not None:
                 raise ValueError(f'Specified both cat_col_names and cat_indicator')
             cat_indicator = [col_name in cat_col_names for col_name in X_df.columns]
-        self.x_converter_ = ToDictDatasetConverter(cat_features=cat_indicator)
+        self.x_converter_ = ToDictDatasetConverter(cat_features=cat_indicator, verbosity=params.get('verbosity', 0))
         self.y_encoder_ = OrdinalEncoder(dtype=np.int64)  # only used for classification
 
         if not self._supports_single_sample() and len(X_df) == 1:
@@ -421,7 +423,7 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         # Input validation
         # if isinstance(X, np.ndarray):
-        check_array(X, force_all_finite='allow-nan')
+        check_array(X, force_all_finite='allow-nan', dtype=None)
 
         x_ds = self.x_converter_.transform(to_df(X))
         if torch.any(torch.isnan(x_ds.tensors['x_cont'])):

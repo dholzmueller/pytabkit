@@ -44,6 +44,8 @@ dependencies = [
     # "packaging",  # unclear why this is here?
     "tqdm",  # for TabM with verbosity >= 1
     "psutil>=5.0",
+    # more classification metrics and post-hoc calibrators (could be an optional dependency)
+    "probmetrics>=0.0.1",
 
     # packages for saving objects in different formats
     "dill",

@@ -40,6 +40,11 @@ class NodeResources:
         self.data = np.copy(self.data)
         self.data[1] = cpu_ram_gb
 
+    def set_gpu_rams_gb(self, gpu_rams_gb: np.ndarray) -> None:
+        # somehow necessary because self.data can get non-writeable after transmitting it from another ray process
+        self.data = np.copy(self.data)
+        self.data[2+self.n_gpus:2+2*self.n_gpus] = gpu_rams_gb
+
     def get_gpu_usages(self) -> np.ndarray:
         return self.data[2:2+self.n_gpus]
 

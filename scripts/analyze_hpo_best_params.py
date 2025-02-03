@@ -1,3 +1,5 @@
+import msgpack_numpy as m
+m.patch()
 import numbers
 from typing import Optional
 
@@ -26,12 +28,13 @@ def analyze_hpo_best(alg_name: str, coll_name: str, n_splits: int = 10, data_pat
         for split_id in range(n_splits):
             results_path = paths.results_alg_task_split(task_info.task_desc, alg_name, n_cv=1,
                                                         split_type=SplitType.RANDOM, split_id=split_id)
-            result_manager = ResultManager.load(results_path, only_metrics=False)
+            result_manager = ResultManager.load(results_path, load_other=True, load_preds=False)
             if (not isinstance(result_manager.other_dict['cv'], dict)
                     or 'fit_params' not in result_manager.other_dict['cv']):
                 raise ValueError(
                     f'Did not get a dict containing fit_params, instead got {result_manager.other_dict["cv"]=}')
             fit_params = result_manager.other_dict['cv']['fit_params']
+            print(f'{fit_params=}')
 
             # print(fit_params)
             best_params.append(fit_params['hyper_fit_params'] if 'hyper_fit_params' in fit_params

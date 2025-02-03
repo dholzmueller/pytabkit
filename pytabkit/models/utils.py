@@ -392,6 +392,17 @@ def combine_seeds(seed_1: int, seed_2: int) -> int:
     return int(generator.integers(low=0, high=2**24) + seed_2)
 
 
+def numpy_to_native_rec(obj: Any):
+    if isinstance(obj, list):
+        return [numpy_to_native_rec(o) for o in obj]
+    elif isinstance(obj, dict):
+        return {key: numpy_to_native_rec(value) for key, value in obj.items()}
+    else:
+        # https://stackoverflow.com/questions/9452775/converting-numpy-dtypes-to-native-python-types
+        # works for arrays as well as numpy scalars
+        return getattr(obj, "tolist", lambda: obj)()
+
+
 class ProcessPoolMapper:
     def __init__(self, n_processes: int, chunksize=1):
         self.n_processes = n_processes

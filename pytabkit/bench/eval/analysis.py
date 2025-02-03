@@ -101,6 +101,9 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
     test_table = test_table.filter_n_splits(n_splits)
     # shape: [n_algs, n_tasks, n_splits]
     errors = test_table.to_array()
+    if len(errors) == 0:
+        return dict(), dict()
+    # print(f'{errors.shape=}, {errors=}')
     if use_ranks:
         errors = get_ranks(errors)
     elif use_normalized_errors:
@@ -130,6 +133,7 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
 
     f_errors = f(errors)
     mean_f_errors = np.mean(f_errors, axis=-1)
+    # print(f'{f_errors.shape=}, {f_errors=}')
     if use_task_mean:
         mean_f_errors = mean_f_errors @ task_weights
     mean_scores = post_f(mean_f_errors)
@@ -142,6 +146,8 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
     base_f_errors = f_errors[idx_best, None] if use_relative_score else np.zeros_like(f_errors)
     # mean_base_f_errors = np.mean(base_f_errors, axis=-1) @ task_weights
     rel_f_errors = f_errors - base_f_errors
+    # print(f'{rel_f_errors.shape=}, {rel_f_errors=}')
+
     mean_rel_f_errors = np.mean(rel_f_errors, axis=-1)
     if use_task_mean:
         mean_rel_f_errors = mean_rel_f_errors @ task_weights
@@ -193,9 +199,13 @@ def get_benchmark_results(paths: Paths, table: MultiResultsTable, coll_name: str
             scores = 100 * (scores - 1.0)
         return scores
 
+    # print(f'{rel_mean_scores=}')
+
     scores = transform(rel_mean_scores)
     lower_scores = transform(lower_rel_mean_scores)
     upper_scores = transform(upper_rel_mean_scores)
+
+    # print(f'{scores=}')
 
     scores_dict = {alg_name: score
                    for alg_name, score in zip(test_table.alg_names, scores)}

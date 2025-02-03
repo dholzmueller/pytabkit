@@ -1,3 +1,4 @@
+import copy
 import random
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
@@ -20,6 +21,7 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
     AlgInterface that takes multiple AlgInterfaces that can only handle a single train-val-test split
     and wraps them to handle a trainval-test split (possibly with multiple train-val splits)
     """
+
     def __init__(self, sub_split_interfaces: List[AlgInterface], fit_params: Optional[List[Dict[str, Any]]] = None,
                  **config):
         """
@@ -95,7 +97,8 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
                                                  for i in range(n_hyper_results[0])])
                 # use reverse argmin for ties since it sometimes gives better results
                 best_idx = utils.reverse_argmin(mean_hyper_results)
-                self.fit_params = [hyper_results_list[0][best_idx][0]]
+                self.fit_params = [copy.copy(hyper_results_list[0][best_idx][0])]
+                self.fit_params[0]['sub_fit_params'] = [ssi.fit_params for ssi in self.sub_split_interfaces]
 
                 # steal the config from the sub_split_interface because it usually gets all the kwargs
                 config = utils.join_dicts(self.sub_split_interfaces[0].config, self.config)
@@ -104,7 +107,7 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
                     for ssi in self.sub_split_interfaces:
                         ssi.fit_params = self.fit_params
             else:
-                self.fit_params = [dict()]
+                self.fit_params = [dict(sub_fit_params=[(ssi.fit_params[0] if ssi.fit_params is not None else None) for ssi in self.sub_split_interfaces])]
 
         return None
 
@@ -117,15 +120,25 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
         assert n_splits == 1
         assert n_cv == len(self.sub_split_interfaces)
         # todo: this is ignoring the refit stage
-        single_resources = [ssi.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=1, split_seeds=[split_seed], n_train=n_train)
-                            for ssi, split_seed in zip(self.sub_split_interfaces, split_seeds)]
+        single_resources = [
+            ssi.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=1, split_seeds=[split_seed], n_train=n_train)
+            for ssi, split_seed in zip(self.sub_split_interfaces, split_seeds)]
         return RequiredResources.combine_sequential(single_resources)
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        return self.sub_split_interfaces[0].get_available_predict_params()
+
+    def set_current_predict_params(self, name: str) -> None:
+        super().set_current_predict_params(name)
+        for ssi in self.sub_split_interfaces:
+            ssi.set_current_predict_params(name)
 
 
 class SklearnSubSplitInterface(SingleSplitAlgInterface):  # todo: have another base class
     """
     Base class for AlgInterfaces based on scikit-learn methods.
     """
+
     def __init__(self, fit_params: Optional[List[Dict[str, Any]]] = None, **config):
         super().__init__(fit_params=fit_params, **config)
         self.tfm = None
@@ -250,6 +263,7 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
     """
     Base class for tree-based ML models (XGB, LGBM, CatBoost).
     """
+
     def __init__(self, fit_params: Optional[List[Dict[str, Any]]] = None, **config):
         super().__init__(fit_params=fit_params, **config)
         self.config = config
@@ -307,17 +321,33 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
             return None
         else:
             if self.config.get('use_best_checkpoint', True):
-                self.fit_params = [dict(n_estimators=utils.reverse_argmin(val_errors) + 1)]
+                if isinstance(val_errors, dict):
+                    # have multiple errors for different metrics
+                    self.fit_params = [dict(
+                        n_estimators={key: utils.reverse_argmin(values) + 1 for key, values in val_errors.items()})]
+                else:
+                    self.fit_params = [dict(n_estimators=utils.reverse_argmin(val_errors) + 1)]
             else:
                 self.fit_params = [dict(n_estimators=len(val_errors))]
-            return [[[(dict(n_estimators=i + 1), err) for i, err in enumerate(val_errors)]]]
+
+            if isinstance(val_errors, dict):
+                return None   # not implemented
+            else:
+                return [[[(dict(n_estimators=i + 1), err) for i, err in enumerate(val_errors)]]]
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         # should return tensor of shape len(ds) x output_shape
+        pred_dict = self.get_current_predict_params_dict()
+        pred_params = dict()
+        if self.fit_params is not None:
+            if 'val_metric_name' in pred_dict:
+                pred_params = dict(n_estimators=self.fit_params[0]['n_estimators'][pred_dict['val_metric_name']])
+            else:
+                pred_params = self.fit_params[0]
         if self.tfm is not None:
             ds = self.tfm.forward_ds(ds)
         return self._predict(self.model, ds, self.n_classes,
-                             self.fit_params[0] if self.fit_params is not None else dict())[None]
+                             pred_params)[None]
 
     def _fit(self, train_ds: DictDataset, val_ds: Optional[DictDataset], params: Dict[str, Any], seed: int,
              n_threads: int, val_metric_name: Optional[str] = None,
@@ -330,4 +360,10 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
     def _get_params(self) -> Dict[str, Any]:
         raise NotImplementedError()
 
-
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        val_metric_names = self.config.get('val_metric_names', None)
+        if val_metric_names is None:
+            return {'': dict()}
+        else:
+            return {f'_val-{val_metric_name}': dict(val_metric_name=val_metric_name) for val_metric_name in
+                    val_metric_names}

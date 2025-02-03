@@ -131,7 +131,8 @@ class NodeManager:
 
 
 class RayJobManager(NodeManager):
-    def __init__(self, max_n_threads: Optional[int] = None, available_cpu_ram_multiplier: float = 1.0, **ray_kwargs):
+    def __init__(self, max_n_threads: Optional[int] = None, available_cpu_ram_multiplier: float = 1.0,
+                 available_gpu_ram_multiplier: float = 1.0, **ray_kwargs):
         self.ray_kwargs = ray_kwargs
         self.runner_futures = []  # keep node_runner futures for termination
         self.job_queues = []
@@ -139,6 +140,7 @@ class RayJobManager(NodeManager):
         self.resource_manager: Optional[ResourceManager] = None
         self.max_n_threads = max_n_threads
         self.available_cpu_ram_multiplier = available_cpu_ram_multiplier
+        self.available_gpu_ram_multiplier = available_gpu_ram_multiplier
 
     def start(self) -> None:
         import ray
@@ -174,6 +176,8 @@ class RayJobManager(NodeManager):
                                                               self.max_n_threads))
             total_resources[nr.node_id].set_cpu_ram_gb(
                 self.available_cpu_ram_multiplier * total_resources[nr.node_id].get_cpu_ram_gb())
+            total_resources[nr.node_id].set_gpu_rams_gb(
+                self.available_gpu_ram_multiplier * total_resources[nr.node_id].get_gpu_rams_gb())
 
         print(f'Acquired node resources', flush=True)
 
@@ -234,7 +238,6 @@ class RayJobManager(NodeManager):
         # maybe wait only a bit and then hard terminate otherwise?
         ray.get(self.runner_futures)
         ray.shutdown()
-
 
 # class LocalNodeManager(NodeManager):
 #     # start node_runner in a thread

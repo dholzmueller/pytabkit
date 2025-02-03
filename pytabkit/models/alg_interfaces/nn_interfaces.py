@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any, Union
 
 import numpy as np
 import torch
+
 try:
     import lightning.pytorch as pl
 except ImportError:
@@ -44,6 +45,8 @@ class NNAlgInterface(AlgInterface):
                        for i in range(len(idxs_list))])
         # we can then decompose the overall number of sub-splits into the number of splits
         # and the number of sub-splits per split
+
+        # print(f'Starting NN fit')
 
         # have the option to change the seeds (for comparing NNs with different random seeds)
         random_seed_offset = self.config.get('random_seed_offset', 0)
@@ -87,7 +90,8 @@ class NNAlgInterface(AlgInterface):
         else:
             raise ValueError(f'Unknown device "{self.device}"')
 
-        max_time = None if interface_resources.time_in_seconds is None else timedelta(seconds=interface_resources.time_in_seconds)
+        max_time = None if interface_resources.time_in_seconds is None else timedelta(
+            seconds=interface_resources.time_in_seconds)
 
         self.trainer = pl.Trainer(
             max_time=max_time,
@@ -118,6 +122,9 @@ class NNAlgInterface(AlgInterface):
         self.trainer.max_time = None
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
+        pred_dict = self.get_current_predict_params_dict()
+        if 'val_metric_name' in pred_dict:
+            self.model.restore_ckpt_for_val_metric_name(pred_dict['val_metric_name'])
         old_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         self.model.to(self.device)
@@ -128,6 +135,14 @@ class NNAlgInterface(AlgInterface):
         torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
         return y_pred
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        val_metric_names = self.config.get('val_metric_names', None)
+        if val_metric_names is None:
+            return {'': dict()}
+        else:
+            return {f'_val-{val_metric_name}': dict(val_metric_name=val_metric_name) for val_metric_name in
+                    val_metric_names}
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:
@@ -157,7 +172,7 @@ class NNAlgInterface(AlgInterface):
         # print(f'{pass_memory=}, {param_memory=}')
 
         # max memory that would be used if the dataset wasn't used
-        init_ram_gb_full = n_forward * ds.n_samples * 8 / (1024**3)
+        init_ram_gb_full = n_forward * ds.n_samples * 8 / (1024 ** 3)
         init_ram_gb_max = 1.2  # todo: rough estimate, a bit larger than what is allowed in fit_transform_subsample()
         init_ram_gb = min(init_ram_gb_max, init_ram_gb_full)
         # init_ram_gb = 1.5
@@ -178,7 +193,7 @@ class NNAlgInterface(AlgInterface):
             return RequiredResources(time_s=time_approx, n_threads=1.0, cpu_ram_gb=cpu_ram_gb + gpu_ram_gb)
 
     def get_model_ram_gb(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
-                               split_seeds: List[int]):
+                         split_seeds: List[int]):
         tensor_infos = ds.tensor_infos
         factory = self.config.get('factory', None)
         if factory is None:
@@ -270,7 +285,7 @@ class NNHyperoptAlgInterface(OptAlgInterface):
                 'wd': hp.choice('wd', [0.0, 0.02]),
                 'plr_sigma': hp.loguniform('plr_sigma', np.log(0.05), np.log(0.5)),
                 'act': hp.choice('act', ['relu', 'selu', 'mish']),
-                'hidden_sizes': hp.choice('hidden_sizes', [(0.6, [256]*3), (0.2, [512]), (0.2, [64]*5)]),
+                'hidden_sizes': hp.choice('hidden_sizes', [(0.6, [256] * 3), (0.2, [512]), (0.2, [64] * 5)]),
                 'ls_eps': hp.choice('ls_eps', [(0.3, 0.0), (0.7, 0.1)])
             }
             utils.update_dict(default_config, remove_keys=list(space.keys()))
@@ -306,13 +321,22 @@ class RealMLPParamSampler:
 
     def sample_params(self, seed: int) -> Dict[str, Any]:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
-                                       'moresigmadimsize', 'moresigmadimlr']
+                                       'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
+                                       'alt1', 'alt2', 'alt3', 'alt4']
         rng = np.random.default_rng(seed=seed)
+
+        if self.hpo_space_name == 'probclass-mlp':
+            params = {'lr': np.exp(rng.uniform(np.log(1e-4), np.log(1e-2))),
+                      'p_drop': rng.choice([0.0, 0.1, 0.2, 0.3]),
+                      'wd': rng.choice([0.0, 1e-5, 1e-4, 1e-3])}
+            default_params = DefaultParams.VANILLA_MLP_CLASS if self.is_classification else DefaultParams.VANILLA_MLP_REG
+            return utils.join_dicts(default_params, params)
 
         hidden_size_options = [[256] * 3, [64] * 5, [512]]
 
         params = {'num_emb_type': rng.choice(['none', 'pbld', 'pl', 'plr']),
                   'add_front_scale': rng.choice([True, False], p=[0.6, 0.4]),
+                  # convert to actual bool so it can be serialized
                   'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
                   'p_drop': rng.choice([0.0, 0.15, 0.3], p=[0.3, 0.5, 0.2]),
                   'wd': rng.choice([0.0, 2e-2]),
@@ -333,24 +357,129 @@ class RealMLPParamSampler:
             params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
         elif self.hpo_space_name == 'moresigmadim':
             params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
-            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_1'] = 2 * round(np.exp(rng.uniform(np.log(1), np.log(32))))
             params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
         elif self.hpo_space_name == 'moresigmadimreg':
             params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
-            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_1'] = 2 * round(np.exp(rng.uniform(np.log(1), np.log(32))))
             params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
             params['p_drop'] = rng.choice([0.0, rng.uniform(0.0, 0.5)])
             params['wd'] = np.exp(rng.uniform(np.log(1e-5), np.log(4e-2)))
         elif self.hpo_space_name == 'moresigmadimsize':
             params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
-            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_1'] = 2 * round(np.exp(rng.uniform(np.log(1), np.log(32))))
             params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
             params['hidden_sizes'] = [rng.choice(np.arange(8, 513))] * rng.choice(np.arange(1, 6))
         elif self.hpo_space_name == 'moresigmadimlr':
             params['plr_sigma'] = np.exp(rng.uniform(np.log(1e-2), np.log(1e1)))
-            params['plr_hidden_1'] = 2*round(np.exp(rng.uniform(np.log(1), np.log(32))))
+            params['plr_hidden_1'] = 2 * round(np.exp(rng.uniform(np.log(1), np.log(32))))
             params['plr_hidden_2'] = round(np.exp(rng.uniform(np.log(2), np.log(64))))
             params['lr'] = np.exp(rng.uniform(np.log(5e-3), np.log(5e-1)))
+        elif self.hpo_space_name == 'probclass':
+            params['ls_eps'] = rng.choice([0.0, 0.1])
+            params['wd'] = rng.choice([0.0, 2e-3, 2e-2])
+        elif self.hpo_space_name == 'large':
+            params = {'num_emb_type': rng.choice(['none', 'pbld', 'pl', 'plr']),
+                      'add_front_scale': rng.choice([True, False], p=[0.6, 0.4]),
+                      'n_hidden': round(np.exp(rng.uniform(np.log(64), np.log(512)))),
+                      'n_layers': rng.integers(1, 5, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.0, 0.6),
+                      'wd': rng.choice([rng.uniform(0.0, 1e-3), np.exp(rng.uniform(np.log(1e-3), np.log(1e-1)))]),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                      'act': rng.choice(['relu', 'selu', 'mish', 'silu', 'gelu']),
+                      'use_parametric_act': rng.choice([False, True]),
+                      'p_drop_sched': rng.choice(['flat_cos', 'constant']),
+                      'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'ls_eps': rng.choice([0.0, rng.uniform(0.0, 0.2)]),
+                      'lr_sched': rng.choice(['coslog4', 'cos']),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      }
+
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+        elif self.hpo_space_name == 'alt1':
+            params = {'num_emb_type': rng.choice(['none', 'pbld']),
+                      'n_hidden': rng.choice([128, 256, 384]),
+                      'n_layers': rng.integers(1, 3, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                      'p_drop': rng.uniform(0.0, 0.5),
+                      'wd': np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(1e1))),
+                      'act': rng.choice(['selu', 'mish', 'silu']),
+                      # 'use_parametric_act': rng.choice([False, True]),
+                      # 'p_drop_sched': rng.choice(['flat_cos', 'constant']),
+                      # 'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'ls_eps': rng.choice([0.0, np.exp(rng.uniform(np.log(5e-3), np.log(5e-2)))]),
+                      # 'lr_sched': rng.choice(['coslog4', 'cos']),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'use_early_stopping': True,
+                      'early_stopping_multiplicative_patience': 2,
+                      'early_stopping_additive_patience': 20,
+                      }
+
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
+        elif self.hpo_space_name == 'alt2':
+            # refined version of large
+            params = {'num_emb_type': 'pbld',
+                      'n_hidden': round(np.exp(rng.uniform(np.log(198), np.log(512)))),
+                      'n_layers': rng.integers(1, 3, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.06, 0.6),
+                      'wd': np.exp(rng.uniform(np.log(6e-3), np.log(1e-1))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(15))),
+                      'act': rng.choice(['mish', 'silu']),
+                      'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'ls_eps': rng.choice([0.0, np.exp(rng.uniform(np.log(5e-3), np.log(5e-2)))]),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'p_drop_sched': 'constant',
+                      }
+        elif self.hpo_space_name == 'alt3':
+            # refined version of alt2
+            params = {'num_emb_type': 'pbld',
+                      'n_hidden': round(np.exp(rng.uniform(np.log(323), np.log(480)))),
+                      'n_layers': rng.integers(1, 2, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(3e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.1, 0.5),
+                      'wd': np.exp(rng.uniform(np.log(6e-3), np.log(6e-2))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(15))),
+                      'act': 'mish',
+                      'wd_sched': 'flat_cos',
+                      'ls_eps': rng.choice([0.0, np.exp(rng.uniform(np.log(5e-3), np.log(2e-2)))]),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(4e-2))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(1e-1), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.5), np.log(7.5))),
+                      'p_drop_sched': 'constant',
+                      }
+        elif self.hpo_space_name == 'alt4':
+            # large space for regression
+            params = {'num_emb_type': 'pbld',
+                      'add_front_scale': rng.choice([True, False], p=[0.6, 0.4]),
+                      'n_hidden': round(np.exp(rng.uniform(np.log(128), np.log(512)))),
+                      'n_layers': rng.integers(1, 4, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.0, 0.5),
+                      'wd': np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                      'act': rng.choice(['mish', 'silu', 'elu']),
+                      'use_parametric_act': True,
+                      'p_drop_sched': rng.choice(['flat_cos', 'constant']),
+                      'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'lr_sched': rng.choice(['coslog4', 'cos']),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      }
+
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
         # print(f'{params=}')
 
         default_params = DefaultParams.RealMLP_TD_CLASS if self.is_classification else DefaultParams.RealMLP_TD_REG
@@ -385,8 +514,10 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
         self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed)
         logger.log(1, f'{self.fit_params=}')
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
+        self.fit_params[0]['sub_fit_params'] = self.alg_interface.fit_params[0]
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
+        self.alg_interface.set_current_predict_params(self.get_current_predict_params_name())
         return self.alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
@@ -395,6 +526,8 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
         alg_interface = self._create_sub_interface(ds, split_seeds[0])
         return alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)
 
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        return NNAlgInterface(**self.config).get_available_predict_params()
 
 # class NNHyperoptAlgInterface(OptAlgInterface):
 #     def __init__(self, space=None, n_hyperopt_steps: int = 50, **config):

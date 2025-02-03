@@ -134,7 +134,9 @@ def brier_loss(y_pred: torch.Tensor, y: torch.Tensor, reduction='mean'):
     if not torch.is_floating_point(y):
         y = F.one_hot(y.squeeze(-1), num_classes=y_pred.shape[-1])
     res = (F.softmax(y_pred, dim=-1) - y).square().sum(dim=-1)
-    return apply_reduction(res, reduction)
+    result = apply_reduction(res, reduction)
+    # print(f'{result.item()=}, {y_pred[4]=}')
+    return result
 
 
 def cos_loss(y_pred, y, reduction='mean'):
@@ -519,11 +521,28 @@ class Metrics:
                 raise ValueError(f'Unknown metric {metric_name}')
 
             try:
-                metric = probmetrics.metrics.Metric.from_name(metric_name)
+                y_cat = get_y_categorical()
+                y_pred = y_pred
+
+                calref_dict = {
+                    f'{cr_short}-{loss_short}-{posthoc_short}{cv_short}': f'{cr_long}_{loss_long}_{posthoc_long}_{cv_long}'
+                    for cr_short, cr_long in [('ref', 'refinement'), ('cal', 'calib-err')]
+                    for loss_short, loss_long in [('ll', 'logloss'), ('br', 'brier')]
+                    for posthoc_short, posthoc_long in [('ts', 'ts-mix'), ('is', 'isotonic-mix')]
+                    for cv_short, cv_long in [('', 'all'), ('-cv5', 'cv-5')]
+                }
+
+                prob_metric_name = metric_name
+                if metric_name in calref_dict:
+                    prob_metric_name = calref_dict[metric_name]
+
+                if 'ts-mix' in prob_metric_name:
+                    # run temperature scaling on CPU, it's more efficient (at least for smaller datasets)
+                    y_cat = y_cat.cpu()
+                    y_pred = y_pred.cpu()
+                metric = probmetrics.metrics.Metric.from_name(prob_metric_name)
 
                 # todo: doesn't work with soft target distributions for now
-                y_cat = get_y_categorical().cpu()
-                y_pred = y_pred.cpu()  # todo: moving to cpu to prevent temperature scaling from running on the GPU
                 if len(y_pred.shape) == 2:
                     return metric.compute_from_labels_logits(y_cat, y_pred)
                 elif len(y_pred.shape) == 3:

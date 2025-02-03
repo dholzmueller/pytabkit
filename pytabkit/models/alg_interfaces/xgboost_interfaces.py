@@ -1,6 +1,6 @@
 import copy
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Union
 
 import numpy as np
 import torch
@@ -9,21 +9,21 @@ from pytabkit.models.alg_interfaces.resource_computation import ResourcePredicto
 from pytabkit.models.alg_interfaces.resource_params import ResourceParams
 from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.base import RequiredResources
-from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSplitInterface, SingleSplitWrapperAlgInterface, \
+from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSplitInterface, \
+    SingleSplitWrapperAlgInterface, \
     SklearnSubSplitInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer
 import xgboost as xgb
 from xgboost import XGBClassifier, XGBRegressor
 
-
 from pytabkit.models.alg_interfaces.alg_interfaces import OptAlgInterface, AlgInterface, RandomParamsAlgInterface
 from pytabkit.models.training.metrics import Metrics
 
 
 class XGBCustomMetric:
-    def __init__(self, metric_name: str, is_classification: bool, is_higher_better: bool = False):
-        self.metric_name = metric_name
+    def __init__(self, metric_names: Union[str, List[str]], is_classification: bool, is_higher_better: bool = False):
+        self.metric_names = metric_names
         self.is_classification = is_classification
         self.is_higher_better = is_higher_better
 
@@ -51,15 +51,22 @@ class XGBCustomMetric:
             # go from probabilities to logits
             y_pred = torch.log(y_pred + 1e-30)
 
+        # print(f'{y_pred[4]=}')
+        # print(f'{torch.min(y_pred).item()=}')
+        # print(f'{np.asarray(dtrain.get_data())[4]=}')
+
         # print(f'{y_pred.shape=}, {y.shape=}')
 
         # print(f'{y_pred=}, {y=}')
 
-        eval_result = Metrics.apply(y_pred, y, metric_name=self.metric_name)
-
-        # print(f'loss: {eval_result.item():g}')
-
-        return self.metric_name, eval_result.item()
+        if isinstance(self.metric_names, str):
+            return self.metric_names, Metrics.apply(y_pred, y, metric_name=self.metric_names).item()
+        elif isinstance(self.metric_names, list):
+            results = [(metric_name, Metrics.apply(y_pred, y, metric_name=metric_name).item()) for metric_name in self.metric_names]
+            # print(results)
+            return results
+        else:
+            raise ValueError(f'Invalid {type(self.metric_names)=}')
 
 
 class XGBSklearnSubSplitInterface(SklearnSubSplitInterface):
@@ -168,6 +175,8 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
         label = None if 'y' not in ds.tensors else ds.tensors['y'].cpu().numpy()
         has_cat = 'x_cat' in ds.tensor_infos and ds.tensor_infos['x_cat'].get_n_features() > 0
         x_df = ds.without_labels().to_df()
+        # print(f'{x_df.iloc[4 if ds.n_samples < 1000 else 240]=}')
+        # print([x_df[col].cat.categories.tolist() for col in x_df.select_dtypes(include="category").columns])
         return xgb.DMatrix(x_df, label, enable_categorical=has_cat)
 
     def _fit(self, train_ds: DictDataset, val_ds: Optional[DictDataset], params: Dict[str, Any], seed: int,
@@ -180,26 +189,35 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
         evals = [] if val_ds is None else [(self._convert_ds(val_ds), 'val')]
         evals_result = {}
 
-        feval = None
+        custom_metric = None
         eval_metric_name = None
 
+        val_metric_names = self.config.get('val_metric_names', None)
+
         if val_ds is not None:
-            if val_metric_name is None:
-                val_metric_name = 'class_error' if n_classes > 0 else 'rmse'
-
-            if val_metric_name == 'class_error':
-                eval_metric_name = 'error' if n_classes == 2 else 'merror'
-            elif val_metric_name == 'cross_entropy':
-                eval_metric_name = 'logloss' if n_classes == 2 else 'mlogloss'
-            elif val_metric_name == 'rmse':
-                eval_metric_name = 'rmse'
-            elif val_metric_name == 'mae':
-                eval_metric_name = 'mae'
+            # print(f'{val_ds.n_samples=}')
+            if val_metric_names is not None:
+                eval_metric_name = val_metric_names[0]
+                custom_metric = XGBCustomMetric(val_metric_names, is_classification=n_classes > 0)
             else:
-                eval_metric_name = val_metric_name
-                feval = XGBCustomMetric(val_metric_name, is_classification=n_classes > 0)
+                # single validation metric
 
-            if feval is None:
+                if val_metric_name is None:
+                    val_metric_name = 'class_error' if n_classes > 0 else 'rmse'
+
+                if val_metric_name == 'class_error':
+                    eval_metric_name = 'error' if n_classes == 2 else 'merror'
+                elif val_metric_name == 'cross_entropy':
+                    eval_metric_name = 'logloss' if n_classes == 2 else 'mlogloss'
+                elif val_metric_name == 'rmse':
+                    eval_metric_name = 'rmse'
+                elif val_metric_name == 'mae':
+                    eval_metric_name = 'mae'
+                else:
+                    eval_metric_name = val_metric_name
+                    custom_metric = XGBCustomMetric(val_metric_name, is_classification=n_classes > 0)
+
+            if custom_metric is None:
                 params['eval_metric'] = eval_metric_name
             else:
                 params['disable_default_eval_metric'] = True
@@ -213,20 +231,32 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
             # can happen for refit because fit_params are directly joined into params
             n_estimators = int(params['n_estimators'])
 
-        bst = xgb.train(params, self._convert_ds(train_ds), evals=evals, evals_result=evals_result, custom_metric=feval,
+        bst = xgb.train(params, self._convert_ds(train_ds), evals=evals, evals_result=evals_result,
+                        custom_metric=custom_metric,
                         num_boost_round=n_estimators, verbose_eval=False,
                         **extra_train_params)
 
         if val_ds is not None:
-            val_errors = evals_result['val'][eval_metric_name]
+            if val_metric_names is not None:
+                val_errors = {vmn: evals_result['val'][vmn] for vmn in val_metric_names}
+                # for vmn in val_metric_names:
+                    # print(f'{vmn=}, {np.argmin(val_errors[vmn])=}, {np.min(val_errors[vmn])=}')
+            else:
+                val_errors = evals_result['val'][eval_metric_name]
+                # print(f'{np.min(val_errors)=}')
+                # print(f'{val_ds.tensors["x_cont"][4]=}')
+                # print(f'{val_ds.tensors["x_cat"][4]=}')
+                # print(f'{self._predict(bst, val_ds, n_classes, dict(n_estimators=np.argmin(val_errors)+1))[4]=}')
         else:
             val_errors = None
         return bst, val_errors
 
     def _predict(self, bst: xgb.Booster, ds: DictDataset, n_classes: int, other_params: Dict[str, Any]) -> torch.Tensor:
         # print(f'XGB _predict() with {other_params=}')
+        # print(f'predict with {ds.n_samples=}, {ds.tensors["x_cont"][4]=}, {ds.tensors["x_cat"][4]=}, {ds.tensors["x_cont"][240]=}, {ds.tensors["x_cat"][240]=}')
         iteration_range = (0, 0) if other_params is None else (0, int(other_params['n_estimators']))
-        y_pred = torch.as_tensor(bst.predict(self._convert_ds(ds), iteration_range=iteration_range), dtype=torch.float32)
+        y_pred = torch.as_tensor(bst.predict(self._convert_ds(ds), iteration_range=iteration_range),
+                                 dtype=torch.float32)
         if n_classes == 0:
             y_pred = y_pred.unsqueeze(-1)
         elif n_classes == 2:
@@ -388,18 +418,42 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
         # adapted from Grinsztajn et al. (2022)
-        space = {
-            'eta': np.exp(rng.uniform(np.log(1e-5), np.log(0.7))),
-            'max_depth': rng.integers(1, 11, endpoint=True),
-            'min_child_weight': round(np.exp(rng.uniform(0.0, np.log(100.0)))),
-            'subsample': rng.uniform(0.5, 1),
-            'colsample_bytree': rng.uniform(0.5, 1),
-            'colsample_bylevel': rng.uniform(0.5, 1),
-            'reg_alpha': np.exp(rng.uniform(np.log(1e-8), np.log(1e-2))),
-            'reg_lambda': np.exp(rng.uniform(np.log(1.0), np.log(4.0))),
-            'reg_gamma': np.exp(rng.uniform(np.log(1e-8), np.log(7.0)))
-        }
-        return space
+        hpo_space_name = self.config.get('hpo_space_name', 'grinsztajn')
+        if hpo_space_name == 'grinsztajn':
+            params = {
+                'eta': np.exp(rng.uniform(np.log(1e-5), np.log(0.7))),
+                'max_depth': rng.integers(1, 11, endpoint=True),
+                'min_child_weight': round(np.exp(rng.uniform(0.0, np.log(100.0)))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-8), np.log(1e-2))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1.0), np.log(4.0))),
+                'reg_gamma': np.exp(rng.uniform(np.log(1e-8), np.log(7.0)))
+            }
+        elif hpo_space_name == 'probclass':
+            params = {
+                'eta': np.exp(rng.uniform(np.log(1e-3), np.log(0.7))),
+                'max_depth': rng.integers(1, 11, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-5), np.log(100.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
+                'reg_gamma': np.exp(rng.uniform(np.log(1e-5), np.log(5.0)))
+            }
+        else:
+            raise ValueError(f'Unknown {hpo_space_name=}')
+        return params
 
     def _create_interface_from_config(self, n_tv_splits: int, **config):
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**config) for i in range(n_tv_splits)])
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        return XGBSubSplitInterface(**self.config).get_available_predict_params()
+
+    def set_current_predict_params(self, name: str) -> None:
+        super().set_current_predict_params(name)
+
+

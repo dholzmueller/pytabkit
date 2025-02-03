@@ -18,6 +18,7 @@ import math
 from pytabkit.bench.scheduling.jobs import AbstractJob
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.base import RequiredResources
+from pytabkit.models.training.metrics import Metrics
 
 
 class TabBenchJob(AbstractJob):
@@ -25,7 +26,8 @@ class TabBenchJob(AbstractJob):
     Internal helper class implementing AbstractJob for running tabular benchmarking jobs with our scheduling code.
     """
 
-    def __init__(self, alg_name: str, alg_wrapper: AlgWrapper, task_package: TaskPackage, paths: Paths):
+    def __init__(self, alg_name: str, alg_wrapper: AlgWrapper, task_package: TaskPackage, paths: Paths,
+                 metrics: Optional[Metrics] = None):
         """
         :param alg_name: Unique name of the method (for saving results).
         :param alg_wrapper: Wrapper implementing the ML method.
@@ -36,6 +38,7 @@ class TabBenchJob(AbstractJob):
         self.alg_wrapper = alg_wrapper
         self.task_package = task_package
         self.paths = paths
+        self.metrics = metrics
 
     def get_group(self) -> str:
         """
@@ -69,10 +72,13 @@ class TabBenchJob(AbstractJob):
                                                          split_type=split_info.split_type,
                                                          split_id=split_info.id) / 'tmp' for split_info in
                        self.task_package.split_infos]
-        result_managers = self.alg_wrapper.run(self.task_package, logger, assigned_resources, tmp_folders)
-        for rm, split_info in zip(result_managers, self.task_package.split_infos):
-            rm.save(self.paths.results_alg_task_split(task_desc, self.alg_name, self.task_package.n_cv,
-                                                      split_info.split_type, split_info.id))
+        result_managers_dict = self.alg_wrapper.run(self.task_package, logger, assigned_resources, tmp_folders,
+                                                    self.metrics)
+        for alg_name_suffix, result_managers in result_managers_dict.items():
+            for rm, split_info in zip(result_managers, self.task_package.split_infos):
+                rm.save(self.paths.results_alg_task_split(task_desc, self.alg_name + alg_name_suffix,
+                                                          self.task_package.n_cv,
+                                                          split_info.split_type, split_info.id))
 
         # delete tmp_folders to save disk space
         for tmp_folder in tmp_folders:
@@ -103,8 +109,8 @@ class RunConfig:
     """
 
     def __init__(self, n_tt_splits: int, n_cv: int = 1, n_refit: int = 0, use_default_split: bool = False,
-                 trainval_fraction: float = 0.8,
-                 save_y_pred: bool = False, min_split_idx: int = 0):
+                 trainval_fraction: float = 0.8, train_fraction: float = 0.75,
+                 save_y_pred: bool = False, min_split_idx: int = 0, metrics: Optional[Metrics] = None):
         """
         :param n_tt_splits: Number of trainval-test-splits to evaluate the method with.
         :param n_cv: Number of cross-validation folds. If n_cv=1, use a single random split.
@@ -112,19 +118,24 @@ class RunConfig:
         :param use_default_split: Whether the default split of the datasets should be used.
         :param trainval_fraction: Fraction in (0, 1) of the data that should be used for training and validation set.
         The rest will be used for the test set.
+        :param train_fraction: Only used if n_cv=1.
+        In this case, out of the training+validation data, the given fraction of the data is used for training.
         :param save_y_pred: Whether the predictions on the whole dataset should be saved
         (can use a considerable amount of disk storage, e.g. 3 GB
         for running a single method on meta-train and meta-test benchmarks).
         :param min_split_idx: Minimum index of the split that should be used.
         Can be set larger than zero if only a sub-range of the splits should be run.
+        :param metrics: Metrics object that specifies which metrics should be evaluated.
         """
         self.n_tt_splits = n_tt_splits
         self.n_cv = n_cv
         self.n_refit = n_refit
         self.use_default_split = use_default_split
         self.trainval_fraction = trainval_fraction
+        self.train_fraction = train_fraction
         self.save_y_pred = save_y_pred
         self.min_split_idx = min_split_idx
+        self.metrics = metrics
 
 
 class TabBenchJobManager:
@@ -161,20 +172,35 @@ class TabBenchJobManager:
         if tags is None:
             tags = ['default']
 
+        dummy_task_package = TaskPackage(task_infos[0],
+                                         split_infos=task_infos[0].get_random_splits(run_config.n_tt_splits,
+                                                                                     trainval_fraction=run_config.trainval_fraction,
+                                                                                     train_fraction=run_config.train_fraction)[
+                                                     0:1],
+                                         n_cv=run_config.n_cv, n_refit=run_config.n_refit,
+                                         paths=self.paths, rerun=rerun, alg_name=alg_name,
+                                         save_y_pred=run_config.save_y_pred)
+
+        # possible versions of the same alg that are generated
+        alg_suffixes = alg_wrapper.get_pred_param_names(dummy_task_package)
+
         task_packages = []
         for task_info in task_infos:
             if run_config.use_default_split:
                 tt_split_infos = task_info.get_default_splits(run_config.n_tt_splits)
             else:
-                tt_split_infos = task_info.get_random_splits(run_config.n_tt_splits, run_config.trainval_fraction)
+                tt_split_infos = task_info.get_random_splits(run_config.n_tt_splits,
+                                                             trainval_fraction=run_config.trainval_fraction,
+                                                             train_fraction=run_config.train_fraction)
             tt_split_infos = tt_split_infos[run_config.min_split_idx:]
 
             if not rerun:
                 # filter out splits where results have already been computed
                 tt_split_infos = [split_info for split_info in tt_split_infos
-                                  if not utils.existsFile(
-                        self.paths.results_alg_task_split(task_info.task_desc, alg_name, run_config.n_cv,
-                                                          split_info.split_type, split_info.id) / 'metrics.yaml')]
+                                  if not all(utils.existsFile(
+                        self.paths.results_alg_task_split(task_info.task_desc, alg_name + suffix, run_config.n_cv,
+                                                          split_info.split_type, split_info.id) / 'metrics.yaml') for
+                                             suffix in alg_suffixes)]
 
             n_tt_splits = len(tt_split_infos)
             if n_tt_splits == 0:
@@ -198,24 +224,30 @@ class TabBenchJobManager:
                                                  save_y_pred=run_config.save_y_pred))
 
         for tp in task_packages:
-            self.jobs.append(TabBenchJob(alg_name=alg_name, alg_wrapper=alg_wrapper, task_package=tp, paths=self.paths))
+            self.jobs.append(TabBenchJob(alg_name=alg_name, alg_wrapper=alg_wrapper, task_package=tp, paths=self.paths,
+                                         metrics=run_config.metrics))
 
         if len(task_packages) > 0:
-            # store alg info because something is actually being run
-            # todo: this might not work on Windows
-            # copy python files
-            py_files = glob.glob('scripts/*.py') + glob.glob('pytabkit/**/*.py', recursive=True)
-            utils.serialize(self.paths.algs() / alg_name / 'wrapper.pkl', alg_wrapper)
-            extended_config = utils.join_dicts(alg_wrapper.config,
-                                               {'alg_name': alg_name,
-                                                'wrapper_class_name': alg_wrapper.__class__.__name__})
-            utils.serialize(self.paths.algs() / alg_name / 'extended_config.yaml', extended_config, use_yaml=True)
-            utils.serialize(self.paths.algs() / alg_name / 'tags.yaml', tags, use_yaml=True)
-            for py_file in py_files:
-                utils.copyFile(py_file, self.paths.algs() / alg_name / 'src' / py_file)
+            for suffix in alg_suffixes:
+                full_alg_name = alg_name + suffix
+                # store alg info because something is actually being run
+                # todo: this might not work on Windows
+                # copy python files
+                py_files = glob.glob('scripts/*.py') + glob.glob('pytabkit/**/*.py', recursive=True)
+                utils.serialize(self.paths.algs() / full_alg_name / 'wrapper.pkl', alg_wrapper)
+                extended_config = utils.join_dicts(alg_wrapper.config,
+                                                   {'alg_name': alg_name,
+                                                    'pred_params_name': suffix,
+                                                    'wrapper_class_name': alg_wrapper.__class__.__name__})
+                utils.serialize(self.paths.algs() / full_alg_name / 'extended_config.yaml', extended_config,
+                                use_yaml=True)
+                utils.serialize(self.paths.algs() / full_alg_name / 'tags.yaml', tags, use_yaml=True)
+                for py_file in py_files:
+                    utils.copyFile(py_file, self.paths.algs() / full_alg_name / 'src' / py_file)
 
-        rerun_summary = True  # always create the summary since a part of the results might have changed.
-        self.save_args.append((self.paths, task_infos, alg_name, run_config.n_cv, rerun_summary))
+        for suffix in alg_suffixes:
+            rerun_summary = True  # always create the summary since a part of the results might have changed.
+            self.save_args.append((self.paths, task_infos, alg_name + suffix, run_config.n_cv, rerun_summary))
 
     def run_jobs(self, scheduler: BaseJobScheduler) -> None:
         """
@@ -239,7 +271,6 @@ def run_alg_selection(paths: Paths, config: RunConfig, task_infos: List[TaskInfo
                       rerun: bool = False):
     n_cv = config.n_cv
     split_type = SplitType.DEFAULT if config.use_default_split else SplitType.RANDOM
-    assert n_cv == 1  # not implemented otherwise
     assert len(alg_names) > 0
     assert config.n_refit == 0  # not implemented otherwise
 
@@ -258,17 +289,21 @@ def run_alg_selection(paths: Paths, config: RunConfig, task_infos: List[TaskInfo
             # find best alg
             for i, alg_name in enumerate(alg_names):
                 rm = ResultManager.load(paths.results_alg_task_split(task_desc, alg_name, n_cv, split_type, split_id),
-                                        only_metrics=True)
-                val_score = rm.metrics_dict['cv']['val']['1']['0'][val_metric_name]
+                                        load_other=False, load_preds=False)
+                # todo: probably shouldn't use i in both loops
+                val_score = np.mean([rm.metrics_dict['cv']['val']['1'][str(j)][val_metric_name] for j in range(n_cv)])
+                # print(f'validation score for model {i} with alg_name {alg_name}: {val_score}')
+                # print(f'{val_score=}, {alg_name=}, {i=}')
 
                 if val_score < best_val_score or best_alg_name is None:
                     best_val_score = val_score
                     best_alg_name = alg_name
-                    best_alg_idx = best_alg_idx
+                    best_alg_idx = i
 
+            # print(f'{best_val_score=}, {best_alg_name=}, {best_alg_idx=}')
             # load full results of best alg and save them to target directory
             rm = ResultManager.load(paths.results_alg_task_split(task_desc, best_alg_name, n_cv, split_type, split_id))
-            rm.other_dict['cv']['fit_params'] = dict(best_alg_idx=best_alg_idx,
+            rm.other_dict['cv']['fit_params'] = dict(best_alg_idx=best_alg_idx, best_alg_name=best_alg_name,
                                                      sub_fit_params=rm.other_dict['cv']['fit_params'])
             rm.save(target_path)
 

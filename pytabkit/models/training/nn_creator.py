@@ -59,7 +59,7 @@ class NNCreator:
         self.train_idxs = torch.cat([split_idxs.train_idxs for split_idxs in idxs_list], dim=0)
         self.val_idxs = torch.cat([split_idxs.val_idxs for split_idxs in idxs_list], dim=0) if self.is_cv else None
 
-    def get_criterions(self) -> Tuple[Callable, str]:
+    def get_criterions(self) -> Tuple[Callable, List[str]]:
         task_type = TaskType.REGRESSION if self.n_classes == 0 else TaskType.CLASSIFICATION
         # train criterion
         # todo: add more options?
@@ -75,8 +75,9 @@ class NNCreator:
         # else:
         #     raise ValueError(f'{train_metric_name=} is currently not supported')
 
-        val_criterion = self.config.get('val_metric_name', Metrics.default_val_metric_name(task_type))
-        return train_criterion, val_criterion
+        val_metric_name = self.config.get('val_metric_name', Metrics.default_val_metric_name(task_type))
+        val_metric_names = self.config.get('val_metric_names', [val_metric_name])
+        return train_criterion, val_metric_names
 
     def create_model(self, ds: DictDataset, idxs_list: List[SplitIdxs]):
         ds = ds.to(self.device_info)
@@ -150,14 +151,16 @@ class NNCreator:
 
         return vectorized_model
 
-    def create_callbacks(self, model: Layer, logger: Logger):
+    def create_callbacks(self, model: Layer, logger: Logger, val_metric_names: List[str]):
         callbacks = [HyperparamCallback(self.hp_manager), L1L2RegCallback(self.hp_manager, model)]
         # if validation
         if self.is_cv and self.fit_params is None and self.config.get('use_best_epoch', True):
-            callbacks.append(ModelCheckpointCallback(self.n_tt_splits, n_tv_splits=self.n_tv_splits,
-                                                     use_best_mean_epoch=self.config.get('use_best_mean_epoch_for_cv',
-                                                                                         False),
-                                                     restore_best=self.config.get('use_best_epoch', True)))
+            for val_metric_name in val_metric_names:
+                callbacks.append(ModelCheckpointCallback(self.n_tt_splits, n_tv_splits=self.n_tv_splits,
+                                                         use_best_mean_epoch=self.config.get('use_best_mean_epoch_for_cv',
+                                                                                             False),
+                                                         val_metric_name=val_metric_name,
+                                                         restore_best=self.config.get('use_best_epoch', True)))
         elif self.fit_params is not None:
             if self.config.get('use_best_mean_epoch_for_refit', True):
                 stop_epochs = [[params['stop_epoch']] * self.n_tv_splits for params in self.fit_params]

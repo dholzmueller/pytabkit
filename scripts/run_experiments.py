@@ -1628,44 +1628,44 @@ def run_cumulative_ablations_new(paths: Paths, n_lrs: int = -1, tag: str = 'pape
 if __name__ == '__main__':
     paths = Paths.from_env_variables()
 
-    # run_td_configs(paths, tag='paper', rerun=False)
-    # run_default_configs(paths, tag='paper', rerun=False)
-    # run_rtdl_default_configs(paths, tag='paper', tabzilla_defaults=True)
-    # run_tabr_configs(paths)
+    run_td_configs(paths, tag='paper', rerun=False)
+    run_default_configs(paths, tag='paper', rerun=False)
+    run_rtdl_default_configs(paths, tag='paper', tabzilla_defaults=True)
+    run_tabr_configs(paths)
 
-    # run_gbdt_rs_configs()
-    # run_rf_rs_configs()
-    # for i in range(50):
-    #     if (i + 1) % 10 == 0:
-    #         run_rtdl_tuning_configs(paths, n_steps=i + 1, with_resnet=True, only_meta_train=False)
-    # for i in range(50):
-    #     if (i + 1) % 10 == 0:
-    #         run_realmlp_tuning_configs(paths, n_steps=i + 1, tag='paper_mlp-hpo', rerun=False)
-    # for n_steps in [1, 2, 5, 10, 20, 30, 40, 50]:
-    #     run_tabr_tuning_configs(paths, n_steps=n_steps)
+    run_gbdt_rs_configs()
+    run_rf_rs_configs()
+    for i in range(50):
+        if (i + 1) % 10 == 0:
+            run_rtdl_tuning_configs(paths, n_steps=i + 1, with_resnet=True, only_meta_train=False)
+    for i in range(50):
+        if (i + 1) % 10 == 0:
+            run_realmlp_tuning_configs(paths, n_steps=i + 1, tag='paper_mlp-hpo', rerun=False)
+    for n_steps in [1, 2, 5, 10, 20, 30, 40, 50]:
+        run_tabr_tuning_configs(paths, n_steps=n_steps)
 
-    # run_rtdl_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
-    # run_gbdt_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
-    # run_rf_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
-    # run_realmlp_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper', rerun=False)
-    # run_tabr_hpo_alg_selection(paths, n_hpo_steps=50)
-    # run_ensemble_configs(paths, tag='paper')
+    run_rtdl_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    run_gbdt_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    run_rf_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper')
+    run_realmlp_hpo_alg_selection(paths, n_hpo_steps=50, tag='paper', rerun=False)
+    run_tabr_hpo_alg_selection(paths, n_hpo_steps=50)
+    run_ensemble_configs(paths, tag='paper')
 
     # ----- ablations (mostly for the appendix) -----
 
-    # for n_lrs in [10]:  # range(1, 10):
-    #     run_cumulative_ablations_new(paths, n_lrs=n_lrs)
+    for n_lrs in [10]:  # range(1, 10):
+        run_cumulative_ablations_new(paths, n_lrs=n_lrs)
 
     run_rtdl_rssc_default_configs(paths, tag='paper')
-    # run_default_ce_configs(paths)
-    # run_nns_no_ls(paths)
+    run_default_ce_configs(paths)
+    run_nns_no_ls(paths)
 
-    # run_all_ablations(paths)
-    # run_architecture_ablations(paths)
-    # run_preprocessing_experiments(paths)
-    # run_refit_configs(paths, tag='paper', rerun=False)
-    # run_early_stopping_configs(paths)
-    # run_brier_stopping_configs(paths)
-    # run_cross_entropy_stopping_configs(paths)
-    # run_refit_configs(paths, tag='paper', rerun=False)
+    run_all_ablations(paths)
+    run_architecture_ablations(paths)
+    run_preprocessing_experiments(paths)
+    run_refit_configs(paths, tag='paper', rerun=False)
+    run_early_stopping_configs(paths)
+    run_brier_stopping_configs(paths)
+    run_cross_entropy_stopping_configs(paths)
+    run_refit_configs(paths, tag='paper', rerun=False)
 

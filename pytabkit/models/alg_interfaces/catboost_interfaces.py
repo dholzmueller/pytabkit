@@ -138,6 +138,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
                          ('od_pval', None),
                          ('od_wait', ['od_wait', 'early_stopping_rounds'], None),
                          ('sampling_frequency', None),
+                         ('max_ctr_complexity', None),
                          ]
 
         params = utils.extract_params(self.config, params_config)
