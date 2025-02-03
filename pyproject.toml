@@ -26,7 +26,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "torch>=2.0",
+    # use <2.6 for now since it can run into pickling issues with skorch if the skorch version is too old
+    # see https://github.com/skorch-dev/skorch/commit/be93b7769d61aa22fb928d2e89e258c629bfeaf9
+    "torch>=2.0,<2.6",
     "numpy>=1.25,<2.0",
     "pandas>=2.0",
     "scikit-learn>=1.3,<1.6",

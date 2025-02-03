@@ -960,10 +960,8 @@ def create_regressor_skorch(
         model_class = RTDL_MLP
     else:
         raise ValueError(f'Model {model_name} not implemented here! Choose from "ft_transformer", "resnet", "mlp"')
-    model = nn_class(
-        model_class,
-        # Shuffle training data on each epoch
-        optimizer=optimizer,
+
+    new_kwargs = dict(optimizer=optimizer,
         batch_size=max(
             batch_size, 1
         ),  # if batch size is float, it will be reset during fit
@@ -974,8 +972,22 @@ def create_regressor_skorch(
         module__regression=True,
         module__categorical_indicator=None,  # will be change when fitted
         callbacks=callbacks,
-        **kwargs,
-    )
+        **kwargs)
+
+    try:
+        # try the torch_load_kwargs but it's only available in newer versions of skorch
+        model = nn_class(
+            model_class,
+            # Shuffle training data on each epoch
+            **new_kwargs,
+            torch_load_kwargs={'weights_only': False}, # quick-fix for pickling errors in torch>=2.6
+        )
+    except ValueError:
+        model = nn_class(
+            model_class,
+            # Shuffle training data on each epoch
+            **new_kwargs,
+        )
 
     return model
 

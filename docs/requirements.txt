@@ -27,7 +27,7 @@ seaborn>=0.0.13
 skorch>=0.15
 sphinx>=7.0
 sphinx_rtd_theme>=2.0
-torch>=2.0
+torch>=2.0,<2.6
 torchmetrics>=1.2.1
 tqdm
 tueplots>=0.0.12
