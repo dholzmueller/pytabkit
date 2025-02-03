@@ -322,7 +322,7 @@ class RealMLPParamSampler:
     def sample_params(self, seed: int) -> Dict[str, Any]:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
-                                       'alt1', 'alt2', 'alt3', 'alt4']
+                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -439,8 +439,10 @@ class RealMLPParamSampler:
                       'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
                       'p_drop_sched': 'constant',
                       }
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
         elif self.hpo_space_name == 'alt3':
-            # refined version of alt2
+            # refined version of alt2 (better for 20 steps but worse for 50)
             params = {'num_emb_type': 'pbld',
                       'n_hidden': round(np.exp(rng.uniform(np.log(323), np.log(480)))),
                       'n_layers': rng.integers(1, 2, endpoint=True),
@@ -456,6 +458,8 @@ class RealMLPParamSampler:
                       'scale_lr_factor': np.exp(rng.uniform(np.log(2.5), np.log(7.5))),
                       'p_drop_sched': 'constant',
                       }
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
         elif self.hpo_space_name == 'alt4':
             # large space for regression
             params = {'num_emb_type': 'pbld',
@@ -477,6 +481,25 @@ class RealMLPParamSampler:
                       }
 
             params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+        elif self.hpo_space_name == 'alt5':
+            # refined space for regression
+            params = {'num_emb_type': 'pbld',
+                      'add_front_scale': rng.choice([True, False], p=[0.6, 0.4]),
+                      'n_hidden': round(np.exp(rng.uniform(np.log(128), np.log(512)))),
+                      'n_layers': 4,
+                      'lr': np.exp(rng.uniform(np.log(3e-2), np.log(1e-1))),
+                      'p_drop': rng.uniform(0.0, 0.45),
+                      'wd': np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                      'act': 'mish',
+                      'use_parametric_act': True,
+                      'p_drop_sched': 'flat_cos',
+                      'wd_sched': 'flat_cos',
+                      'lr_sched': 'coslog4',
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(3e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(7.5))),
+                      }
 
             params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
 

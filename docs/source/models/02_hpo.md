@@ -68,7 +68,7 @@ if n_cv == 1:
     _, val_idxs = train_test_split(np.arange(X_train.shape[0]), test_size=0.2, random_state=0)
     val_idxs = val_idxs[None, :]
 else:
-    skf = StratifiedKFold(n_splits=2, shuffle=True, random_state=0)
+    skf = StratifiedKFold(n_splits=n_cv, shuffle=True, random_state=0)
     val_idxs_list = [val_idxs for train_idxs, val_idxs in skf.split(X_train, y_train)]
 
     # make sure that each validation set has the same length, so we can exploit vectorization
