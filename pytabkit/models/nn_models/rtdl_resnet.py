@@ -974,20 +974,27 @@ def create_regressor_skorch(
         callbacks=callbacks,
         **kwargs)
 
-    try:
-        # try the torch_load_kwargs but it's only available in newer versions of skorch
-        model = nn_class(
-            model_class,
-            # Shuffle training data on each epoch
-            **new_kwargs,
-            torch_load_kwargs={'weights_only': False}, # quick-fix for pickling errors in torch>=2.6
-        )
-    except ValueError:
-        model = nn_class(
-            model_class,
-            # Shuffle training data on each epoch
-            **new_kwargs,
-        )
+    # cannot do the try/catch here because params are validated in fit()
+    # try:
+    #     # try the torch_load_kwargs but it's only available in newer versions of skorch
+    #     model = nn_class(
+    #         model_class,
+    #         # Shuffle training data on each epoch
+    #         **new_kwargs,
+    #         torch_load_kwargs={'weights_only': False}, # quick-fix for pickling errors in torch>=2.6
+    #     )
+    # except ValueError:
+    #     model = nn_class(
+    #         model_class,
+    #         # Shuffle training data on each epoch
+    #         **new_kwargs,
+    #     )
+
+    model = nn_class(
+        model_class,
+        # Shuffle training data on each epoch
+        **new_kwargs,
+    )
 
     return model
 

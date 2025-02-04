@@ -17,6 +17,7 @@ from pytabkit.models.sklearn.sklearn_interfaces import RealMLP_TD_Classifier, Re
     LGBM_TD_Classifier(min_data_in_leaf=2, subsample=1.0), LGBM_TD_Regressor(subsample=1.0),
     XGB_TD_Classifier(), XGB_TD_Regressor(),
     CatBoost_TD_Classifier(), CatBoost_TD_Regressor(),
+    # use CPU to avoid Mac OS errors with MPS backend
     RealMLP_TD_Classifier(n_epochs=8, device='cpu'), RealMLP_TD_Regressor(n_epochs=64, device='cpu'),
     TabM_D_Classifier(device='cpu', tabm_k=2, num_emb_type='pwl', arch_type='tabm-mini', num_emb_n_bins=2),
     TabM_D_Regressor(device='cpu', tabm_k=2, num_emb_type='pwl', arch_type='tabm-mini', num_emb_n_bins=2),
