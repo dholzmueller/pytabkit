@@ -6,7 +6,8 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 from pytabkit.models import utils
 from pytabkit.models.data.data import TensorInfo, DictDataset
-from pytabkit.models.nn_models.base import Layer, Variable, Fitter, FitterFactory, IdentityLayer, BiasLayer, ScaleLayer
+from pytabkit.models.nn_models.base import Layer, Variable, Fitter, FitterFactory, IdentityLayer, BiasLayer, ScaleLayer, \
+    SequentialLayer
 from pytabkit.models.torch_utils import torch_np_quantile
 
 
@@ -17,7 +18,7 @@ class ReplaceMissingContLayer(Layer):
     def __init__(self, means: Variable):
         super().__init__()
         if not isinstance(means, Variable):
-           raise ValueError('means is not a Variable')
+            raise ValueError('means is not a Variable')
         self.means = means
 
     def forward_cont(self, x):
@@ -58,7 +59,7 @@ class MeanCenterFactory(Fitter, FitterFactory):
         if ds.tensor_infos['x_cont'].is_empty():
             return IdentityLayer()
         return BiasLayer(Variable(-ds.tensors['x_cont'].mean(dim=-2, keepdim=True),
-                         trainable=self.trainable))
+                                  trainable=self.trainable))
 
 
 class MedianCenterFactory(Fitter, FitterFactory):
@@ -76,7 +77,7 @@ class MedianCenterFactory(Fitter, FitterFactory):
 
         # use quantile function from numpy since the torch one can use large amounts of RAM for some reason
         return BiasLayer(Variable(-torch_np_quantile(ds.tensors['x_cont'], 0.5, dim=-2, keepdim=True),
-                         trainable=self.trainable))
+                                  trainable=self.trainable))
 
 
 class L2NormalizeFactory(Fitter, FitterFactory):
@@ -92,7 +93,7 @@ class L2NormalizeFactory(Fitter, FitterFactory):
         if ds.tensor_infos['x_cont'].is_empty():
             return IdentityLayer()
         scale = 1.0 / (ds.tensors['x_cont'] ** 2 + self.eps).mean(dim=-2, keepdim=True).sqrt()
-        scale[:, (ds.tensors['x_cont']**2).mean(dim=-2) == 0.0] = 0.0
+        scale[:, (ds.tensors['x_cont'] ** 2).mean(dim=-2) == 0.0] = 0.0
         return ScaleLayer(Variable(scale, trainable=self.trainable))
 
 
@@ -110,6 +111,27 @@ class L1NormalizeFactory(Fitter, FitterFactory):
             return IdentityLayer()
         scale = 1.0 / (ds.tensors['x_cont'].abs() + self.eps).mean(dim=-2, keepdim=True)
         return ScaleLayer(Variable(scale, trainable=self.trainable))
+
+
+class MinMaxScaleFactory(Fitter, FitterFactory):
+    def __init__(self, trainable=False, eps=1e-8, **config):
+        super().__init__(is_individual=trainable, modified_tensors=['x_cont'])
+        self.trainable = trainable
+        self.eps = eps
+
+    def get_n_params(self, tensor_infos: Dict[str, TensorInfo]) -> int:
+        return 2 * self._get_n_values(tensor_infos, ['x_cont'])
+
+    def _fit(self, ds: DictDataset) -> Layer:
+        if ds.tensor_infos['x_cont'].is_empty():
+            return IdentityLayer()
+        x_cont = ds.tensors['x_cont']
+        x_min = x_cont.min(dim=-2, keepdim=True)[0]
+        x_max = x_cont.max(dim=-2, keepdim=True)[0]
+        scale = 2.0 / (x_max - x_min + self.eps)
+        bias = -0.5 * (x_max + x_min)
+        return SequentialLayer([BiasLayer(Variable(bias, trainable=self.trainable)),
+                                ScaleLayer(Variable(scale, trainable=self.trainable))])
 
 
 class RobustScaleFactory(Fitter, FitterFactory):
@@ -170,7 +192,7 @@ class GlobalScaleNormalizeFactory(Fitter, FitterFactory):
         if ds.tensor_infos['x_cont'].is_empty():
             return IdentityLayer()
         x_cont = ds.tensors['x_cont']
-        scale = self.global_scale_factor / (x_cont**2 + 1e-30).mean().sqrt().item()
+        scale = self.global_scale_factor / (x_cont ** 2 + 1e-30).mean().sqrt().item()
         return ScaleLayer(Variable(scale * torch.ones(1, 1, device=x_cont.device), trainable=False))
 
 
@@ -218,7 +240,7 @@ class CircleCodingLayer(Layer):
 
     def forward_cont(self, x):
         x = (1.0 / self.scale) * x
-        factor = 1.0 / torch.sqrt(1.0 + x**2)
+        factor = 1.0 / torch.sqrt(1.0 + x ** 2)
         return torch.cat([x * factor, torch.ones_like(x) * factor], dim=-1)
 
     def _stack(self, layers):
@@ -270,8 +292,3 @@ class SklearnTransformFactory(Fitter, FitterFactory):
         tfm = sklearn.base.clone(self.tfm)
         tfm.fit(ds.tensors['x_cont'].detach().cpu().numpy())
         return SklearnTransformLayer(tfm, fitter=self)
-
-
-
-
-

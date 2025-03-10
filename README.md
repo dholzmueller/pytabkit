@@ -168,8 +168,13 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
-- v1.2.1:
-    - avoid error for older skorch versions
+- v1.3.0: 
+    - Added multiquantile regression for RealMLP: 
+      see the [documentation](https://pytabkit.readthedocs.io/en/latest/models/quantile_reg.html)
+    - More hyperparameters for RealMLP
+    - Added [TabICL](github.com/soda-inria/tabicl) wrapper
+    - Small fixes
+- v1.2.1: avoid error for older skorch versions
 - v1.2.0:
     - Included post-hoc calibration and more metrics through 
       [probmetrics](https://github.com/dholzmueller/probmetrics).

@@ -21,7 +21,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
               data_path: Optional[str] = None, alg_name: Optional[str] = None,
               alg_name_2: Optional[str] = None, tag: Optional[str] = None, max_n_splits: Optional[int] = None,
               max_n_algs: Optional[int] = None, show_val_results: bool = False, show_train_results: bool = False,
-              algs_prefix: Optional[str] = None, algs_suffix: Optional[str] = None):
+              algs_prefix: Optional[str] = None, algs_suffix: Optional[str] = None, algs_contains: Optional[str] = None):
     """
     Prints evaluation tables on the selected datasets/algorithms.
     The following aggregate statistics will be printed, all of which are
@@ -62,6 +62,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     :param show_train_results: Whether to show training errors instead of test errors.
     :param algs_prefix: If specified, only methods with this prefix will be displayed.
     :param algs_suffix: If specified, only methods with this suffix will be displayed.
+    :param algs_contains: If specified, only methods containing this substring will be displayed.
     :return:
     """
     print('start show eval')
@@ -85,7 +86,8 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
             tag)  # commas are converted to tuples in the command line, apparently
         alg_filter = lambda an, tags, config: (np.any([show_tag in tags for show_tag in show_tags])
                                                and (algs_prefix is None or an.startswith(algs_prefix))
-                                               and (algs_suffix is None or an.endswith(algs_suffix)))
+                                               and (algs_suffix is None or an.endswith(algs_suffix))
+                                               and (algs_contains is None or algs_contains in an))
     table = MultiResultsTable.load(task_collection, n_cv=n_cv, paths=paths, max_n_algs=max_n_algs,
                                    split_type=split_type, alg_filter=alg_filter, max_n_splits=max_n_splits)
     print('process table')

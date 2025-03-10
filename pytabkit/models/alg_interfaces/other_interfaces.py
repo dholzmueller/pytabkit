@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, \
     GradientBoostingRegressor
@@ -320,6 +321,8 @@ class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
         ]
 
         params = utils.extract_params(self.config, params_config)
+        if self.config.get('use_float32', False):
+            params['inference_precision'] = torch.float32
         print(f'{gpu_devices=}')
         if self.n_classes > 0:
             from tabpfn import TabPFNClassifier
@@ -333,6 +336,57 @@ class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
                                    device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
                                    # device='cuda' if len(gpu_devices) > 0 else 'cpu',
                                    ignore_pretraining_limits=True, **params)
+
+    def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
+                     cat_col_names: Optional[List[str]] = None):
+        # by default, we ignore the validation set since most sklearn methods do not support it
+        if not self.config.get('fit_on_valid', False):
+            n_samples = len(x_df)
+            train_mask = np.ones(shape=(n_samples,), dtype=np.bool_)
+            train_mask[val_idxs] = False
+            x_df = x_df.iloc[train_mask, :]
+            y = y[train_mask]
+        # don't provide a categorical indicator, it should work like this as well
+        self.model.fit(x_df, y)
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0, 'n_samples*n_estimators*n_tree_repeats': 3e-9}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
+        return rc.get_required_resources(ds)
+
+
+class TabICLSubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [
+            # ('n_jobs', ['n_jobs', 'n_threads'], n_threads),
+            ('n_estimators', None),
+            ('softmax_temperature', None),
+            ('average_logits', None),
+            ('use_amp', None),
+            ('batch_size', None),
+            ('model_path', None),
+            ('allow_auto_download', None),
+            ('norm_methods', None)
+        ]
+
+        params = utils.extract_params(self.config, params_config)
+        if self.config.get('use_float32', False):
+            params['inference_precision'] = torch.float32
+        print(f'{gpu_devices=}')
+        if self.n_classes > 0:
+            from tabicl.classifier import TabICLClassifier
+            return TabICLClassifier(random_state=seed,
+                                 device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                 **params)
+        else:
+            raise ValueError(f'TabICL for regression does not exist')
 
     def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
                      cat_col_names: Optional[List[str]] = None):

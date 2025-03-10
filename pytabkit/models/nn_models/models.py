@@ -20,7 +20,7 @@ from pytabkit.models.nn_models.nn import DropoutFitter, WeightFitter, BiasFitter
 from pytabkit.models.nn_models.pipeline import MedianCenterFactory, RobustScaleFactory, MeanCenterFactory, \
     GlobalScaleNormalizeFactory, \
     L2NormalizeFactory, L1NormalizeFactory, ThermometerCodingFactory, CircleCodingFactory, SklearnTransformFactory, \
-    RobustScaleV2Factory
+    RobustScaleV2Factory, MinMaxScaleFactory
 from pytabkit.models import utils
 from pytabkit.models.data.data import TensorInfo
 from pytabkit.models.utils import TabrQuantileTransformer
@@ -105,6 +105,8 @@ class PreprocessingFactory(FitterFactory):
                 tfm_factories.append(L2NormalizeFactory(**self.config))
             elif tfm == 'l1_normalize':
                 tfm_factories.append(L1NormalizeFactory(**self.config))
+            elif tfm == 'minmax':
+                tfm_factories.append(MinMaxScaleFactory(**self.config))
             elif tfm == 'thermometer_coding':
                 tfm_factories.append(ThermometerCodingFactory(**self.config))
             elif tfm == 'circle_coding':
@@ -254,7 +256,15 @@ class NNFactory(FitterFactory):
         if self.config.get('add_fixed_weight_layer', False):
             factories.append(FixedWeightFactory())
 
-        out_sizes = self.config.get('hidden_sizes', [256] * 3) + [len(y_cat_sizes) if n_classes == 0 else n_classes]
+        hidden_sizes = self.config.get('hidden_sizes', [256] * 3)
+        if hidden_sizes == 'rectangular':
+            hidden_sizes = [self.config.get('hidden_width', 256)] * self.config.get('n_hidden_layers', 3)
+        train_metric_name = self.config.get('train_metric_name', None)
+        if isinstance(train_metric_name, str) and train_metric_name.startswith('multi_pinball('):
+            out_factor = train_metric_name.count(',') + 1
+        else:
+            out_factor = 1
+        out_sizes = hidden_sizes + [len(y_cat_sizes) * out_factor if n_classes == 0 else n_classes]
         for i in range(len(out_sizes)):
             layer_position = 'middle'
             block_scope_2 = f'layer-{i}'
@@ -266,6 +276,10 @@ class NNFactory(FitterFactory):
                 config = utils.join_dicts(config, config.get('first_layer_config', {}))
                 if config.get('add_front_scale', False):
                     config['block_str'] = 's-' + config.get('block_str', 'w-b-a-d')
+                first_layer_lr_factor = config.get('first_layer_lr_factor', None)
+                if first_layer_lr_factor is not None:
+                    config['weight_lr_factor'] = config.get('weight_lr_factor', 1.0) * first_layer_lr_factor
+                    config['bias_lr_factor'] = config.get('bias_lr_factor', 1.0) * first_layer_lr_factor
                 layer_position = 'first'
             block_scope = layer_position + '_layer'
             net_factories.append(

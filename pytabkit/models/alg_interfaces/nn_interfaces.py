@@ -6,6 +6,8 @@ from typing import List, Optional, Dict, Any, Union
 import numpy as np
 import torch
 
+from pytabkit.models.training.nn_creator import get_realmlp_auto_batch_size
+
 try:
     import lightning.pytorch as pl
 except ImportError:
@@ -22,7 +24,7 @@ from pytabkit.models.nn_models.base import Layer, Variable
 from pytabkit.models.nn_models.models import NNFactory
 from pytabkit.models.sklearn.default_params import DefaultParams
 from pytabkit.models.torch_utils import cat_if_necessary
-from pytabkit.models.training.lightning_modules import TabNNModule
+from pytabkit.models.training.lightning_modules import TabNNModule, postprocess_multiquantile
 from pytabkit.models.training.logging import Logger
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, SingleSplitAlgInterface, OptAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
@@ -132,6 +134,7 @@ class NNAlgInterface(AlgInterface):
         ds_x, _ = ds.split_xy()
         y_pred = self.trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
         y_pred = cat_if_necessary(y_pred, dim=-2).to('cpu')  # concat along batch dimension
+        y_pred = postprocess_multiquantile(y_pred, **self.config)  # postprocessing in case of multiquantile loss
         torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
         return y_pred
@@ -157,6 +160,9 @@ class NNAlgInterface(AlgInterface):
         n_forward = fitter.get_n_forward(tensor_infos)
         n_parallel = max(n_cv, n_refit) * n_splits
         batch_size = self.config.get('batch_size', 256)
+        if batch_size == 'auto':
+            batch_size = get_realmlp_auto_batch_size(n_train)
+        # print(f'{batch_size=}')
         n_epochs = self.config.get('n_epochs', 256)
         # per-element RAM usage:
         # continuous data requires 4 bytes for forward pass and 4 for backward pass
@@ -322,7 +328,7 @@ class RealMLPParamSampler:
     def sample_params(self, seed: int) -> Dict[str, Any]:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
-                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5']
+                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -500,8 +506,91 @@ class RealMLPParamSampler:
                       'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
                       'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(7.5))),
                       }
-
             params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
+        elif self.hpo_space_name == 'alt6':
+            # regression, manually adjusted from alt5
+            params = {'num_emb_type': 'pbld',
+                      'add_front_scale': True,
+                      'n_hidden': 256,
+                      'n_layers': rng.choice([2, 3, 4]),
+                      'lr': np.exp(rng.uniform(np.log(4e-2), np.log(2e-1))),
+                      'p_drop': rng.uniform(0.0, 0.5),
+                      'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(1e2))),
+                      'act': 'mish',
+                      'use_parametric_act': True,
+                      'p_drop_sched': 'flat_cos',
+                      'wd_sched': 'flat_cos',
+                      'lr_sched': 'coslog4',
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(3e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(7.5))),
+                      }
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
+        elif self.hpo_space_name == 'alt7':
+            # refined version of alt2 (classification)
+            params = {'num_emb_type': 'pbld',
+                      'n_hidden': 256,
+                      'n_layers': rng.integers(1, 4, endpoint=True),
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.0, 0.6),
+                      'wd': np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(30))),
+                      'act': 'mish',
+                      'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'ls_eps': rng.choice([0.0, np.exp(rng.uniform(np.log(5e-3), np.log(2e-1)))]),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'p_drop_sched': 'constant',
+                      }
+            params['hidden_sizes'] = [params['n_hidden']] * params['n_layers']
+
+        elif self.hpo_space_name == 'alt8':
+            # version of alt2 (classification) with some new hyperparameters
+            params = {'num_emb_type': 'pbld',
+                      'hidden_sizes': 'rectangular',
+                      'hidden_width': 256,
+                      'ls_eps_sched': 'coslog4',
+                      'tfms': [['one_hot', 'median_center', 'robust_scale', 'smooth_clip', 'embedding'],
+                               ['one_hot', 'mean_center', 'l2_normalize', 'embedding']][rng.choice([0, 1])],
+                      'batch_size': [256, 'auto'][rng.choice([0, 1])],
+                      'n_hidden_layers': rng.integers(1, 4, endpoint=True),
+                      'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(5.0))),
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),
+                      'p_drop': rng.uniform(0.06, 0.6),
+                      'wd': np.exp(rng.uniform(np.log(6e-3), np.log(1e-1))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(15))),
+                      'act': rng.choice(['mish', 'silu']),
+                      'wd_sched': rng.choice(['flat_cos', 'constant']),
+                      'ls_eps': rng.choice([0.0, np.exp(rng.uniform(np.log(5e-3), np.log(1e-1)))]),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(1e-3), np.log(1e-1))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(3e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'p_drop_sched': 'constant',
+                      }
+        elif self.hpo_space_name == 'alt9':
+            # version of alt8 (classification) with reduced search spaces, and increased with space
+            # removed batch_size tuning, tfms tuning
+            params = {'num_emb_type': 'pbld',
+                      'hidden_sizes': 'rectangular',
+                      'hidden_width': rng.choice([256, 384, 512]),  # added
+                      'ls_eps_sched': 'coslog4',
+                      'n_hidden_layers': rng.integers(1, 3, endpoint=True),  # reduced
+                      'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),  # reduced
+                      'lr': np.exp(rng.uniform(np.log(1e-2), np.log(5e-1))),  # todo: could reduce this
+                      'p_drop': rng.uniform(0.0, 0.5),  # reduced
+                      'wd': np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),  # reduced
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(15))),
+                      'act': rng.choice(['mish', 'silu']),
+                      'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),  # reduced
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),  # reduced
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'p_drop_sched': 'constant',
+                      }
 
         # print(f'{params=}')
 

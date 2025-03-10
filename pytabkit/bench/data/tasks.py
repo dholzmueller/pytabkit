@@ -201,7 +201,7 @@ class TaskInfo:
         path = paths.tasks_task(self.task_desc)
         info_dict = {'task_desc': self.task_desc.to_dict(), 'n_samples': self.n_samples,
                      'tensor_infos': {key: value.to_dict() for key, value in self.tensor_infos.items()},
-                     'default_split_idx': int(self.default_split_idx),
+                     'default_split_idx': None if self.default_split_idx is None else int(self.default_split_idx),
                      'more_info_dict': self.more_info_dict,
                      'max_n_trainval': self.max_n_trainval}
         utils.serialize(path / 'info.yaml', info_dict, use_yaml=True)

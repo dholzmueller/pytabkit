@@ -420,10 +420,13 @@ def get_schedule(sched_name: str) -> Schedule:
         base_sched = FunctionSchedule(lambda t: (0.5 + t) * 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + 15 * t))))
     elif sched_type == 'lin3_cos_log_15':
         base_sched = FunctionSchedule(lambda t: (1.5 - t) * 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + 15 * t))))
+    elif isinstance(sched_type, str) and sched_type.startswith('coslin'):
+        n_cycles = int(sched_type[len('coslin')])
+        base_sched = FunctionSchedule(lambda t, c=n_cycles: 0.5 * (1 - np.cos(2 * np.pi * c * t)))
+        # base_sched = FunctionSchedule(lambda t: 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2**n_cycles-1) * t))))
     elif isinstance(sched_type, str) and sched_type.startswith('coslog'):
         n_cycles = int(sched_type[len('coslog')])
         base_sched = FunctionSchedule(CoslogFunc(n_cycles))
-        # base_sched = FunctionSchedule(lambda t: 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2**n_cycles-1) * t))))
     elif sched_type == 'warmup_0.05_cos':
         base_sched = connect_cos_scheds([0.0, 0.05, 1.0],
                                         [0.0, 1.0, 0.0])

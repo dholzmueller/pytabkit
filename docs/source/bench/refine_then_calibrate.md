@@ -19,7 +19,7 @@ is stored in `original_requirements/conda_env_2025_01_15.yml`.
 
 ## Downloading datasets
 
-Download the zipped datasets (`dataset-1218.zip`) of the TALENT benchmark from
+Download the zipped datasets (`dataset-latest.zip`) of the TALENT benchmark from
 [here](https://drive.google.com/drive/folders/1j1zt3zQIo8dO6vkO-K-WE6pSrl71bf0z).
 Extract them into a folder. Then, use
 

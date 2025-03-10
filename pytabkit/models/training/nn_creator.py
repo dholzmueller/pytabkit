@@ -14,6 +14,33 @@ from pytabkit.models.training.logging import Logger
 from pytabkit.models.training.metrics import Metrics, mse, cross_entropy
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources
 
+def get_realmlp_auto_batch_size(n_train: int):
+    # if n_train <= 2**6:  # 64
+    #     return 2**4  # 16
+    # elif n_train <= 2**8:
+    #     return 2**5
+    # elif n_train <= 2**10:
+    #     return 2**6
+    # elif n_train <= 2**12:
+    #     return 2**7
+    # elif n_train <= 2**15:
+    #     return 2**8
+    # elif n_train <= 2**17:
+    #     return 2**9
+    #
+    # return 2**10
+
+    if n_train <= 1024:
+        return 64
+    elif n_train <= 8192:
+        return 128
+    elif n_train <= 30_000:
+        return 256
+    elif n_train <= 100_000:
+        return 512
+
+    return 1024
+
 
 class NNCreator:
     def __init__(self, fit_params: Optional[List[Dict[str, Any]]] = None, **config):
@@ -184,7 +211,10 @@ class NNCreator:
     def create_dataloaders(self, ds: DictDataset):
         ds = ds.to(self.device_info)
         ds = self.static_model(ds)
-        train_dl = ParallelDictDataLoader(ds, self.train_idxs, batch_size=self.config.get('batch_size', 256),
+        batch_size = self.config.get('batch_size', 256)
+        if batch_size == 'auto':
+            batch_size = get_realmlp_auto_batch_size(self.train_idxs.shape[0])
+        train_dl = ParallelDictDataLoader(ds, self.train_idxs, batch_size=batch_size,
                                           shuffle=True, drop_last=True, adjust_bs=self.config.get('adjust_bs', False))
         val_dl = None
         if self.is_cv and self.fit_params is None:

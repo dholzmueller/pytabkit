@@ -18,7 +18,7 @@ from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
     KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
-    TabPFN2SubSplitInterface
+    TabPFN2SubSplitInterface, TabICLSubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -478,6 +478,11 @@ class GrandeInterfaceWrapper(SubSplitInterfaceWrapper):
 class TabPFN2InterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return TabPFN2SubSplitInterface(**self.config)
+
+
+class TabICLInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return TabICLSubSplitInterface(**self.config)
 
 
 class MLPRTDLInterfaceWrapper(SubSplitInterfaceWrapper):

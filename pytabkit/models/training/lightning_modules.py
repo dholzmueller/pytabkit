@@ -18,6 +18,19 @@ from pytabkit.models.training.metrics import Metrics
 from pytabkit.models.training.scheduling import LearnerProgress
 
 
+def postprocess_multiquantile(y_pred: torch.Tensor, val_metric_name: Optional[str] = None,
+                              sort_quantile_predictions: bool = True,
+                              **config):
+    if val_metric_name is None or not val_metric_name.startswith('multi_pinball(') or not sort_quantile_predictions:
+        return y_pred
+
+    quantiles = [float(q_str) for q_str in val_metric_name[len('multi_pinball('):-1].split(',')]
+    if not all([a <= b for a, b in zip(quantiles[:-1], quantiles[1:])]):
+        raise ValueError(f'Quantiles {quantiles} must be sorted')
+
+    return y_pred.sort(dim=-1)[0]
+
+
 class TabNNModule(pl.LightningModule):
     def __init__(self, n_epochs: int = 256, logger: Optional[Logger] = None,
                  fit_params: Optional[List[Dict[str, Any]]] = None,
@@ -148,6 +161,8 @@ class TabNNModule(pl.LightningModule):
         self.model.train(self.old_training)
         self.old_training = None
         y_pred = torch.cat(self.val_preds, dim=-2)
+
+        y_pred = postprocess_multiquantile(y_pred, **self.config)
 
         use_early_stopping = self.config.get('use_early_stopping', False)
         early_stopping_additive_patience = self.config.get('early_stopping_additive_patience', 20)

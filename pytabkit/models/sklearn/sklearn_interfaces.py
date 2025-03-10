@@ -60,7 +60,9 @@ class RealMLPConstructorMixin:
                  train_metric_name: Optional[str] = None, val_metric_name: Optional[str] = None,
                  n_epochs: Optional[int] = None,
                  batch_size: Optional[int] = None, predict_batch_size: Optional[int] = None,
-                 hidden_sizes: Optional[List[int]] = None,
+                 hidden_sizes: Optional[Union[List[int], Literal['rectangular']]] = None,
+                 n_hidden_layers: Optional[int] = None,
+                 hidden_width: Optional[int] = None,
                  tfms: Optional[List[str]] = None,
                  num_emb_type: Optional[str] = None,
                  use_plr_embeddings: Optional[bool] = None, plr_sigma: Optional[float] = None,
@@ -77,6 +79,7 @@ class RealMLPConstructorMixin:
                  bias_wd_factor: Optional[float] = None,
                  add_front_scale: Optional[bool] = None,
                  scale_lr_factor: Optional[float] = None,
+                 first_layer_lr_factor: Optional[float] = None,
                  block_str: Optional[str] = None,
                  first_layer_config: Optional[Dict[str, Any]] = None,
                  last_layer_config: Optional[Dict[str, Any]] = None,
@@ -89,11 +92,12 @@ class RealMLPConstructorMixin:
                  sq_mom: Optional[float] = None, sq_mom_sched: Optional[str] = None,
                  opt_eps: Optional[float] = None, opt_eps_sched: Optional[str] = None,
                  normalize_output: Optional[bool] = None, clamp_output: Optional[bool] = None,
-                 use_ls: Optional[bool] = None, ls_eps: Optional[float] = None, ls_eps_sched: Optional[float] = None,
+                 use_ls: Optional[bool] = None, ls_eps: Optional[float] = None, ls_eps_sched: Optional[str] = None,
                  use_early_stopping: Optional[bool] = None,
                  early_stopping_additive_patience: Optional[int] = None,
                  early_stopping_multiplicative_patience: Optional[float] = None,
                  calibration_method: Optional[str] = None,
+                 sort_quantile_predictions: Optional[bool] = None,
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
@@ -149,6 +153,9 @@ class RealMLPConstructorMixin:
         :param batch_size: Batch size to be used for fit(), default=256.
         :param predict_batch_size: Batch size to be used for predict(), default=1024.
         :param hidden_sizes: List of numbers of neurons for each hidden layer, default=[256, 256, 256].
+            If this is set to 'rectangular', then [hidden_width] * n_hidden_layers will be used instead.
+        :param n_hidden_layers: Number of hidden layers, default=3. Only used if hidden_sizes=='rectangular'.
+        :param hidden_width: Width of each hidden layer, default=256. Only used if hidden_sizes=='rectangular'.
         :param tfms: List of preprocessing transformations,
             default=`['one_hot', 'median_center', 'robust_scale', 'smooth_clip', 'embedding']`.
             Other possible transformations include: 'median_center', 'l2_normalize', 'l1_normalize', 'quantile', 'kdi'.
@@ -189,6 +196,8 @@ class RealMLPConstructorMixin:
             in the block_str, this will create an additional scaling layer.
         :param scale_lr_factor: Scaling layer learning rate factor
             (default=1.0 but will be overridden by default for the first layer in first_layer_config).
+        :param first_layer_lr_factor: First layer learning rate factor
+            (default=1.0).
         :param block_str: String describing the default hidden layer components.
             The default is 'w-b-a-d' for weight, bias, activation, dropout.
             By default, the last layer config will override it with 'w-b'
@@ -241,6 +250,9 @@ class RealMLPConstructorMixin:
         :param calibration_method: Post-hoc calibration method (only for classification).
             We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
             For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
+        :param sort_quantile_predictions:
+            If val_metric_name=='multi_pinball(...)', decides whether the predicted quantiles will be sorted
+            to avoid quantile crossover. Default is True.
         """
         super().__init__()  # call the constructor of the other superclass for multiple inheritance
         self.device = device
@@ -257,6 +269,8 @@ class RealMLPConstructorMixin:
         self.batch_size = batch_size
         self.predict_batch_size = predict_batch_size
         self.hidden_sizes = hidden_sizes
+        self.n_hidden_layers = n_hidden_layers
+        self.hidden_width = hidden_width
         self.tfms = tfms
         self.max_one_hot_cat_size = max_one_hot_cat_size
         self.embedding_size = embedding_size
@@ -281,6 +295,7 @@ class RealMLPConstructorMixin:
         self.bias_wd_factor = bias_wd_factor
         self.add_front_scale = add_front_scale
         self.scale_lr_factor = scale_lr_factor
+        self.first_layer_lr_factor = first_layer_lr_factor
         self.block_str = block_str
         self.first_layer_config = first_layer_config
         self.last_layer_config = last_layer_config
@@ -307,6 +322,7 @@ class RealMLPConstructorMixin:
         self.early_stopping_additive_patience = early_stopping_additive_patience
         self.early_stopping_multiplicative_patience = early_stopping_multiplicative_patience
         self.calibration_method = calibration_method
+        self.sort_quantile_predictions = sort_quantile_predictions
 
 
 class RealMLP_TD_Classifier(RealMLPConstructorMixin, AlgInterfaceClassifier):
