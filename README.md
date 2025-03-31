@@ -1,6 +1,7 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/dholzmueller/pytabkit/blob/main/examples/tutorial_notebook.ipynb)
 [![](https://readthedocs.org/projects/pytabkit/badge/?version=latest&style=flat-default)](https://pytabkit.readthedocs.io/en/latest/)
 [![test](https://github.com/dholzmueller/pytabkit/actions/workflows/testing.yml/badge.svg)](https://github.com/dholzmueller/pytabkit/actions/workflows/testing.yml)
+[![Downloads](https://img.shields.io/pypi/dm/pytabkit)](https://pypistats.org/packages/pytabkit)
 
 # PyTabKit: Tabular ML models and benchmarking (NeurIPS 2024)
 
