@@ -179,8 +179,8 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
     def _preprocess_params(self, params: Dict[str, Any], n_classes: int) -> Dict[str, Any]:
         params = copy.deepcopy(params)
 
-        device = params.pop('device')
-        if device.startswith('cuda:'):
+        device = params.pop('device', None)
+        if device is not None and device.startswith('cuda:'):
             params['task_type'] = 'GPU'
             params['devices'] = device.split(':')[1]
         
