@@ -178,6 +178,12 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
     # adapted from https://github.com/catboost/benchmarks/blob/master/quality_benchmarks/catboost_experiment.py
     def _preprocess_params(self, params: Dict[str, Any], n_classes: int) -> Dict[str, Any]:
         params = copy.deepcopy(params)
+
+        device = params.pop('device', None)
+        if device is not None and device.startswith('cuda:'):
+            params['task_type'] = 'GPU'
+            params['devices'] = device.split(':')[1]
+        
         if n_classes == 0:
             train_metric_name = self.config.get('train_metric_name', 'mse')
             # val_metric_name = self.config.get('val_metric_name', 'rmse')
