@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, \
-    GradientBoostingRegressor
+    GradientBoostingRegressor, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
@@ -29,10 +29,14 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
                          ('bootstrap', None),
                          ('min_impurity_decrease', None),
                          ('min_weight_fraction_leaf', None),
+                         ('max_leaf_nodes', None),
+                         ('max_samples', None),
                          ('n_jobs', ['n_jobs', 'n_threads'], n_threads),
                          ('verbose', ['verbose', 'verbosity'])]
 
         params = utils.extract_params(self.config, params_config)
+        if not params.get('bootstrap', True) and 'max_samples' in params:
+            del params['max_samples']
         if self.n_classes > 0:
             return RandomForestClassifier(random_state=seed, **params)
         else:
@@ -43,7 +47,10 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
                 params['criterion'] = 'absolute_error'
             elif train_metric_name is not None:
                 raise ValueError(f'Train metric "{train_metric_name}" is currently not supported!')
-            return RandomForestRegressor(random_state=seed, **params)
+            reg = RandomForestRegressor(random_state=seed, **params)
+            if self.config.get('standardize_target', False):
+                reg = TransformedTargetRegressor(reg, transformer=StandardScaler())
+            return reg
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:
@@ -61,23 +68,710 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
 class RandomParamsRFAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
-        # adapted from Grinsztajn et al. (2022)
-        space = {
-            'n_estimators': 250,
-            'max_depth': rng.choice([None, 2, 3, 4], p=[0.7, 0.1, 0.1, 0.1]),
-            'criterion': rng.choice(['gini', 'entropy']) if is_classification
-            else rng.choice(['squared_error', 'absolute_error']),
-            'max_features': rng.choice(['sqrt', 'sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
-            'min_samples_split': rng.choice([2, 3], p=[0.95, 0.05]),
-            'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(50.5)))),
-            'bootstrap': rng.choice([True, False]),
-            'min_impurity_decrease': rng.choice([0.0, 0.01, 0.02, 0.05], p=[0.85, 0.05, 0.05, 0.05]),
-            'tfms': ['one_hot'],
-        }
+        hpo_space_name = self.config.get('hpo_space_name', 'grinsztajn')
+        if hpo_space_name == 'grinsztajn':
+            # adapted from Grinsztajn et al. (2022)
+            space = {
+                'n_estimators': 250,
+                'max_depth': rng.choice([None, 2, 3, 4], p=[0.7, 0.1, 0.1, 0.1]),
+                'criterion': rng.choice(['gini', 'entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': rng.choice([2, 3], p=[0.95, 0.05]),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(50.5)))),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, 0.01, 0.02, 0.05], p=[0.85, 0.05, 0.05, 0.05]),
+                'tfms': ['one_hot'],
+            }
+        elif hpo_space_name == 'large-v1':
+            space = {
+                'n_estimators': 300,
+                # this wasn't used in the experiments
+                # 'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 2, 3, 4, 6, 8, 12, 16]),
+                'criterion': rng.choice(['gini', 'entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.6), np.log(128.0)))),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-1)))]),
+                'tfms': [['one_hot'], ['ordinal_encoding']][rng.integers(0, 1, endpoint=True)],
+            }
+        elif hpo_space_name == 'large-v2':
+            # large-v1 but reduced max_depth, criterion, min_samples_leaf, min_impurity_decrease
+            # added max_leaf_nodes back in
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': [['one_hot'], ['ordinal_encoding']][rng.integers(0, 1, endpoint=True)],
+            }
+        elif hpo_space_name == 'large-v3':
+            # large-v2 but not tuning min_impurity_decrease, reduced max_depth, reduced min_samples_split,
+            # only 100 estimators
+            space = {
+                'n_estimators': 100,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'tfms': [['one_hot'], ['ordinal_encoding']][rng.integers(0, 1, endpoint=True)],
+            }
+        elif hpo_space_name == 'large-v4':
+            # large-v2 but only ordinal encoding
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v5':
+            # large-v3 but with 300 estimators and only ordinal encoding
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v6':
+            # large-v4 but only bootstrap=True
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v7':
+            # large-v6 but not tuning max_leaf_nodes
+            space = {
+                'n_estimators': 300,
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error', 'absolute_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v8':
+            # large-v4 but not tuning max_leaf_nodes, not allowing absolute_error
+            space = {
+                'n_estimators': 300,
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v9':
+            # large-v8 but tuning max_leaf_nodes again
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v10':
+            # large-v9 but not tuning min_impurity_decrease
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v11':
+            # large-v9 but tuning one-hot encoding
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 12, 16]),
+                'criterion': rng.choice(['entropy']) if is_classification
+                else rng.choice(['squared_error']),
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(8.0)))),
+                'min_samples_leaf': 1,
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(5e-3)))]),
+                'bootstrap': rng.choice([True, False]),
+                'tfms': [['one_hot'], ['ordinal_encoding']][rng.integers(0, 1, endpoint=True)],
+            }
+        elif hpo_space_name == 'large-v12':
+            # very large space like large-v1 but a bit different
+            # only 50 estimators -> use with bagging
+            space = {
+                'n_estimators': 50,
+                'max_depth': rng.choice([6, 8, 12, 16, 20]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': rng.choice(['sqrt', 'log2', 0.2, 0.4, 0.6, 0.8, None]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.6), np.log(64.0)))),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(1e-1)))]),
+                # 'max_samples': rng.uniform(0.4, 1.0), # this was accidentally not used
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v12':
+            # very large space like large-v1 but a bit different
+            # only 50 estimators -> use with bagging
+            space = {
+                'n_estimators': 50,
+                'max_depth': rng.choice([6, 8, 12, 16, 20]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': rng.choice(['sqrt', 'log2', 0.2, 0.4, 0.6, 0.8, None]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.6), np.log(64.0)))),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(1e-1)))]),
+                # 'max_samples': rng.uniform(0.4, 1.0), # this was accidentally not used
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v13':
+            # reduced version on large-v12 based on talent-reg-small
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_depth': rng.choice([16, 20]),
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-3), np.log(1e-1)))]),
+                # 'max_samples': rng.uniform(0.4, 1.0), # this was accidentally not used
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v14':
+            # reduced version of large-v13 based on talent-reg-small
+            # changed max_features, removed max_depth, changed min_impurity_decrease
+            # removed tuning max_samples since it doesn't seem to do much?
+            # this doesn't perform very well (target was not standardized for regression)
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': rng.uniform(0.2, 0.9),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-2))),
+                'tfms': ['ordinal_encoding'],
+            }
+        elif hpo_space_name == 'large-v15':
+            # large-v14 but with standardized target
+            # better
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': rng.uniform(0.2, 0.9),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-2))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v16':
+            # large-v15 but don't tune min_impurity_decrease. Also go back to old max_features
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v17':
+            # large-v16 but with tuning max_samples (wasn't used)
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                # 'max_samples': rng.uniform(0.4, 1.0), # this was accidentally not used
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v18':
+            # large-v16 but with max_depth limit  (equivalent to large-v13 without tuning min_impurity_decrease)
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                # 'max_samples': rng.uniform(0.4, 1.0), # this was accidentally not used
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v19':
+            # large-v18 but with tuning max_samples
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v20':
+            # large-v19 but with tuning min_impurity_decrease, with 300 estimator, a few more max_depth options
+            space = {
+                'n_estimators': 300,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([12, 16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(5e-3)))]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v21':
+            # large-v20 but with different max_depth, min_impurity_decrease, and 50 estimators
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(1e-3)))]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v22':
+            # large-v21 but without bootstrap=False
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(1e-3)))]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v23':
+            # large-v21 but with 100 estimators
+            space = {
+                'n_estimators': 100,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(1e-3)))]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v24':
+            # large-v21 but without tuning min_impurity_decrease
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v25':
+            # large-v21 but with different min_impurity_decrease space
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': 1,
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v26':
+            # large-v25 but with tuning min_samples_leaf
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'max_depth': rng.choice([16, 20, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(4.5)))),
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v27':
+            # inspired from XT but with both bootstrap options
+            space = {
+                'n_estimators': 50,
+                'max_features': ['sqrt', 0.5, 0.75, 1.0][rng.integers(4)],
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1e-3)))]),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'tabrepo1':
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': rng.integers(5000, 50000, endpoint=True),
+                'min_samples_leaf': rng.choice([1, 2, 3, 4, 5, 10, 20, 40, 80]),
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'tfms': ['one_hot'],
+            }
+        elif hpo_space_name == 'tabrepo1-ordinal':
+            space = {
+                'n_estimators': 300,
+                'max_leaf_nodes': rng.integers(5000, 50000, endpoint=True),
+                'min_samples_leaf': rng.choice([1, 2, 3, 4, 5, 10, 20, 40, 80]),
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'tfms': ['ordinal_encoding'],  # failed to fix it
+            }
+        else:
+            raise ValueError()
         return space
 
     def _create_interface_from_config(self, n_tv_splits: int, **config):
         return SingleSplitWrapperAlgInterface([RFSubSplitInterface(**config) for i in range(n_tv_splits)])
+
+
+class ExtraTreesSubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [('n_estimators', None),
+                         ('criterion', None),
+                         ('max_depth', None),
+                         ('min_samples_split', None),
+                         ('max_features', None),
+                         ('min_samples_leaf', None),
+                         ('bootstrap', None),
+                         ('min_impurity_decrease', None),
+                         ('min_weight_fraction_leaf', None),
+                         ('max_leaf_nodes', None),
+                         ('max_samples', None),
+                         ('n_jobs', ['n_jobs', 'n_threads'], n_threads),
+                         ('verbose', ['verbose', 'verbosity'])]
+
+        params = utils.extract_params(self.config, params_config)
+        if not params.get('bootstrap', True) and 'max_samples' in params:
+            del params['max_samples']
+        if self.n_classes > 0:
+            return ExtraTreesClassifier(random_state=seed, **params)
+        else:
+            train_metric_name = self.config.get('train_metric_name', None)
+            if train_metric_name == 'mse':
+                params['criterion'] = 'squared_error'  # is the default anyway
+            elif train_metric_name == 'mae':
+                params['criterion'] = 'absolute_error'
+            elif train_metric_name is not None:
+                raise ValueError(f'Train metric "{train_metric_name}" is currently not supported!')
+            reg = ExtraTreesRegressor(random_state=seed, **params)
+            if self.config.get('standardize_target', False):
+                reg = TransformedTargetRegressor(reg, transformer=StandardScaler())
+            return reg
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0, 'n_samples*n_estimators*n_tree_repeats': 3e-9}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params)
+        return rc.get_required_resources(ds)
+
+
+class RandomParamsExtraTreesAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        hpo_space_name = self.config['hpo_space_name']
+        if hpo_space_name == 'large-v1':
+            space = {
+                'n_estimators': 50,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'max_depth': rng.choice([None, 8, 12, 16]),
+                'criterion': rng.choice(['gini', 'entropy']) if is_classification
+                else 'squared_error',
+                'max_features': rng.choice(['sqrt', 'log2', None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.6), np.log(8.0)))),
+                'max_samples': float(rng.uniform(0.4, 1.0)),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-2))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v2':
+            # large-v1 shrunken
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.6), np.log(4.5)))),
+                'bootstrap': rng.choice([True, False]),
+                'max_samples': rng.uniform(0.4, 1.0),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v3':
+            # large-v2 shrunken
+            # very good for classification
+            # tuning of max_features may be unnecessary, default might work just as well
+            # maybe could go even larger with min_samples_split
+            space = {
+                'n_estimators': 50,
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': False,
+                # 'max_samples': rng.uniform(0.4, 1.0),  # irrelevant without bootstrap
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                # could decrease upper bound to 5e-4
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v4':
+            # large space for regression tests
+            space = {
+                'n_estimators': 50,
+                'max_leaf_nodes': round(np.exp(rng.uniform(np.log(500), np.log(100_000)))),
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': rng.choice([0.4, 0.6, 0.8, None]),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': 1,
+                'max_samples': float(rng.uniform(0.4, 1.0)),
+                'bootstrap': rng.choice([True, False]),
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-2))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v5':
+            # shrunken version of large-v4 for regression
+            # min_impurity_decrease could be shrunk more
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': float(rng.uniform(0.5, 1.0)),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': 1,
+                # 'max_samples': float(rng.uniform(0.4, 1.0)),    # irrelevant without bootstrap
+                'bootstrap': False,
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-6), np.log(5e-4))),
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v6':
+            # large-v5 without tuning min_impurity_decrease
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': float(rng.uniform(0.5, 1.0)),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': 1,
+                # 'max_samples': float(rng.uniform(0.4, 1.0)),    # irrelevant without bootstrap
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v7':
+            # large-v6 with tuning max_leaf_nodes
+            # doesn't help
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_leaf_nodes': rng.integers(5000, 50000, endpoint=True),
+                'max_features': float(rng.uniform(0.5, 1.0)),
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': 1,
+                # 'max_samples': float(rng.uniform(0.4, 1.0)),    # irrelevant without bootstrap
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v8':
+            # large-v6 but with different tuning space for max_features
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v9':
+            # large-v8 but tuning min_samples_leaf
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(8.5)))),
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v10':
+            # large-v9 but without tuning min_samples_split
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'min_samples_split': 2,
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(1.5), np.log(8.5)))),
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v11':
+            # large-v10 but with fixed tuning space for min_samples_leaf
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'min_samples_split': 2,
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.5), np.log(8.5)))),
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v12':
+            # large-v9 but with fixed tuning space for min_samples_leaf
+            space = {
+                'n_estimators': 50,
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(32.0)))),
+                'min_samples_leaf': round(np.exp(rng.uniform(np.log(0.5), np.log(8.5)))),
+                'bootstrap': False,
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v13':
+            # large-v3 with different max_features space
+            space = {
+                'n_estimators': 50,
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': False,
+                # 'max_samples': rng.uniform(0.4, 1.0),  # irrelevant without bootstrap
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                # could decrease upper bound to 5e-4
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'large-v14':
+            # large-v3 with different max_features space
+            space = {
+                'n_estimators': 50,
+                'max_features': ['sqrt', 0.5, 0.75, 1.0][rng.integers(4)],
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'min_samples_split': round(np.exp(rng.uniform(np.log(1.5), np.log(16.0)))),
+                'min_samples_leaf': 1,
+                'bootstrap': False,
+                # 'max_samples': rng.uniform(0.4, 1.0),  # irrelevant without bootstrap
+                'min_impurity_decrease': np.exp(rng.uniform(np.log(1e-5), np.log(1e-3))),
+                # could decrease upper bound to 5e-4
+                'tfms': ['ordinal_encoding'],
+                'standardize_target': True,
+            }
+        elif hpo_space_name == 'tabrepo1-mod':
+            space = {
+                'n_estimators': 50,
+                # not completely sure if tabrepo1 uses entropy
+                'criterion': 'entropy' if is_classification else 'squared_error',
+                'max_leaf_nodes': rng.integers(5000, 50000, endpoint=True),
+                'min_samples_leaf': rng.choice([1, 2, 3, 4, 5, 10, 20, 40, 80]),
+                'max_features': ['sqrt', 'log2', 0.5, 0.75, 1.0][rng.integers(5)],
+                'tfms': ['ordinal_encoding'],
+            }
+        else:
+            raise ValueError()
+        return space
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([ExtraTreesSubSplitInterface(**config) for i in range(n_tv_splits)])
 
 
 class GBTSubSplitInterface(SklearnSubSplitInterface):
@@ -116,6 +810,158 @@ class GBTSubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params)
         return rc.get_required_resources(ds)
+
+
+class KNNSubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [('n_neighbors', None),
+                         ('weights', None),
+                         ('p', None),
+                         ('n_jobs', ['n_jobs', 'n_threads'], n_threads)]
+
+        params = utils.extract_params(self.config, params_config)
+        if self.n_classes > 0:
+            from sklearn.neighbors import KNeighborsClassifier
+            return KNeighborsClassifier(**params)
+        else:
+            from sklearn.neighbors import KNeighborsRegressor
+            return KNeighborsRegressor(**params)
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0, 'n_samples*n_estimators*n_tree_repeats': 3e-9}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params)
+        return rc.get_required_resources(ds)
+
+
+class RandomParamsKNNAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        hpo_space_name = self.config['hpo_space_name']
+        if hpo_space_name == 'v1':
+            space = {
+                'n_neighbors': int(np.exp(rng.uniform(np.log(1.0), np.log(101.0)))),
+                'weights': rng.choice(['uniform', 'distance']),
+                # 'p': np.exp(rng.uniform(np.log(0.2), np.log(8.0))),  # values outside of 1 and 2 can be very slow
+                'p': rng.choice([1, 2]),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        elif hpo_space_name == 'tabrepo1':
+            space = {
+                'n_neighbors': rng.choice([3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 20, 30, 40, 50]),
+                'weights': rng.choice(['uniform', 'distance']),
+                'p': rng.choice([1, 2]),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        else:
+            raise ValueError()
+        return space
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([KNNSubSplitInterface(**config) for i in range(n_tv_splits)])
+
+
+class LinearModelSubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [
+            # ('l1_ratio', None),
+            ('fit_intercept', None),
+            # ('n_jobs', ['n_jobs', 'n_threads'], n_threads)
+        ]
+
+        penalty = self.config.get('penalty', 'l2')
+        n_jobs = self.config.get('n_jobs', self.config.get('n_threads', None))
+
+        params = utils.extract_params(self.config, params_config)
+        l1_ratio = self.config.get('l1_ratio', 0.5)
+
+        C = self.config.get('C', 1.0)
+        if self.n_classes > 0:
+            from sklearn.linear_model import LogisticRegression
+            return LogisticRegression(random_state=seed, penalty=penalty,
+                                      solver='lbfgs' if penalty == 'l2' else 'saga',
+                                      C=C, l1_ratio=l1_ratio if penalty == 'elasticnet' else None,
+                                      n_jobs=n_jobs, **params)
+            # return LogisticRegression(random_state=seed, penalty='l2', solver='newton-cholesky', C=C, **params)
+        else:
+            alpha = self.config.get('alpha', 1 / C)
+            from sklearn.linear_model import Ridge, Lasso, ElasticNet
+            if penalty == 'l2':
+                return Ridge(random_state=seed, alpha=alpha, **params)
+            elif penalty == 'l1':
+                return Lasso(random_state=seed, alpha=alpha, **params)
+            elif penalty == 'elasticnet':
+                return ElasticNet(random_state=seed, alpha=alpha, l1_ratio=l1_ratio, **params)
+            else:
+                raise ValueError()
+            # from sklearn.linear_model import ElasticNet
+            # return ElasticNet(random_state=seed, alpha=alpha, **params)
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100, n_threads=1), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params)
+        return rc.get_required_resources(ds)
+
+
+class RandomParamsLinearModelAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        hpo_space_name = self.config['hpo_space_name']
+        if hpo_space_name == 'v1':
+            space = {
+                'penalty': rng.choice(['l1', 'l2', 'elasticnet']),
+                'l1_ratio': rng.uniform(0.01, 1.0),
+                'C': np.exp(rng.uniform(np.log(1e-2), np.log(1e7))),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        elif hpo_space_name == 'v2':
+            # smaller version of v1
+            space = {
+                'penalty': rng.choice(['l1', 'l2', 'elasticnet']),
+                'l1_ratio': rng.uniform(0.01, 0.8),
+                'C': np.exp(rng.uniform(np.log(1e-1), np.log(1e5))),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        elif hpo_space_name == 'v3':
+            # smaller version of v1
+            space = {
+                'penalty': rng.choice(['l1', 'l2', 'elasticnet']),
+                'l1_ratio': rng.uniform(0.01, 0.5),
+                'C': np.exp(rng.uniform(np.log(1e-1), np.log(1e4))),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        elif hpo_space_name == 'v4':
+            # smaller version of v1
+            space = {
+                'penalty': rng.choice(['l1', 'l2']),
+                'C': np.exp(rng.uniform(np.log(1e-1), np.log(1e5))),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        elif hpo_space_name == 'tabrepo1':
+            space = {
+                'penalty': rng.choice(['l1', 'l2']),
+                'C': np.exp(rng.uniform(np.log(1e-1), np.log(1e3))),
+                'tfms': ['mean_center', 'l2_normalize', 'one_hot'],
+            }
+        else:
+            raise ValueError()
+        return space
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([LinearModelSubSplitInterface(**config) for i in range(n_tv_splits)])
 
 
 class SklearnMLPSubSplitInterface(SklearnSubSplitInterface):
@@ -383,8 +1229,8 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         if self.n_classes > 0:
             from tabicl.classifier import TabICLClassifier
             return TabICLClassifier(random_state=seed,
-                                 device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
-                                 **params)
+                                    device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                    **params)
         else:
             raise ValueError(f'TabICL for regression does not exist')
 

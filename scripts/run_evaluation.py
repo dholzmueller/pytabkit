@@ -21,7 +21,8 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
               data_path: Optional[str] = None, alg_name: Optional[str] = None,
               alg_name_2: Optional[str] = None, tag: Optional[str] = None, max_n_splits: Optional[int] = None,
               max_n_algs: Optional[int] = None, show_val_results: bool = False, show_train_results: bool = False,
-              algs_prefix: Optional[str] = None, algs_suffix: Optional[str] = None, algs_contains: Optional[str] = None):
+              algs_prefix: Optional[str] = None, algs_suffix: Optional[str] = None, algs_contains: Optional[str] = None,
+              exclude_datasets: Optional[str] = None):
     """
     Prints evaluation tables on the selected datasets/algorithms.
     The following aggregate statistics will be printed, all of which are
@@ -63,6 +64,7 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     :param algs_prefix: If specified, only methods with this prefix will be displayed.
     :param algs_suffix: If specified, only methods with this suffix will be displayed.
     :param algs_contains: If specified, only methods containing this substring will be displayed.
+    :param exclude_datasets: Optional comma-separated list of datasets that will be excluded from the analysis.
     :return:
     """
     print('start show eval')
@@ -77,6 +79,10 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
         task_collection = TaskCollection(coll_name, [TaskDescription(*parts)])
     else:
         task_collection = TaskCollection.from_name(coll_name, paths)
+    if exclude_datasets:
+        exclude_names = exclude_datasets.split(',')
+        task_collection = TaskCollection(task_collection.coll_name,
+                                         [td for td in task_collection.task_descs if td.task_name not in exclude_names])
     print('load table')
     # table = MultiResultsTable.load_summaries(task_collection, n_cv=n_cv, paths=paths)
     if tag is None:
@@ -135,7 +141,8 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
     separate_task_names = ['facebook_comment_volume', 'facebook_live_sellers_thailand_shares']
     if n_cv == 1:
         # fails for n_cv > 1 because proper selection on the validation set is not implemented
-        print(f'Greedy algorithm selection cumulative best log shifted geometric mean (err+{shift_eps:g}) {subset} error:')
+        print(
+            f'Greedy algorithm selection cumulative best log shifted geometric mean (err+{shift_eps:g}) {subset} error:')
         analyzer = GreedyAlgSelectionTableAnalyzer(use_weighting=use_task_weighting,
                                                    separate_task_names=separate_task_names,
                                                    f=lambda x: np.log(x + shift_eps))

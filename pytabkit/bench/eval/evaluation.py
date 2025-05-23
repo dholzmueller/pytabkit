@@ -67,12 +67,21 @@ class DefaultEvalModeSelector(EvalModeSelector):
             modes = [mode for mode in eval_modes if mode[0] == val]
             if len(modes) > 0:
                 # maximize n_models
-                idx = np.argmax([int(mode[1]) for mode in modes])
-                idx_min = np.argmin([int(mode[1]) for mode in modes])
-                mode = modes[idx]
-                result.append((f' [{name}-{mode[1]}]', mode))
-                if idx_min != idx:
-                    result.append((f' [{name}-{modes[idx_min][1]}]', modes[idx_min]))
+                bag_sizes = [int(mode[1]) for mode in modes]
+                max_cv = np.max(bag_sizes)
+                min_cv = np.min(bag_sizes)
+                bag_sizes = list({max_cv, min_cv})  # only have one element if they're equal
+
+                for bag_size in bag_sizes:
+                    # make sure to always select model '0' to avoid non-determinism
+                    result.append((f' [{name}-{bag_size}]', (val, str(bag_size), '0')))
+
+                # idx = np.argmax([int(mode[1]) for mode in modes])
+                # idx_min = np.argmin([int(mode[1]) for mode in modes])
+                # mode = modes[idx]
+                # result.append((f' [{name}-{mode[1]}]', mode))
+                # if idx_min != idx:
+                #     result.append((f' [{name}-{modes[idx_min][1]}]', modes[idx_min]))
 
         return result
 

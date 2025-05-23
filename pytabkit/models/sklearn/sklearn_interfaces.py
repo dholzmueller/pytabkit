@@ -98,6 +98,7 @@ class RealMLPConstructorMixin:
                  early_stopping_multiplicative_patience: Optional[float] = None,
                  calibration_method: Optional[str] = None,
                  sort_quantile_predictions: Optional[bool] = None,
+                 stop_epoch: Optional[int] = None,
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
@@ -253,6 +254,10 @@ class RealMLPConstructorMixin:
         :param sort_quantile_predictions:
             If val_metric_name=='multi_pinball(...)', decides whether the predicted quantiles will be sorted
             to avoid quantile crossover. Default is True.
+        :param stop_epoch:
+            Epoch at which training should be stopped (for refitting).
+            The total length of training used for the schedules will be determined by n_epochs,
+            but the stopping epoch will be min(stop_epoch, n_epochs).
         """
         super().__init__()  # call the constructor of the other superclass for multiple inheritance
         self.device = device
@@ -323,6 +328,7 @@ class RealMLPConstructorMixin:
         self.early_stopping_multiplicative_patience = early_stopping_multiplicative_patience
         self.calibration_method = calibration_method
         self.sort_quantile_predictions = sort_quantile_predictions
+        self.stop_epoch = stop_epoch
 
 
 class RealMLP_TD_Classifier(RealMLPConstructorMixin, AlgInterfaceClassifier):
@@ -657,6 +663,9 @@ class CatBoost_TD_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
     def _supports_single_sample(self) -> bool:
         return False
 
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
+
 
 class CatBoost_D_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
     def _get_default_params(self):
@@ -670,6 +679,9 @@ class CatBoost_D_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
 
     def _supports_single_sample(self) -> bool:
         return False
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
 
 
 class CatBoost_TD_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
@@ -685,6 +697,9 @@ class CatBoost_TD_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
     def _supports_single_sample(self) -> bool:
         return False
 
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
+
 
 class CatBoost_D_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
     def _get_default_params(self):
@@ -698,6 +713,9 @@ class CatBoost_D_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
 
     def _supports_single_sample(self) -> bool:
         return False
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
 
 
 class RFConstructorMixin:
@@ -938,6 +956,9 @@ class CatBoost_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
     def _supports_single_sample(self) -> bool:
         return False
 
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
+
 
 class CatBoost_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
     def _get_default_params(self) -> Dict[str, Any]:
@@ -953,6 +974,9 @@ class CatBoost_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifie
 
     def _supports_single_sample(self) -> bool:
         return False
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
 
 
 class CatBoost_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
@@ -973,6 +997,9 @@ class CatBoost_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
     def _supports_single_sample(self) -> bool:
         return False
 
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
+
 
 class CatBoost_HPO_TPE_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
     def _get_default_params(self) -> Dict[str, Any]:
@@ -988,6 +1015,9 @@ class CatBoost_HPO_TPE_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor)
 
     def _supports_single_sample(self) -> bool:
         return False
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda']
 
 
 class RF_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):

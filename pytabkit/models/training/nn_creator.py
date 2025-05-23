@@ -1,3 +1,4 @@
+import functools
 from typing import List, Optional, Tuple, Callable, Dict, Any
 
 import numpy as np
@@ -98,7 +99,8 @@ class NNCreator:
         elif train_metric_name == 'cross_entropy':
             train_criterion = cross_entropy
         else:
-            train_criterion = lambda y_pred, y, mn=train_metric_name: Metrics.apply(y_pred, y, mn)
+            train_criterion = functools.partial(Metrics.apply, metric_name=train_metric_name)
+            # train_criterion = lambda y_pred, y, mn=train_metric_name: Metrics.apply(y_pred, y, mn)
         # else:
         #     raise ValueError(f'{train_metric_name=} is currently not supported')
 

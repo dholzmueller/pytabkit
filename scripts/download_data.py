@@ -15,6 +15,7 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
                import_grinsztajn: bool = False, import_grinsztajn_medium: bool = False,
                import_tabzilla_hard: bool = False, import_automl_class_small: bool = False,
                import_talent_class_small: bool = False, import_talent_reg_small: bool = False,
+               import_tabarena: bool = False,
                talent_folder: Optional[str] = None):
     paths = Paths.from_env_variables()
     min_n_samples = 1000
@@ -166,9 +167,9 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
         TaskCollection('talent-class-small-below10k', below10k_descs).save(paths)
 
         talent_reg_tabpfn_task_descs = [ti.task_desc for ti in task_infos if
-                                          ti.get_n_classes() <= 10 and ti.n_samples <= 10_000 and ti.tensor_infos[
-                                              'x_cont'].get_n_features() + ti.tensor_infos[
-                                              'x_cat'].get_n_features() <= 500]
+                                        ti.get_n_classes() <= 10 and ti.n_samples <= 10_000 and ti.tensor_infos[
+                                            'x_cont'].get_n_features() + ti.tensor_infos[
+                                            'x_cat'].get_n_features() <= 500]
 
         TaskCollection('talent-class-tabpfn', talent_reg_tabpfn_task_descs).save(paths)
 
@@ -181,11 +182,29 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
 
         task_infos = TaskCollection.from_source('talent-reg-small', paths).load_infos(paths)
         talent_reg_tabpfn_task_descs = [ti.task_desc for ti in task_infos if
-                                          ti.n_samples <= 10_000 and ti.tensor_infos[
-                                              'x_cont'].get_n_features() + ti.tensor_infos[
-                                              'x_cat'].get_n_features() <= 500]
+                                        ti.n_samples <= 10_000 and ti.tensor_infos[
+                                            'x_cont'].get_n_features() + ti.tensor_infos[
+                                            'x_cat'].get_n_features() <= 500]
 
         TaskCollection('talent-reg-tabpfn', talent_reg_tabpfn_task_descs).save(paths)
+
+    if import_tabarena:
+        all_ids = {
+            TaskSource.TABARENA_REG: [363611, 363612, 363615, 363622, 363625, 363631, 363672, 363675, 363678, 363686, 363693, 363697,
+                    363698, 363701, 363705, 363708, 363709],
+            TaskSource.TABARENA_CLASS: [363613, 363614, 363616, 363617, 363618, 363619, 363620, 363621, 363623, 363624, 363626, 363627,
+                      363628, 363629, 363630, 363632, 363671, 363673, 363674, 363676, 363677, 363679, 363680, 363681,
+                      363682, 363683, 363684, 363685, 363687, 363688, 363689, 363691, 363692, 363694, 363695, 363696,
+                      363699, 363700, 363702, 363703, 363704, 363706, 363707]
+        }
+
+        for task_source, ids in all_ids.items():
+            print(f'Importing {task_source}')
+            class_descs = TaskCollection.from_source(TaskSource.OPENML_CLASS, paths).task_descs
+            multiclass_names = [td.task_name for td in class_descs if td.load_info(paths).get_n_classes() > 2]
+            # print(f'{multiclass_names=}')
+            import_openml(ids, task_source, paths, openml_cache_dir, min_n_samples=500)
+            TaskCollection.from_source(task_source, paths).save(paths)
 
 
 def import_grinsztajn_datasets(openml_cache_dir: str = None):

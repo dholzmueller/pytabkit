@@ -57,6 +57,11 @@ class NNAlgInterface(AlgInterface):
                                    test_idxs=idxs.test_idxs, split_seed=idxs.split_seed + random_seed_offset,
                                    sub_split_seeds=[seed + random_seed_offset for seed in idxs.sub_split_seeds],
                                    split_id=idxs.split_id) for idxs in idxs_list]
+        if self.config.get('same_seed_for_sub_splits', False):
+            idxs_list = [SplitIdxs(train_idxs=idxs.train_idxs, val_idxs=idxs.val_idxs,
+                                   test_idxs=idxs.test_idxs, split_seed=idxs.split_seed,
+                                   sub_split_seeds=[idxs.sub_split_seeds[0]] * len(idxs.sub_split_seeds),
+                                   split_id=idxs.split_id) for idxs in idxs_list]
 
         # https://stackoverflow.com/questions/74364944/how-to-get-rid-of-info-logging-messages-in-pytorch-lightning
         log = logging.getLogger("lightning")
@@ -72,9 +77,13 @@ class NNAlgInterface(AlgInterface):
         self.device = gpu_devices[0] if len(gpu_devices) > 0 else 'cpu'
         ds = ds.to(self.device)
 
+        fit_params = self.fit_params
+        if self.fit_params is None and 'stop_epoch' in self.config:
+            fit_params = [dict(stop_epoch=self.config['stop_epoch'])] * len(idxs_list)
+
         n_epochs = self.config.get('n_epochs', 256)
         self.model = TabNNModule(**utils.join_dicts({'n_epochs': 256, 'logger': logger}, self.config),
-                                 fit_params=self.fit_params)
+                                 fit_params=fit_params)
         self.model.compile_model(ds, idxs_list, interface_resources)
 
         if self.device == 'cpu':
@@ -328,7 +337,7 @@ class RealMLPParamSampler:
     def sample_params(self, seed: int) -> Dict[str, Any]:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
-                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9']
+                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9', 'alt10']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -591,6 +600,26 @@ class RealMLPParamSampler:
                       'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
                       'p_drop_sched': 'constant',
                       }
+        elif self.hpo_space_name == 'alt10':
+            # version of alt9, similar to tabrepo
+            params = {'num_emb_type': 'pbld',
+                      'hidden_sizes': 'rectangular',
+                      'hidden_width': rng.choice([256, 384, 512]),
+                      'ls_eps_sched': 'coslog4',
+                      'act': 'mish',
+                      'n_hidden_layers': rng.integers(1, 4, endpoint=True),
+                      'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                      'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                      'p_drop': rng.uniform(0.0, 0.5),
+                      'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                      'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                      'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(2e-1))),
+                      'use_ls': rng.choice([False, True]),
+                      'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                      'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                      'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                      'p_drop_sched': 'flat_cos',
+                      }
 
         # print(f'{params=}')
 
@@ -618,7 +647,11 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
             is_classification = not ds.tensor_infos['y'].is_cont()
             self.fit_params = [RealMLPParamSampler(is_classification, **self.config).sample_params(hparam_seed)]
         # todo: need epoch for refit
-        return NNAlgInterface(fit_params=None, **utils.update_dict(self.config, self.fit_params[0]))
+        params = utils.update_dict(self.config, self.fit_params[0])
+        # params = utils.update_dict(self.fit_params[0], self.config)
+        if 'n_epochs' in self.config:
+            params['n_epochs'] = self.config['n_epochs']
+        return NNAlgInterface(fit_params=None, **params)
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:

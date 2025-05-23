@@ -249,8 +249,8 @@ class AlgInterface:
 
 class MultiSplitWrapperAlgInterface(AlgInterface):
     # todo: do we need the option to run this with a "split batch size" > 1 for the NNInterface?
-    def __init__(self, single_split_interfaces: List[AlgInterface]):
-        super().__init__(single_split_interfaces=single_split_interfaces)
+    def __init__(self, single_split_interfaces: List[AlgInterface], **config):
+        super().__init__(single_split_interfaces=single_split_interfaces, **config)
         # todo: could allow parallel evaluation, but not for now
         self.single_split_interfaces = single_split_interfaces
 
@@ -487,6 +487,7 @@ class RandomParamsAlgInterface(SingleSplitAlgInterface):
         n_tv_splits = idxs_list[0].n_trainval_splits
         self.alg_interface = self._create_sub_interface(ds, idxs_list[0].split_seed, n_train=idxs_list[0].n_train,
                                                         n_tv_splits=n_tv_splits)
+        print(f'{self.fit_params[0]=}')
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
         self.fit_params[0]['sub_fit_params'] = self.alg_interface.fit_params[0]
 

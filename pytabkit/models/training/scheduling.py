@@ -273,6 +273,15 @@ class CoslogFunc:
         return 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2 ** self.n_cycles - 1) * t)))
 
 
+class GenCoslogFunc:
+    def __init__(self, n_cycles: int, base: float):
+        self.n_cycles = n_cycles
+        self.base = base
+
+    def __call__(self, t):
+        return 0.5 * (1 - np.cos(2 * np.pi * np.log(1 + (self.base ** self.n_cycles - 1) * t) / np.log(self.base)))
+
+
 class AltCoslogFunc:
     def __init__(self, n_cycles: int):
         self.n_cycles = n_cycles
@@ -425,8 +434,14 @@ def get_schedule(sched_name: str) -> Schedule:
         base_sched = FunctionSchedule(lambda t, c=n_cycles: 0.5 * (1 - np.cos(2 * np.pi * c * t)))
         # base_sched = FunctionSchedule(lambda t: 0.5 * (1 - np.cos(2 * np.pi * np.log2(1 + (2**n_cycles-1) * t))))
     elif isinstance(sched_type, str) and sched_type.startswith('coslog'):
-        n_cycles = int(sched_type[len('coslog')])
+        n_cycles = int(sched_type[len('coslog'):])
         base_sched = FunctionSchedule(CoslogFunc(n_cycles))
+    elif isinstance(sched_type, str) and sched_type.startswith('gencoslog'):
+        components = sched_type[len('gencoslog'):].split('-')
+        assert len(components)==2
+        n_cycles = int(components[0])
+        base = float(components[1])
+        base_sched = FunctionSchedule(GenCoslogFunc(n_cycles, base))
     elif sched_type == 'warmup_0.05_cos':
         base_sched = connect_cos_scheds([0.0, 0.05, 1.0],
                                         [0.0, 1.0, 0.0])
@@ -450,6 +465,15 @@ def get_schedule(sched_name: str) -> Schedule:
         base_sched = FunctionSchedule(lambda t: (1.-t)**5)
     elif sched_type == 'pow6':
         base_sched = FunctionSchedule(lambda t: (1.-t)**6)
+    elif sched_type == 'warmup_inv':
+        # base_sched = FunctionSchedule(lambda t: min(20*t, np.sqrt(0.05)/(np.sqrt(t)+1e-8)))
+        base_sched = FunctionSchedule(lambda t: min(20*t, 0.05/(t+1e-8)))
+    elif sched_type == 'sqrt_cos':
+        # base_sched = FunctionSchedule(lambda t: min(20*t, np.sqrt(0.05)/(np.sqrt(t)+1e-8)))
+        base_sched = FunctionSchedule(lambda t: 0.05/(np.sqrt(t)+0.05) * (0.5 - 0.5*np.cos(5 * 2 * np.pi * t)))
+    elif sched_type == 'lin_cos':
+        # base_sched = FunctionSchedule(lambda t: min(20*t, np.sqrt(0.05)/(np.sqrt(t)+1e-8)))
+        base_sched = FunctionSchedule(lambda t: (1-t) * (0.5 - 0.5*np.cos(20 * 2 * np.pi * t)))
     elif sched_type == 'linwarm.05eps':
         base_sched = combine_scheds([0.05, 0.95], [identity_sched.scaled(1e-3, 1.0), constant_sched])
     elif isinstance(sched_type, str) and sched_type.startswith('altcoslog'):

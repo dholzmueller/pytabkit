@@ -12,9 +12,11 @@ Tabular ML models in pytabkit.models
    models/00_overview
    models/01_sklearn_interfaces
    models/02_hpo
+   models/examples
    models/nn_classes
    models/03_training_implementation
    models/quantile_reg
+
 
 
 Tabular benchmarking using pytabkit.bench

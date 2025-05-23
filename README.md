@@ -15,17 +15,18 @@ on our benchmarks.
 
 ![Meta-test benchmark results](./figures/meta-test_benchmark_results.png)
 
-## Installation
+## Installation (new in 1.4.0: optional model dependencies)
 
 ```bash
-pip install pytabkit
+pip install pytabkit[models]
 ```
 
+- RealMLP (and TabM) can be used without the `[models]` part.
 - If you want to use **TabR**, you have to manually install
   [faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md),
   which is only available on **conda**.
 - Please install torch separately if you want to control the version (CPU/GPU etc.)
-- Use `pytabkit[autogluon,extra,hpo,bench,dev]` to install additional dependencies for
+- Use `pytabkit[models,autogluon,extra,hpo,bench,dev]` to install additional dependencies for
   AutoGluon models, extra preprocessing,
   hyperparameter optimization methods beyond random search (hyperopt/SMAC),
   the benchmarking part, and testing/documentation. For the hpo part,
@@ -169,6 +170,15 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.4.0:
+    - moved some imports to the new `models` optional dependencies
+      to have a more light-weight RealMLP installation
+    - Added GPU support for CatBoost (not guaranteed to produce exactly the same results)
+    - Ensembling now saves models after training if a path is supplied, to reduce memory usage
+    - Added more search spaces
+    - fixed error in multiquantile output when the passed y was one-dimensional 
+      instead of having shape `(n_samples, 1)`
+    - Added some examples to the documentation
 - v1.3.0: 
     - Added multiquantile regression for RealMLP: 
       see the [documentation](https://pytabkit.readthedocs.io/en/latest/models/quantile_reg.html)

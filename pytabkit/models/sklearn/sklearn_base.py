@@ -337,11 +337,14 @@ class AlgInterfaceEstimator(BaseEstimator):
                                sub_split_seeds=sub_split_seeds, split_id=0)]
 
         # ----- resources -----
-        # n_logical_threads = mp.cpu_count()
-        # n_physical_threads = max(1, n_logical_threads//2)
 
-        import psutil
-        n_physical_threads = psutil.cpu_count(logical=False)
+        try:
+            import psutil
+            n_physical_threads = psutil.cpu_count(logical=False)
+        except ImportError:
+            # this assumes that there are 2 logical threads per physical thread
+            n_logical_threads = mp.cpu_count()
+            n_physical_threads = max(1, n_logical_threads//2)
 
         device = params.get('device', None)
         n_threads = params.get('n_threads', n_physical_threads)
@@ -403,6 +406,9 @@ class AlgInterfaceEstimator(BaseEstimator):
             self.alg_interface_ = self.refit_alg_interface_
         else:
             self.alg_interface_ = self.cv_alg_interface_
+
+        if hasattr(self.alg_interface_, 'fit_params') and len(self.alg_interface_.fit_params) > 0:
+            self.fit_params_ = self.alg_interface_.fit_params[0]
 
         torch.set_num_threads(old_torch_n_threads)
         return self
@@ -494,7 +500,7 @@ class AlgInterfaceRegressor(RegressorMixin, AlgInterfaceEstimator):
         y_preds = self._predict_raw(X)
         y_np = y_preds.mean(dim=0).numpy()
         # print(f'{self.is_y_1d_=}')
-        if self.is_y_1d_:
+        if self.is_y_1d_ and y_np.shape[1] == 1:
             y_np = y_np[:, 0]
         if self.is_y_float64_:
             y_np = y_np.astype(np.float64)

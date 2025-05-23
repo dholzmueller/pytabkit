@@ -14,8 +14,6 @@ from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSpli
     SklearnSubSplitInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer
-import xgboost as xgb
-from xgboost import XGBClassifier, XGBRegressor
 
 from pytabkit.models.alg_interfaces.alg_interfaces import OptAlgInterface, AlgInterface, RandomParamsAlgInterface
 from pytabkit.models.training.metrics import Metrics
@@ -27,7 +25,8 @@ class XGBCustomMetric:
         self.is_classification = is_classification
         self.is_higher_better = is_higher_better
 
-    def __call__(self, y_pred: np.ndarray, dtrain: xgb.DMatrix):
+    def __call__(self, y_pred: np.ndarray, dtrain):
+        # dtrain should be of type xgb.DMatrix
         y = torch.as_tensor(dtrain.get_label(), dtype=torch.long if self.is_classification else torch.float32)
         if len(y.shape) == 1:
             y = y[:, None]
@@ -93,8 +92,12 @@ class XGBSklearnSubSplitInterface(SklearnSubSplitInterface):
 
         params = utils.extract_params(self.config, params_config)
         if self.n_classes > 0:
+            from xgboost import XGBClassifier
+
             return XGBClassifier(random_state=seed, **params)
         else:
+            from xgboost import XGBRegressor
+
             return XGBRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
@@ -128,7 +131,9 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
                          ('max_cat_to_onehot', ['max_cat_to_onehot', 'max_onehot_cat_size', 'one_hot_max_size'], None),
                          ('num_parallel_tree', None),
                          ('max_bin', None),
-                         ('multi_strategy', None)
+                         ('multi_strategy', None),
+                         ('grow_policy', None),
+                         ('max_leaves', None),
                          ]
 
         params = utils.extract_params(self.config, params_config)
@@ -172,6 +177,7 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
         return params
 
     def _convert_ds(self, ds: DictDataset) -> Any:
+        import xgboost as xgb
         label = None if 'y' not in ds.tensors else ds.tensors['y'].cpu().numpy()
         has_cat = 'x_cat' in ds.tensor_infos and ds.tensor_infos['x_cat'].get_n_features() > 0
         x_df = ds.without_labels().to_df()
@@ -182,6 +188,8 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
     def _fit(self, train_ds: DictDataset, val_ds: Optional[DictDataset], params: Dict[str, Any], seed: int,
              n_threads: int, val_metric_name: Optional[str] = None,
              tmp_folder: Optional[Path] = None) -> Tuple[Any, Optional[List[float]]]:
+        import xgboost as xgb
+
         # print(f'Fitting XGBoost')
         n_classes = train_ds.tensor_infos['y'].get_cat_sizes()[0].item()
         params = self._preprocess_params(params, n_classes)
@@ -236,6 +244,11 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
                         num_boost_round=n_estimators, verbose_eval=False,
                         **extra_train_params)
 
+        # print(f'xgb train completed')
+        # import psutil
+        # import os
+        # print(f'Memory: {psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3} GB')
+
         if val_ds is not None:
             if val_metric_names is not None:
                 val_errors = {vmn: evals_result['val'][vmn] for vmn in val_metric_names}
@@ -251,7 +264,8 @@ class XGBSubSplitInterface(TreeBasedSubSplitInterface):
             val_errors = None
         return bst, val_errors
 
-    def _predict(self, bst: xgb.Booster, ds: DictDataset, n_classes: int, other_params: Dict[str, Any]) -> torch.Tensor:
+    def _predict(self, bst, ds: DictDataset, n_classes: int, other_params: Dict[str, Any]) -> torch.Tensor:
+        # bst should be of type xgb.Booster
         # print(f'XGB _predict() with {other_params=}')
         # print(f'predict with {ds.n_samples=}, {ds.tensors["x_cont"][4]=}, {ds.tensors["x_cat"][4]=}, {ds.tensors["x_cont"][240]=}, {ds.tensors["x_cat"][240]=}')
         iteration_range = (0, 0) if other_params is None else (0, int(other_params['n_estimators']))
@@ -443,6 +457,174 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 'reg_lambda': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
                 'reg_gamma': np.exp(rng.uniform(np.log(1e-5), np.log(5.0)))
             }
+        elif hpo_space_name == 'large':
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(1e-3), np.log(0.7))),
+                'max_depth': rng.integers(1, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_gamma': np.exp(rng.uniform(np.log(1e-4), np.log(1.0)))
+            }
+        elif hpo_space_name == 'large-v2':
+            # modified (mostly larger) version of large
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(1e-2), np.log(0.2))),  # shrunk
+                'max_depth': rng.integers(1, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.5, 1),
+                'colsample_bynode': rng.uniform(0.5, 1),  # added
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_gamma': np.exp(rng.uniform(np.log(1e-4), np.log(1.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']), # added
+
+                # hard to meta-optimize since 0 is the default
+                # 'max_leaves': round(np.exp(rng.uniform(np.log(1e-1), np.log(64))))
+                # 'multi_strategy'
+                # 'num_parallel_tree' # makes things slower
+                # 'max_bin'  # also makes things slower
+            }
+        elif hpo_space_name == 'large-v3':
+            # shrunk verion of large-v2: removed gamma, colsample_bytree
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(1e-2), np.log(8e-2))),  # shrunk
+                'max_depth': rng.integers(3, 10, endpoint=True),  # shrunk
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.6, 1),  # shrunk
+                'colsample_bynode': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),
+            }
+        elif hpo_space_name == 'large-v4':
+            # modified verion of large-v3
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(3e-2), np.log(5e-2))),  # shrunk
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(32.0))),  # expanded
+                'subsample': rng.uniform(0.6, 1),  # shrunk
+                'colsample_bylevel': rng.uniform(0.7, 1),  # shrunk
+                'colsample_bynode': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),  # modified
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-3), np.log(20.0))),  # modified
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),
+                'max_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(2048.0))))  # added
+            }
+        elif hpo_space_name == 'large-v5':
+            # shrunk verion of large-v3 but without the extra stuff from large-v4
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(3e-2), np.log(5e-2))),  # shrunk
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(32.0))),  # expanded
+                'subsample': rng.uniform(0.6, 1),  # shrunk
+                'colsample_bylevel': rng.uniform(0.7, 1),  # shrunk
+                'colsample_bynode': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),  # modified
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-3), np.log(20.0))),  # modified
+            }
+        elif hpo_space_name == 'large-v6':
+            # shrunk verion of large-v4
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(3e-2), np.log(5e-2))),  # shrunk
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(32.0))),  # expanded
+                'subsample': rng.uniform(0.65, 1),  # shrunk
+                'colsample_bylevel': rng.uniform(0.7, 1),  # shrunk
+                'colsample_bynode': rng.uniform(0.9, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),  # modified
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-3), np.log(20.0))),  # modified
+                'grow_policy': rng.choice(['lossguide']),
+                'max_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(2048.0))))  # added
+            }
+        elif hpo_space_name == 'large-v7-10k':
+            # large-v3 but with tabrepo lr space and with 10k estimators
+            params = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.6, 1),
+                'colsample_bynode': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),
+            }
+        elif hpo_space_name == 'large-v8-10k':
+            # large-v7-10k but really tuning grow_policy this time (it wasn't picked up before)
+            # also tuning max_leaves (which also wasn't picked up before)
+            params = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.6, 1),
+                'colsample_bynode': rng.uniform(0.5, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),  # added
+                'max_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(2048.0))))  # added
+            }
+        elif hpo_space_name == 'large-v9-10k':
+            # large-v8-10k but with smaller max_leaves space,
+            # larger lower bound for colsample_bynode and colsample_bylevel
+            params = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(3, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.5, 1),
+                'colsample_bylevel': rng.uniform(0.7, 1),
+                'colsample_bynode': rng.uniform(0.6, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),
+                'max_leaves': round(np.exp(rng.uniform(np.log(16), np.log(1024.0))))  # added
+            }
+        elif hpo_space_name == 'tabrepo1-es':
+            params = {
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(0.5), np.log(1.5))),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                # there is enable_categorical, but I don't know how it makes sense to tune it
+            }
+        elif hpo_space_name == 'tabrepo1-es-10k':
+            params = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(0.5), np.log(1.5))),
+                'colsample_bytree': rng.uniform(0.5, 1),
+                # there is enable_categorical, but I don't know how it makes sense to tune it
+            }
+
         else:
             raise ValueError(f'Unknown {hpo_space_name=}')
         return params

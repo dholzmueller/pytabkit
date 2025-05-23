@@ -236,10 +236,14 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                 y_pred = y_pred * self.y_std_ + self.y_mean_
 
             # Compute the mean of the k predictions.
+            average_logits = self.config.get('average_logits', False)
+            if average_logits:
+                y_pred = y_pred.mean(1)
             if task_type != 'regression':
                 # For classification, the mean must be computed in the probability space.
                 y_pred = scipy.special.softmax(y_pred, axis=-1)
-            y_pred = y_pred.mean(1)
+            if not average_logits:
+                y_pred = y_pred.mean(1)
 
             y_true = data[part]['y'].cpu().numpy()
             score = (
@@ -362,8 +366,12 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             y_pred = y_pred.mean(1)
             y_pred = y_pred.unsqueeze(-1)  # add extra "features" dimension
         else:
-            # For classification, the mean must be computed in the probability space.
-            y_pred = torch.log(torch.softmax(y_pred, dim=-1).mean(1) + 1e-30)
+            average_logits = self.config.get('average_logits', False)
+            if average_logits:
+                y_pred = y_pred.mean(1)
+            else:
+                # For classification, the mean must be computed in the probability space.
+                y_pred = torch.log(torch.softmax(y_pred, dim=-1).mean(1) + 1e-30)
 
         return y_pred[None]  # add n_models dimension
 
@@ -377,8 +385,8 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         ram_params = {'': 0.15, 'ds_onehot_size_gb': 2.0}
         # gpu_ram_params = {'': 0.3, 'ds_onehot_size_gb': 1.0, 'n_train': 1e-6, 'n_features': 3e-4,
         #                   'cat_size_sum': 2e-3}
-        gpu_ram_params = {'': 0.5, 'ds_onehot_size_gb': 5.0, 'n_train': 6e-6, 'n_features': 2e-3,
-                          'cat_size_sum': 1e-3}
+        gpu_ram_params = {'': 0.5, 'ds_onehot_size_gb': 5.0, 'n_train': 6e-6, 'n_features': 1e-3,  # reduced from 2e-3
+                          'cat_size_sum': 1e-4}  # reduced from 1e-3
         rc = ResourcePredictor(config=updated_config, time_params=time_params, gpu_ram_params=gpu_ram_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.02)  # , gpu_ram_params)
         return rc.get_required_resources(ds, n_train=n_train)

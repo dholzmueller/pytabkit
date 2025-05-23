@@ -18,7 +18,8 @@ from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
     KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
-    TabPFN2SubSplitInterface, TabICLSubSplitInterface
+    TabPFN2SubSplitInterface, TabICLSubSplitInterface, RandomParamsExtraTreesAlgInterface, RandomParamsKNNAlgInterface, \
+    ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, LinearModelSubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -317,7 +318,7 @@ class MultiSplitAlgInterfaceWrapper(AlgInterfaceWrapper):
         n_splits = len(task_package.split_infos)
         return MultiSplitWrapperAlgInterface(
             single_split_interfaces=[self.create_single_alg_interface(n_cv, task_type)
-                                     for i in range(n_splits)])
+                                     for i in range(n_splits)], **self.config)
 
 
 class SubSplitInterfaceWrapper(MultiSplitAlgInterfaceWrapper):
@@ -333,7 +334,7 @@ class SubSplitInterfaceWrapper(MultiSplitAlgInterfaceWrapper):
     def create_single_alg_interface(self, n_cv: int, task_type: TaskType) \
             -> AlgInterface:
         return SingleSplitWrapperAlgInterface([self.create_sub_split_interface(task_type)
-                                               for i in range(n_cv)])
+                                               for i in range(n_cv)], **self.config)
 
 
 class NNInterfaceWrapper(AlgInterfaceWrapper):
@@ -455,6 +456,21 @@ class RFInterfaceWrapper(SubSplitInterfaceWrapper):
         return RFSubSplitInterface(**self.config)
 
 
+class ExtraTreesInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return ExtraTreesSubSplitInterface(**self.config)
+
+
+class KNNInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return KNNSubSplitInterface(**self.config)
+
+
+class LinearModelInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return LinearModelSubSplitInterface(**self.config)
+
+
 class GBTInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return GBTSubSplitInterface(**self.config)
@@ -544,3 +560,21 @@ class RandomParamsRFInterfaceWrapper(AlgInterfaceWrapper):
     def __init__(self, model_idx: int, **config):
         # model_idx should be the random search iteration (i.e. start from zero)
         super().__init__(RandomParamsRFAlgInterface, model_idx=model_idx, **config)
+
+
+class RandomParamsExtraTreesInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(RandomParamsExtraTreesAlgInterface, model_idx=model_idx, **config)
+
+
+class RandomParamsKNNInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(RandomParamsKNNAlgInterface, model_idx=model_idx, **config)
+
+
+class RandomParamsLinearModelInterfaceWrapper(AlgInterfaceWrapper):
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        super().__init__(RandomParamsLinearModelAlgInterface, model_idx=model_idx, **config)

@@ -9,20 +9,12 @@ import timeit
 from pathlib import Path
 from typing import List, Tuple, Any, Dict, Union, Optional, Callable
 
-import dill
 import copy
 import uuid
 import multiprocessing
 import time
 import json
 
-import msgpack
-
-# msgpack_numpy Removed for now due to potential bug caused by this
-# import msgpack_numpy as m
-# m.patch()
-
-import yaml
 from torch import multiprocessing as mp
 
 try:
@@ -34,6 +26,8 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.base import check_is_fitted
 import numpy as np
+
+import dill
 
 
 def select_from_config(config: Dict, keys: List):
@@ -123,7 +117,7 @@ def delete_file(path):
 
 
 def serialize(filename: Union[Path, str], obj: Any, compressed: bool = False, use_json: bool = False,
-              use_yaml: bool = False, use_msgpack: bool = False):
+              use_yaml: bool = False, use_msgpack: bool = False, use_pickle: bool = False):
     # json only works for nested dicts
     ensureDir(filename)
     if compressed:
@@ -134,16 +128,21 @@ def serialize(filename: Union[Path, str], obj: Any, compressed: bool = False, us
     if use_json:
         json.dump(obj, file)
     elif use_yaml:
+        import yaml
         yaml.dump(obj, file, Dumper=Dumper)
     elif use_msgpack:
+        import msgpack
         msgpack.dump(obj, file)
+    elif use_pickle:
+        import pickle
+        pickle.dump(obj, file)
     else:
         dill.dump(obj, file)
     file.close()
 
 
 def deserialize(filename: Union[Path, str], compressed: bool = False, use_json: bool = False, use_yaml: bool = False,
-                use_msgpack: bool = False):
+                use_msgpack: bool = False, use_pickle: bool = False):
     # json only works for nested dicts
     if compressed:
         file = gzip.open(filename, 'rt' if (use_json or use_yaml) else 'rb')
@@ -152,9 +151,14 @@ def deserialize(filename: Union[Path, str], compressed: bool = False, use_json: 
     if use_json:
         result = json.load(file)
     elif use_yaml:
+        import yaml
         result = yaml.load(file, Loader=Loader)
     elif use_msgpack:
+        import msgpack
         result = msgpack.load(file)
+    elif use_pickle:
+        import pickle
+        result = pickle.load(file)
     else:
         result = dill.load(file)
     file.close()

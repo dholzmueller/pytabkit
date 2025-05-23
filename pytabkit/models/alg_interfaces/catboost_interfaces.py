@@ -5,7 +5,6 @@ from typing import Optional, Dict, Any, List, Tuple, Union
 
 import numpy as np
 import torch
-from catboost import CatBoostClassifier, CatBoostRegressor
 
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models.alg_interfaces.resource_params import ResourceParams
@@ -16,7 +15,6 @@ from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSpli
     SklearnSubSplitInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer
-import catboost
 
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, \
     OptAlgInterface, RandomParamsAlgInterface
@@ -39,6 +37,7 @@ class CatBoostSklearnSubSplitInterface(SklearnSubSplitInterface):
                          ('leaf_estimation_iterations', None),
                          ('bootstrap_type', None),
                          ('subsample', None),
+                         ('sampling_frequency', None),
                          ('boosting_type', None),
                          ('colsample_bylevel', ['colsample_bylevel', 'rsm'], None),
                          ('min_data_in_leaf', ['min_data_in_leaf', 'min_child_samples'], None),
@@ -52,8 +51,12 @@ class CatBoostSklearnSubSplitInterface(SklearnSubSplitInterface):
 
         params = utils.extract_params(self.config, params_config)
         if self.n_classes > 0:
+            from catboost import CatBoostClassifier
+
             return CatBoostClassifier(random_state=seed, **params)
         else:
+            from catboost import CatBoostRegressor
+
             return CatBoostRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
@@ -127,22 +130,37 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
                          ('leaf_estimation_iterations', None),
                          ('bootstrap_type', None),
                          ('subsample', None),
-                         ('boosting_type', None),
+                         ('boosting_type', None, 'Plain'),  # fix default to Plain to equalize CPU and GPU
                          ('colsample_bylevel', ['colsample_bylevel', 'rsm'], None),
                          ('min_data_in_leaf', ['min_data_in_leaf', 'min_child_samples'], None),
                          ('grow_policy', None),
-                         ('num_leaves', None),
-                         ('border_count', ['border_count', 'max_bin']),
+                         ('max_leaves', ['max_leaves', 'num_leaves'], None),
+                         ('border_count', ['border_count', 'max_bin'], 254),  # fix default to 254 for GPU as well
                          ('used_ram_limit', None),
                          ('od_type', 'Iter'),
                          ('od_pval', None),
                          ('od_wait', ['od_wait', 'early_stopping_rounds'], None),
                          ('sampling_frequency', None),
                          ('max_ctr_complexity', None),
+                         ('model_size_reg', None),
                          ]
 
         params = utils.extract_params(self.config, params_config)
         params['verbose'] = self.config.get('verbosity', 0) > 0
+        bootstrap_type = params.get('bootstrap_type', 'Bayesian')
+        if bootstrap_type == 'Bayesian':
+            if 'subsample' in params:
+                del params['subsample']
+        elif bootstrap_type == 'Bernoulli':
+            if 'bagging_temperature' in params:
+                del params['bagging_temperature']
+        grow_policy = params.get('grow_policy', 'SymmetricTree')
+        if grow_policy != 'Lossguide':
+            if 'max_leaves' in params:
+                del params['max_leaves']
+        if grow_policy == 'SymmetricTree':
+            if 'min_data_in_leaf' in params:
+                del params['min_data_in_leaf']
         return params
 
     def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
@@ -179,11 +197,11 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
     def _preprocess_params(self, params: Dict[str, Any], n_classes: int) -> Dict[str, Any]:
         params = copy.deepcopy(params)
 
-        device = params.pop('device', None)
-        if device is not None and device.startswith('cuda:'):
+        device: Optional[str] = params.pop('device', None)
+        if device is not None and device.startswith('cuda'):
             params['task_type'] = 'GPU'
-            params['devices'] = device.split(':')[1]
-        
+            params['devices'] = device.split(':')[1] if device.startswith('cuda:') else '0'
+
         if n_classes == 0:
             train_metric_name = self.config.get('train_metric_name', 'mse')
             # val_metric_name = self.config.get('val_metric_name', 'rmse')
@@ -207,6 +225,8 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
         return params
 
     def _convert_ds(self, ds: DictDataset) -> Any:
+        import catboost
+
         x_df = ds.without_labels().to_df()
         label = None if 'y' not in ds.tensors else ds.tensors['y'].cpu().numpy()
         cat_features = x_df.select_dtypes(include='category').columns.tolist()
@@ -215,6 +235,8 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
     def _fit(self, train_ds: DictDataset, val_ds: Optional[DictDataset], params: Dict[str, Any], seed: int,
              n_threads: int, val_metric_name: Optional[str] = None,
              tmp_folder: Optional[Path] = None) -> Tuple[Any, Optional[List[float]]]:
+        import catboost
+
         # print(f'Fitting CatBoost')
         n_classes = train_ds.tensor_infos['y'].get_cat_sizes()[0].item()
         params = self._preprocess_params(params, n_classes)
@@ -243,8 +265,9 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
             val_errors = None
         return bst, val_errors
 
-    def _predict(self, bst: catboost.CatBoost, ds: DictDataset, n_classes: int,
+    def _predict(self, bst, ds: DictDataset, n_classes: int,
                  other_params: Dict[str, Any]) -> torch.Tensor:
+        # bst should be of type catboost.CatBoost
         # print(f'CatBoost _predict(): {other_params=}')
         ntree_end = 0 if other_params is None else other_params['n_estimators']
         prediction_type = 'RawFormulaVal' if n_classes == 0 else 'LogProbability'
@@ -369,16 +392,337 @@ class RandomParamsCatBoostAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
         # adapted from Shwartz-Ziv et al.
-        space = {
-            'learning_rate': np.exp(rng.uniform(-5, 0)),
-            'random_strength': rng.integers(1, 20, endpoint=True),
-            'one_hot_max_size': rng.integers(0, 25, endpoint=True),
-            'l2_leaf_reg': np.exp(rng.uniform(0, np.log(10))),
-            'bagging_temperature': rng.uniform(0, 1),
-            'leaf_estimation_iterations': rng.integers(1, 20, endpoint=True),
-            'n_estimators': 1000,
-            'max_depth': 6
-        }
+        hpo_space_name = self.config.get('hpo_space_name', 'shwartz-ziv')
+        if hpo_space_name == 'shwartz-ziv':
+            space = {
+                'learning_rate': np.exp(rng.uniform(-5, 0)),
+                'random_strength': rng.integers(1, 20, endpoint=True),
+                'one_hot_max_size': rng.integers(0, 25, endpoint=True),
+                'l2_leaf_reg': np.exp(rng.uniform(0, np.log(10))),
+                'bagging_temperature': rng.uniform(0, 1),
+                'leaf_estimation_iterations': rng.integers(1, 20, endpoint=True),
+                'n_estimators': 1000,
+                'max_depth': 6
+            }
+        elif hpo_space_name == 'large':
+            # todo: there should be no harm in tuning nan_mode in ['Min', 'Max']
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(5e-1))),
+
+                # bootstrap
+                'bootstrap_type': rng.choice(['Bayesian', 'Bernoulli']),  # todo: could do more
+                'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.5, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise', 'Lossguide']),
+                'max_depth': rng.integers(1, 10, endpoint=True),  # todo: support more for Lossguide
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(128.0)))),  # only for Depthwise and Lossguide
+                'max_leaves': round(np.exp(rng.uniform(np.log(4.0), np.log(128.0)))),  # only for Lossguide
+
+                'colsample_bylevel': rng.uniform(0.5, 1.0),
+                'random_strength': rng.uniform(0.0, 20.0),  # todo: make log-uniform?
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(2, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(2e0))),
+                'max_ctr_complexity': rng.integers(1, 5, endpoint=True),
+            }
+        elif hpo_space_name == 'large-v2':
+            # slightly shrunk version of large
+            # todo: there should be no harm in tuning nan_mode in ['Min', 'Max']
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(3e-2), np.log(8e-2))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.5, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise', 'Lossguide']),  # todo: could shrink
+                'max_depth': rng.integers(2, 10, endpoint=True),  # todo: support more for Lossguide
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(128.0)))),  # only for Depthwise and Lossguide
+                'max_leaves': round(np.exp(rng.uniform(np.log(4.0), np.log(128.0)))),  # only for Lossguide
+
+                'colsample_bylevel': rng.uniform(0.5, 1.0),
+                'random_strength': rng.uniform(0.0, 20.0),  # todo: make log-uniform?
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(2, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(2e0))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v3':
+            # slightly shrunk version of large-v2 (shrunk random_strength and max_depth, colsample_bylevel, model_size_reg)
+            # avoided removing lossguide for now
+            # todo: there should be no harm in tuning nan_mode in ['Min', 'Max']
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(3e-2), np.log(8e-2))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.5, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise', 'Lossguide']),  # todo: could shrink
+                'max_depth': rng.integers(4, 10, endpoint=True),  # todo: support more for Lossguide
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(128.0)))),  # only for Depthwise and Lossguide
+                'max_leaves': round(np.exp(rng.uniform(np.log(4.0), np.log(128.0)))),  # only for Lossguide
+
+                'colsample_bylevel': rng.uniform(0.6, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(2, 128, endpoint=True),  # todo: make logarithmic?
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v4':
+            # slightly shrunk version of large-v3:
+            # removed Lossguide -> also removed max_leaves
+            # shrunk colsample_bylevel, min_data_in_leaf, one_hot_max_size
+            # todo: there should be no harm in tuning nan_mode in ['Min', 'Max']
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(3e-2), np.log(8e-2))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 10, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v5':
+            # large-v4 but with max_depth <= 8 as in tabrepo1
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(3e-2), np.log(8e-2))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v6':
+            # large-v5 but with tabrepo lr search space
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v7':
+            # large-v5 but with early_stopping_rounds=50
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 1000,
+                'early_stopping_rounds': 50,
+                'max_bin': 254,  # added this to be sure
+                'learning_rate': np.exp(rng.uniform(np.log(3e-2), np.log(8e-2))),  # shrunk
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v8-10k':
+            # large-v7 but with 10k estimators and the tabrepo1 lr search space
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'max_bin': 254,  # added this to be sure
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'random_strength': rng.uniform(0.0, 2.0),  # shrunk
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'large-v9-10k':
+            # large-v8-10k but without tuning random_strength
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 50,
+                'max_bin': 254,  # added this to be sure
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+
+                # bootstrap
+                'bootstrap_type': 'Bernoulli',  # shrunk
+                # 'bagging_temperature': rng.uniform(0, 4),  # can only be used with Bayesian
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                # PerTreeLevel not supported for Lossguide
+                # 'sampling_frequency': rng.choice(['PerTree', 'PerTreeLevel']),  # CPU only!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(100.0)))),  # only for Depthwise and Lossguide
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(20))),
+                'leaf_estimation_iterations': round(np.exp(rng.uniform(np.log(1.0), np.log(20.0)))),
+
+                # categorical features
+                'one_hot_max_size': rng.integers(8, 128, endpoint=True),
+                'model_size_reg': np.exp(rng.uniform(np.log(1e-1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+            }
+        elif hpo_space_name == 'tabrepo1':
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'l2_leaf_reg': rng.uniform(1.0, 5.0),
+                'max_ctr_complexity': rng.integers(1, 5, endpoint=True),
+                'one_hot_max_size': rng.choice([2, 3, 5, 10]),
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+            }
+        elif hpo_space_name == 'tabrepo1-es':
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'early_stopping_rounds': 50,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'l2_leaf_reg': rng.uniform(1.0, 5.0),
+                'max_ctr_complexity': rng.integers(1, 5, endpoint=True),
+                'one_hot_max_size': rng.choice([2, 3, 5, 10]),
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+            }
+        elif hpo_space_name == 'tabrepo1-es-10k':
+            space = {
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+                'l2_leaf_reg': rng.uniform(1.0, 5.0),
+                'max_ctr_complexity': rng.integers(1, 5, endpoint=True),
+                'one_hot_max_size': rng.choice([2, 3, 5, 10]),
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+            }
+        else:
+            raise ValueError()
         return space
 
     def _create_interface_from_config(self, n_tv_splits: int, **config):

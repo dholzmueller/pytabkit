@@ -56,6 +56,13 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
         List[List[List[Tuple[Dict, float]]]]]:
         assert len(idxs_list) == 1  # this is a SingleSplitAlgInterface
         assert len(tmp_folders) == 1  # this is a SingleSplitAlgInterface
+
+        if self.config.get('same_seed_for_sub_splits', False):
+            idxs_list = [SplitIdxs(train_idxs=idxs.train_idxs, val_idxs=idxs.val_idxs,
+                                   test_idxs=idxs.test_idxs, split_seed=idxs.split_seed,
+                                   sub_split_seeds=[idxs.sub_split_seeds[0]] * len(idxs.sub_split_seeds),
+                                   split_id=idxs.split_id) for idxs in idxs_list]
+
         split_idxs = idxs_list[0]
         tmp_folder = tmp_folders[0]
         hyper_results_list = []
@@ -152,7 +159,7 @@ class SklearnSubSplitInterface(SingleSplitAlgInterface):  # todo: have another b
         assert len(idxs_list) == 1
         assert idxs_list[0].n_trainval_splits == 1
 
-        print(f'fit(): {torch.cuda.is_initialized()=}')
+        # print(f'fit(): {torch.cuda.is_initialized()=}')
 
         # return List[Tuple[Dict, float]]], i.e., validation scores for every hyperparameter combination
         # (could be number of trees, early stopping epoch, or hyperparameters from hyperparameter optimization)
@@ -312,7 +319,7 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
         gpu_ids = [int(dev_str[len('cuda:'):])
                    for dev_str in interface_resources.gpu_devices if dev_str.startswith('cuda:')]
         if len(gpu_ids) > 0 and self.config.get('allow_gpu', True):
-            params['device'] = f'cuda:{gpu_ids[0]}'  # this is for XGBoost 2.0
+            params['device'] = f'cuda:{gpu_ids[0]}'  # this is for XGBoost 2.0 and CatBoost
         self.model, val_errors = self._fit(train_ds, val_ds, params=params, seed=seed,
                                            n_threads=interface_resources.n_threads,
                                            val_metric_name=self.config.get('val_metric_name', None),

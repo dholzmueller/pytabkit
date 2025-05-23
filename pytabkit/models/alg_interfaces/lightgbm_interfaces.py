@@ -5,8 +5,6 @@ from typing import Optional, Dict, Tuple, Any, List
 import numpy as np
 import torch
 
-from lightgbm import record_evaluation, LGBMClassifier, LGBMRegressor
-
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
 from pytabkit.models.alg_interfaces.resource_params import ResourceParams
 from pytabkit.models import utils
@@ -17,7 +15,6 @@ from pytabkit.models.alg_interfaces.sub_split_interfaces import TreeBasedSubSpli
     SklearnSubSplitInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.hyper_opt.hyper_optimizers import HyperoptOptimizer, SMACOptimizer
-import lightgbm as lgbm
 import warnings
 
 from pytabkit.models.training.metrics import Metrics
@@ -29,7 +26,8 @@ class LGBMCustomMetric:
         self.is_classification = is_classification
         self.is_higher_better = is_higher_better
 
-    def __call__(self, y_pred: np.ndarray, eval_data: lgbm.Dataset):
+    def __call__(self, y_pred: np.ndarray, eval_data):
+        # eval_data should be of type lgbm.Dataset
         y = torch.as_tensor(eval_data.get_label(), dtype=torch.long if self.is_classification else torch.float32)
         if len(y.shape) == 1:
             y = y[:, None]
@@ -55,7 +53,7 @@ class LGBMCustomMetric:
 
         eval_result = Metrics.apply(y_pred, y, metric_name=self.metric_name)
 
-        print(f'LightGBM metric value: {self.metric_name} = {eval_result.item():g}')
+        # print(f'LightGBM metric value: {self.metric_name} = {eval_result.item():g}')
 
         return self.metric_name, eval_result, self.is_higher_better
 
@@ -87,8 +85,12 @@ class LGBMSklearnSubSplitInterface(SklearnSubSplitInterface):
 
         params = utils.extract_params(self.config, params_config)
         if self.n_classes > 0:
+            from lightgbm import LGBMClassifier
+
             return LGBMClassifier(random_state=seed, **params)
         else:
+            from lightgbm import LGBMRegressor
+
             return LGBMRegressor(random_state=seed, **params)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
@@ -154,6 +156,8 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
         return params
 
     def _convert_ds(self, ds: DictDataset) -> Any:
+        import lightgbm as lgbm
+
         x_cont = ds.tensors['x_cont'].cpu().numpy()
         label = None if 'y' not in ds.tensors else ds.tensors['y'].cpu().numpy()
         if label is not None and label.shape[1] == 1:
@@ -170,6 +174,9 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
     def _fit(self, train_ds: DictDataset, val_ds: Optional[DictDataset], params: Dict[str, Any], seed: int,
              n_threads: int, val_metric_name: Optional[str] = None,
              tmp_folder: Optional[Path] = None) -> Tuple[Any, Optional[List[float]]]:
+        import lightgbm as lgbm
+        from lightgbm import record_evaluation
+
         # print(f'Fitting LightGBM')
         n_classes = train_ds.tensor_infos['y'].get_cat_sizes()[0].item()
         params = self._preprocess_params(params, n_classes)
@@ -228,6 +235,7 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
                              valid_names=valid_names, feval=feval,
                              callbacks=[record_evaluation(evals_result)],
                              num_boost_round=params['n_estimators'])
+            print(f'{params["n_estimators"]=}')
 
         if val_ds is not None:
             # print('evals_result val:', evals_result['val'], flush=True)
@@ -236,7 +244,8 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
             val_errors = None
         return bst, val_errors
 
-    def _predict(self, bst: lgbm.Booster, ds: DictDataset, n_classes: int, other_params: Dict[str, Any]) -> torch.Tensor:
+    def _predict(self, bst, ds: DictDataset, n_classes: int, other_params: Dict[str, Any]) -> torch.Tensor:
+        # bst should be of type lgbm.Booster
         # print(f'LGBM _predict() with {other_params=}')
         num_iteration = None if other_params is None else other_params['n_estimators']
         y_pred = torch.as_tensor(bst.predict(self._convert_ds(ds).data, num_iteration=num_iteration),
@@ -347,17 +356,324 @@ class RandomParamsLGBMAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
         rng = np.random.default_rng(seed)
         # adapted from catboost quality benchmarks
-        space = {
-            'learning_rate': np.exp(rng.uniform(-7, 0)),
-            'num_leaves': round(np.exp(rng.uniform(0, 7))),
-            'feature_fraction': rng.uniform(0.5, 1),
-            'bagging_fraction': rng.uniform(0.5, 1),
-            'min_data_in_leaf': round(np.exp(rng.uniform(0, 6))),
-            'min_sum_hessian_in_leaf': np.exp(rng.uniform(-16, 5)),
-            'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(-16, 2))]),
-            'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(-16, 2))]),
-            'n_estimators': 1000,
-        }
+        hpo_space_name = self.config.get('hpo_space_name', 'cqb')
+        if hpo_space_name == 'cqb':
+            space = {
+                'learning_rate': np.exp(rng.uniform(-7, 0)),
+                'num_leaves': round(np.exp(rng.uniform(0, 7))),
+                'feature_fraction': rng.uniform(0.5, 1),
+                'bagging_fraction': rng.uniform(0.5, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(0, 6))),
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(-16, 5)),
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(-16, 2))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(-16, 2))]),
+                'n_estimators': 1000,
+            }
+        elif hpo_space_name == 'large':
+            space = {
+                'early_stopping_rounds': 50,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(5e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(256)))),
+                'feature_fraction': rng.uniform(0.3, 1),
+                'bagging_fraction': rng.uniform(0.3, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(128)))),
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(20.0))),
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+                'n_estimators': 1000,
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(256)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(2.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v2':
+            space = {
+                'early_stopping_rounds': 50,
+                'learning_rate': np.exp(rng.uniform(np.log(1e-2), np.log(1e-1))),  # shrunk
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),  # shrunk
+                'feature_fraction': rng.uniform(0.85, 1),  # shrunk
+                'bagging_fraction': rng.uniform(0.7, 1),  # shrunk
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),  # shrunk but not much
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),  # shrunk
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+                'n_estimators': 1000,
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),  # shrunk
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),  # shrunk
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),  # shrunk
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v2-10k':
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(2e-2))),  # shrunk
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),  # shrunk
+                'feature_fraction': rng.uniform(0.85, 1),  # shrunk
+                'bagging_fraction': rng.uniform(0.7, 1),  # shrunk
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),  # shrunk but not much
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),  # shrunk
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),  # shrunk
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),  # shrunk
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),  # shrunk
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v3-10k':
+            # v2 but with the lr space of tabrepo1
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),  # shrunk
+                'feature_fraction': rng.uniform(0.85, 1),  # shrunk
+                'bagging_fraction': rng.uniform(0.7, 1),  # shrunk
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),  # shrunk but not much
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),  # shrunk
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),  # shrunk
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),  # shrunk
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),  # shrunk
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v4-10k':
+            # v3-10k but without tuning bagging_fraction
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),  # shrunk
+                'feature_fraction': rng.uniform(0.85, 1),  # shrunk
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),  # shrunk but not much
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),  # shrunk
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),  # shrunk
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),  # shrunk
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),  # shrunk
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v5-10k':
+            # v3-10k but without tuning all the categorical parameters
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),  # shrunk
+                'feature_fraction': rng.uniform(0.85, 1),  # shrunk
+                'bagging_fraction': rng.uniform(0.7, 1),  # shrunk
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),  # shrunk but not much
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),  # shrunk
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+            }
+        elif hpo_space_name == 'large-v6-10k':
+            # v3-10k but with the tabrepo1 search space for feature_fraction
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v7-10k':
+            # v6-10k but with increased min_data_in_leaf
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(2.0), np.log(64)))),
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
+                # could shrink more but one may want this for classification
+                'lambda_l1': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(1.0)))]),
+                'lambda_l2': rng.choice([0.0, np.exp(rng.uniform(np.log(1e-5), np.log(20.0)))]),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v8-10k':
+            # v6-10k but without tuning lambda_l1 and lambda_l2
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),
+                'min_sum_hessian_in_leaf': np.exp(rng.uniform(np.log(1e-5), np.log(5.0))),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v9-10k':
+            # v8-10k but without tuning min_sum_hessian_in_leaf
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v10-10k':
+            # v9-10k but with num_leaves from tabrepo1
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(16.0), np.log(255)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'large-v11-10k':
+            # v9-10k but without tuning bagging_fraction
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(200)))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(1.0), np.log(64)))),
+
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+
+                # based on https://arxiv.org/abs/2411.04324
+                'extra_trees': rng.choice([False, True]),
+                'min_data_per_group': round(np.exp(rng.uniform(np.log(1.0), np.log(200)))),
+                'cat_l2': np.exp(rng.uniform(np.log(1e-3), np.log(10.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': round(np.exp(rng.uniform(np.log(8.0), np.log(100.0)))),
+                # min_data_in_bin
+            }
+        elif hpo_space_name == 'tabrepo1-es':
+            space = {
+                'early_stopping_rounds': 50,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'feature_fraction': rng.uniform(0.4, 1.0),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(2.0), np.log(60.0)))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(16.0), np.log(255)))),
+                'extra_trees': rng.choice([False, True]),
+            }
+        elif hpo_space_name == 'tabrepo1-es-10k':
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'feature_fraction': rng.uniform(0.4, 1.0),
+                'min_data_in_leaf': round(np.exp(rng.uniform(np.log(2.0), np.log(60.0)))),
+                'num_leaves': round(np.exp(rng.uniform(np.log(16.0), np.log(255)))),
+                'extra_trees': rng.choice([False, True]),
+            }
+        elif hpo_space_name == 'tabrepo1-fixed-es-10k':
+            space = {
+                'early_stopping_rounds': 50,
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'feature_fraction': rng.uniform(0.4, 1.0),
+                'min_data_in_leaf': rng.integers(2, 60, endpoint=True),
+                'num_leaves': rng.integers(16, 255, endpoint=True),
+                'extra_trees': rng.choice([False, True]),
+            }
+        else:
+            raise ValueError()
         return space
 
     def _create_interface_from_config(self, n_tv_splits: int, **config):

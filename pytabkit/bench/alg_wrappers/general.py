@@ -33,7 +33,7 @@ class AlgWrapper:
         :param tmp_folders: Temporary folders, one for each train/test split, to save temporary data to.
         :return: A dictionary of lists of ResultManager objects.
             The dict key is the predict params name, which is used as a suffix for the alg_name,
-             and each list contains ResultManagers for each train/test split.
+            and each list contains ResultManagers for each train/test split.
         """
         raise NotImplementedError()
 

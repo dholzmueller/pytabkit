@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any, Union
 
 import numpy as np
 import torch
 
+from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.alg_interfaces import SingleSplitAlgInterface, AlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
 from pytabkit.models.data.data import DictDataset, TaskType
@@ -27,6 +28,25 @@ class WeightedPrediction:
         return weighted_sum
 
 
+class ObjectLoadingContext:
+    def __init__(self, obj: Any, filename: Optional[Union[str, Path]] = None):
+        self.obj = obj
+        self.filename = filename
+        self.saved = False
+
+    def __enter__(self) -> Any:
+        # use pickle since it works better with torch than dill
+        if self.saved:
+            self.obj = utils.deserialize(self.filename, use_pickle=True)
+        return self.obj
+
+    def __exit__(self, type, value, traceback) -> None:
+        if self.filename is not None:
+            utils.serialize(self.filename, self.obj, use_pickle=True)
+            self.saved = True
+            del self.obj
+
+
 class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
     """
     Following a simple variant of Caruana et al. (2004), "Ensemble selection from libraries of models"
@@ -45,11 +65,20 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
+        tmp_folder = tmp_folders[0]
+        self.alg_contexts_ = [ObjectLoadingContext(ai, None if tmp_folder is None else tmp_folder / f'model_{i}') for
+                              i, ai in enumerate(self.alg_interfaces)]
+        self.alg_interfaces = None  # allow not holding all of them later, to free GPU memory
+
+        sub_fit_params = []
+
         # train sub-models
-        for alg_idx, alg_interface in enumerate(self.alg_interfaces):
-            sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
-                               tmp_folders]
-            alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
+        for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            with alg_ctx as alg_interface:
+                sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
+                                   tmp_folders]
+                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
+                sub_fit_params.append(alg_interface.get_fit_params()[0])
 
         if self.fit_params is not None:
             # this is the refit stage, there is no validation data set to determine the weights on,
@@ -68,17 +97,18 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
         n_caruana_steps = self.config.get('n_caruana_steps', 40)  # default value is taken from TaskRepo paper (IIRC)
 
         y_preds_oob_list = []
-        for alg_idx, alg_interface in enumerate(self.alg_interfaces):
-            y_preds = alg_interface.predict(ds)
-            # get out-of-bag predictions
-            y_preds_oob_list.append(cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
-                                                      for j in range(idxs_list[0].val_idxs.shape[0])], dim=0))
+        for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            with alg_ctx as alg_interface:
+                y_preds = alg_interface.predict(ds)
+                # get out-of-bag predictions
+                y_preds_oob_list.append(cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
+                                                          for j in range(idxs_list[0].val_idxs.shape[0])], dim=0))
 
         # get out-of-bag labels
         y = ds.tensors['y']
         y_oob = cat_if_necessary([y[idxs_list[0].val_idxs[j]] for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
 
-        weights = np.zeros(len(self.alg_interfaces), dtype=np.int32)
+        weights = np.zeros(len(self.alg_contexts_), dtype=np.int32)
         best_weights = np.copy(weights)
         best_loss = np.inf
 
@@ -107,15 +137,17 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
 
         logger.log(2, f'Obtained ensemble weights: {best_weights}')
 
-        self.fit_params = [dict(alg_weights=best_weights.tolist(),
-                                sub_fit_params=[alg_interface.get_fit_params()[0]
-                                                for alg_interface in self.alg_interfaces])]
+        self.fit_params = [dict(alg_weights=best_weights.tolist(), sub_fit_params=sub_fit_params)]
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         weights = self.fit_params[0]['alg_weights']
-        sparse_weights = [w for w in weights if w != 0]
-        sparse_algs = [alg_interface for w, alg_interface in zip(weights, self.alg_interfaces) if w != 0]
-        sparse_preds = [ai.predict(ds) for ai in sparse_algs]
+        sparse_weights = []
+        sparse_preds = []
+        for i, w in enumerate(weights):
+            if w != 0:
+                with self.alg_contexts_[i] as alg_interface:
+                    sparse_preds.append(alg_interface.predict(ds))
+                    sparse_weights.append(w)
         wp = WeightedPrediction(sparse_preds, task_type=self.task_type)
         return wp.predict_for_weights(weights=np.asarray(sparse_weights))
 

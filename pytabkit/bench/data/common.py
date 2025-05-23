@@ -7,6 +7,8 @@ class TaskSource:
     OPENML_CLASS_BIN_EXTRA = 'openml-class-bin-extra'
     OPENML_REGRESSION = 'openml-reg'
     AUTOML_CLASS_SMALL = 'automl-class-small'
+    TABARENA_CLASS = 'tabarena-class'
+    TABARENA_REG = 'tabarena-reg'
     CUSTOM = 'custom'
 
 
