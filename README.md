@@ -173,7 +173,9 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 - v1.4.0:
     - moved some imports to the new `models` optional dependencies
       to have a more light-weight RealMLP installation
-    - Added GPU support for CatBoost (not guaranteed to produce exactly the same results)
+    - Added GPU support for CatBoost with help from 
+      [Maximilian Schambach](https://github.com/MaxSchambach) 
+      in #16 (not guaranteed to produce exactly the same results).
     - Ensembling now saves models after training if a path is supplied, to reduce memory usage
     - Added more search spaces
     - fixed error in multiquantile output when the passed y was one-dimensional 
