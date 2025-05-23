@@ -347,6 +347,9 @@ class AlgInterfaceEstimator(BaseEstimator):
             n_physical_threads = max(1, n_logical_threads//2)
 
         device = params.get('device', None)
+        if device == 'cuda':
+            device = 'cuda:0'  # 'cuda' doesn't work with some of the code
+
         n_threads = params.get('n_threads', n_physical_threads)
         self.n_threads_ = n_threads
 
