@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import itertools
-from typing import Any, Literal
+from typing import Any, Literal, Optional, Union, List, Dict
 
 from pytabkit.models.nn_models import rtdl_num_embeddings
 
@@ -80,7 +80,7 @@ class OneHotEncoding0d(nn.Module):
     # Input:  (*, n_cat_features=len(cardinalities))
     # Output: (*, sum(cardinalities))
 
-    def __init__(self, cardinalities: list[int]) -> None:
+    def __init__(self, cardinalities: List[int]) -> None:
         super().__init__()
         self._cardinalities = cardinalities
 
@@ -161,9 +161,9 @@ class LinearEfficientEnsemble(nn.Module):
     avoids the term "adapter".
     """
 
-    r: None | Tensor
-    s: None | Tensor
-    bias: None | Tensor
+    r: Optional[Tensor]
+    s: Optional[Tensor]
+    bias: Optional[Tensor]
 
     def __init__(
         self,
@@ -261,8 +261,8 @@ class MLP(nn.Module):
     def __init__(
         self,
         *,
-        d_in: None | int = None,
-        d_out: None | int = None,
+        d_in: Optional[int] = None,
+        d_out: Optional[int] = None,
         n_blocks: int,
         d_block: int,
         dropout: float,
@@ -326,7 +326,7 @@ def _get_first_ensemble_layer(backbone: MLP) -> LinearEfficientEnsemble:
 def _init_first_adapter(
     weight: Tensor,
     distribution: Literal['normal', 'random-signs'],
-    init_sections: list[int],
+    init_sections: List[int],
 ) -> None:
     """Initialize the first adapter.
 
@@ -389,20 +389,16 @@ def default_zero_weight_decay_condition(
     del module_name, parameter
     return parameter_name.endswith('bias') or isinstance(
         module,
-        nn.BatchNorm1d
-        | nn.LayerNorm
-        | nn.InstanceNorm1d
-        | rtdl_num_embeddings.LinearEmbeddings
-        | rtdl_num_embeddings.LinearReLUEmbeddings
-        | rtdl_num_embeddings._Periodic,
+        (nn.BatchNorm1d, nn.LayerNorm, nn.InstanceNorm1d, rtdl_num_embeddings.LinearEmbeddings,
+        rtdl_num_embeddings.LinearReLUEmbeddings, rtdl_num_embeddings._Periodic),
     )
 
 
 def make_parameter_groups(
     module: nn.Module,
     zero_weight_decay_condition=default_zero_weight_decay_condition,
-    custom_groups: None | list[dict[str, Any]] = None,
-) -> list[dict[str, Any]]:
+    custom_groups: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     if custom_groups is None:
         custom_groups = []
     custom_params = frozenset(
@@ -441,11 +437,11 @@ class Model(nn.Module):
         self,
         *,
         n_num_features: int,
-        cat_cardinalities: list[int],
-        n_classes: None | int,
+        cat_cardinalities: List[int],
+        n_classes: Optional[int],
         backbone: dict,
-        bins: None | list[Tensor],  # For piecewise-linear encoding/embeddings.
-        num_embeddings: None | dict = None,
+        bins: Optional[List[Tensor]],  # For piecewise-linear encoding/embeddings.
+        num_embeddings: Optional[Dict] = None,
         arch_type: Literal[
             # Plain feed-forward network without any kind of ensembling.
             'plain',
@@ -467,7 +463,7 @@ class Model(nn.Module):
             # This variant was not used in the paper.
             'tabm-mini-normal',
         ],
-        k: None | int = None,
+        k: Optional[int] = None,
         share_training_batches: bool = True,
     ) -> None:
         # >>> Validate arguments.
@@ -596,7 +592,7 @@ class Model(nn.Module):
         self.share_training_batches = share_training_batches
 
     def forward(
-        self, x_num: None | Tensor = None, x_cat: None | Tensor = None
+        self, x_num: Optional[Tensor] = None, x_cat: Optional[Tensor] = None
     ) -> Tensor:
         x = []
         if x_num is not None:
