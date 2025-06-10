@@ -18,7 +18,7 @@ from pytabkit.models.data.data import DictDataset
 from pytabkit.models.nn_models import rtdl_num_embeddings
 from pytabkit.models.nn_models.base import Fitter
 from pytabkit.models.nn_models.models import PreprocessingFactory
-from pytabkit.models.nn_models.tabm import Model
+from pytabkit.models.nn_models.tabm import Model, make_parameter_groups
 from pytabkit.models.training.logging import Logger
 
 
@@ -56,6 +56,8 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         allow_amp = self.config.get('allow_amp', False)
         n_blocks = self.config.get('n_blocks', 'auto')
         num_emb_n_bins = self.config.get('num_emb_n_bins', 48)
+        # set default to True for backward compatibility
+        share_training_batches = self.config.get("share_training_batches", False)
 
         weight_decay = self.config.get('weight_decay', 0.0)
         gradient_clipping_norm = self.config.get('gradient_clipping_norm', None)
@@ -180,8 +182,9 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             ),
             arch_type=arch_type,
             k=tabm_k,
+            share_training_batches=share_training_batches,
         ).to(device)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = torch.optim.AdamW(make_parameter_groups(model), lr=lr, weight_decay=weight_decay)
 
 
         if compile_model:
@@ -210,8 +213,11 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             # TabM produces k predictions per object. Each of them must be trained separately.
             # (regression)     y_pred.shape == (batch_size, k)
             # (classification) y_pred.shape == (batch_size, k, n_classes)
-            k = y_pred.shape[-1 if task_type == 'regression' else -2]
-            return base_loss_fn(y_pred.flatten(0, 1), y_true.repeat_interleave(k))
+            k = y_pred.shape[1]
+            return base_loss_fn(
+                y_pred.flatten(0, 1),
+                y_true.repeat_interleave(k) if model.share_training_batches else y_true.squeeze(-1),
+            )
 
         @evaluation_mode()
         def evaluate(part: str) -> float:
@@ -270,17 +276,22 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             if self.config.get('verbosity', 0) >= 1:
                 from tqdm.std import tqdm
             else:
-                tqdm = lambda arr, desc, total: arr
+                tqdm = lambda arr, desc: arr
         except ImportError:
-            tqdm = lambda arr, desc, total: arr
+            tqdm = lambda arr, desc: arr
 
         logger.log(1, '-' * 88 + '\n')
         for epoch in range(n_epochs):
-            for batch_idx in tqdm(
-                    torch.randperm(len(data['train']['y']), device=device).split(batch_size),
-                    desc=f'Epoch {epoch}',
-                    total=epoch_size,
-            ):
+            batches = (
+                torch.randperm(n_train, device=device).split(batch_size)
+                if model.share_training_batches
+                else [
+                    x.transpose(0, 1).flatten()
+                    for x in torch.rand((model.k, n_train), device=device).argsort(dim=1).split(batch_size, dim=1)
+                ]
+            )
+
+            for batch_idx in tqdm(batches, desc=f"Epoch {epoch}"):
                 model.train()
                 optimizer.zero_grad()
                 loss = loss_fn(apply_model('train', batch_idx), Y_train[batch_idx])

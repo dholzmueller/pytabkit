@@ -170,6 +170,14 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.4.1: 
+    - moved dill to optional dependencies
+    - updated TabM code to a newer version: 
+      added option share_training_batches=False (old version: True), 
+      exclude certain parameters from weight decay.
+    - added [documentation](https://pytabkit.readthedocs.io/en/latest/bench/using_the_scheduler.html) for using the scheduler with custom jobs.
+    - fixed bug in RealMLP refitting.
+    - updated process start method for scheduler to speed up benchmarking
 - v1.4.0:
     - moved some imports to the new `models` optional dependencies
       to have a more light-weight RealMLP installation
@@ -236,5 +244,4 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
     - Updated fit() parameters in scikit-learn interfaces, etc.
 - v0.0.1: First release for arXiv v1.
   Code and data are archived at [DaRUS](https://doi.org/10.18419/darus-4255).
-
 

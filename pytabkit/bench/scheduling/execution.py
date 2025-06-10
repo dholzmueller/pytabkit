@@ -5,7 +5,6 @@ import multiprocessing as mp
 import traceback
 from typing import Tuple, Optional, List
 
-import dill
 import numpy as np
 
 from pytabkit.bench.scheduling.jobs import JobRunner
@@ -69,7 +68,7 @@ def measure_node_resources(node_id: int) -> Tuple[NodeResources, NodeResources]:
 
 
 def node_runner(feedback_queue, job_queue, node_id: int):
-    mp.set_start_method('spawn', force=True)
+    mp.set_start_method('fork', force=True)
 
     # get resources in separate process so CUDA runtime is shut down when the process is terminated
     # this means that this process will not use up CUDA memory all the time
@@ -96,6 +95,7 @@ def node_runner(feedback_queue, job_queue, node_id: int):
                 # cannot use None as termination signal since that is already the timeout signal
                 return  # or check if processes are still running?
 
+            import dill
             job_data = dill.loads(job_str)
             # print(f'DEBUG: got job data', flush=True)
             processes.append(FunctionProcess(JobRunner(*job_data)).start())
@@ -193,6 +193,7 @@ class RayJobManager(NodeManager):
         return self.resource_manager
 
     def submit_job(self, job_info: JobInfo) -> None:
+        import dill
         if self.resource_manager is None:
             raise RuntimeError('called submit_job() before start()')
         job = job_info.job

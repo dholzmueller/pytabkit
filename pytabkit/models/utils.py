@@ -27,8 +27,6 @@ from sklearn.preprocessing import QuantileTransformer
 from sklearn.base import check_is_fitted
 import numpy as np
 
-import dill
-
 
 def select_from_config(config: Dict, keys: List):
     selected = {}
@@ -124,7 +122,6 @@ def serialize(filename: Union[Path, str], obj: Any, compressed: bool = False, us
         file = gzip.open(filename, 'wt' if (use_json or use_yaml) else 'wb', compresslevel=5)
     else:
         file = open(filename, 'w' if (use_json or use_yaml) else 'wb')
-    # dill can dump lambdas, and dill also dumps the class and not only the contents
     if use_json:
         json.dump(obj, file)
     elif use_yaml:
@@ -137,6 +134,8 @@ def serialize(filename: Union[Path, str], obj: Any, compressed: bool = False, us
         import pickle
         pickle.dump(obj, file)
     else:
+        # dill can dump lambdas, and dill also dumps the class and not only the contents
+        import dill
         dill.dump(obj, file)
     file.close()
 
@@ -160,6 +159,7 @@ def deserialize(filename: Union[Path, str], compressed: bool = False, use_json: 
         import pickle
         result = pickle.load(file)
     else:
+        import dill
         result = dill.load(file)
     file.close()
     return result
@@ -414,10 +414,12 @@ class ProcessPoolMapper:
         pass
 
     def _apply(self, f_and_args_serialized: str) -> str:
+        import dill
         f, args = dill.loads(f_and_args_serialized)
         return dill.dumps(f(*args))
 
     def map(self, f, args_tuples: List[Tuple]) -> Any:
+        import dill
         if self.n_processes == 1:
             return [f(*args) for args in args_tuples]
 
@@ -481,6 +483,7 @@ class FunctionRunner:
 
     def __call__(self):
         # print(f'DEBUG: FunctionRunner start')
+        import dill
         f, args, kwargs = dill.loads(self.dill_f_args_kwargs)
         result = f(*args, **kwargs)
         self.result_queue.put(result)
@@ -492,6 +495,7 @@ class FunctionProcess:
     Helper class to run a single function in a separate process.
     """
     def __init__(self, f, *args, **kwargs):
+        import dill
         self.result_queue = mp.JoinableQueue()
         self.process = mp.Process(target=FunctionRunner(dill.dumps((f, args, kwargs)), self.result_queue))
 

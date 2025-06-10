@@ -1612,7 +1612,8 @@ class TabMConstructorMixin:
                  allow_amp: Optional[bool] = None,
                  tfms: Optional[List[str]] = None,
                  gradient_clipping_norm: Optional[Union[float, Literal['none']]] = None,
-                 calibration_method: Optional[str] = None
+                 calibration_method: Optional[str] = None,
+                 share_training_batches: Optional[bool] = None,
                  ):
         """
 
@@ -1665,7 +1666,21 @@ class TabMConstructorMixin:
         :param calibration_method: Post-hoc calibration method (only for classification).
             We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
             For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
+        :param share_training_batches: New in v1.4.1: Whether TabM should use the same training samples
+            for each model in the batch (default=False).
+            We adopt the default value False from the newer version of TabM,
+            while the old code (prior to 1.4.1) was equivalent to share_training_batches=True,
+            except that the new code also excludes certain parameters from weight decay.
         """
+        self.device = device
+        self.random_state = random_state
+        self.n_cv = n_cv
+        self.n_refit = n_refit
+        self.val_fraction = val_fraction
+        self.n_threads = n_threads
+        self.tmp_folder = tmp_folder
+        self.verbosity = verbosity
+
         self.arch_type = arch_type
         self.num_emb_type = num_emb_type
         self.num_emb_n_bins = num_emb_n_bins
@@ -1683,16 +1698,8 @@ class TabMConstructorMixin:
         self.allow_amp = allow_amp
         self.tfms = tfms
         self.gradient_clipping_norm = gradient_clipping_norm
-
-        self.device = device
-        self.random_state = random_state
-        self.n_cv = n_cv
-        self.n_refit = n_refit
-        self.val_fraction = val_fraction
-        self.n_threads = n_threads
-        self.tmp_folder = tmp_folder
-        self.verbosity = verbosity
         self.calibration_method = calibration_method
+        self.share_training_batches = share_training_batches
 
 
 class TabM_D_Classifier(TabMConstructorMixin, AlgInterfaceClassifier):

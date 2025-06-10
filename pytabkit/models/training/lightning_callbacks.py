@@ -1,4 +1,4 @@
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Union, Dict
 
 import numpy as np
 import torch
@@ -136,10 +136,19 @@ class ModelCheckpointCallback(Callback):
 
 
 class StopAtEpochsCallback(Callback):
-    def __init__(self, stop_epochs: List[List[int]], n_models: int, model: Layer, logger: Optional[Logger] = None):
+    def __init__(self, stop_epochs: List[List[Union[Dict[str, int], int]]], n_models: int, model: Layer, logger: Optional[Logger] = None):
         print(f'Refit: {stop_epochs=}')
-        self.stop_epochs = stop_epochs
-        self.final_stop_epoch = np.max(sum(stop_epochs, []))
+
+        # stop_epochs now has a dict with {metric_name: stop_epoch}, so we need to extract just the stop_epoch
+        def get_epoch(value: Union[Dict[str, int], int]):
+            if isinstance(value, dict):
+                values = list(value.values())
+                if len(values) != 1:
+                    raise ValueError(f'Got stop epochs for multiple metrics, which is not supported in refitting!')
+                return values[0]
+            return value
+        self.stop_epochs = [[get_epoch(ep) for ep in lst] for lst in stop_epochs]
+        self.final_stop_epoch = np.max(sum(self.stop_epochs, []))
         self.model = model
         self.ckpt = ParamCheckpointer(n_tv_splits=n_models, n_tt_splits=len(stop_epochs))
         self.logger = logger

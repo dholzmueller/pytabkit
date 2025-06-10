@@ -30,6 +30,7 @@ Tabular benchmarking using pytabkit.bench
    bench/03_code
    bench/download_results
    bench/refine_then_calibrate
+   bench/using_the_scheduler
 
 
 

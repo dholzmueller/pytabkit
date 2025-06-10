@@ -1,12 +1,14 @@
-# taken from https://github.com/yandex-research/tabm/blob/main/tabm_reference.py
 # License: https://github.com/yandex-research/tabm/blob/main/LICENSE
 
 # NOTE
 # The minimum required versions of the dependencies are specified in README.md.
 
-from typing import Literal, Union, Optional, List, Dict
+import itertools
+from typing import Any, Literal
 
 from pytabkit.models.nn_models import rtdl_num_embeddings
+
+import pytabkit.models.nn_models.rtdl_num_embeddings
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -76,7 +78,7 @@ class OneHotEncoding0d(nn.Module):
     # Input:  (*, n_cat_features=len(cardinalities))
     # Output: (*, sum(cardinalities))
 
-    def __init__(self, cardinalities: List[int]) -> None:
+    def __init__(self, cardinalities: list[int]) -> None:
         super().__init__()
         self._cardinalities = cardinalities
 
@@ -157,9 +159,9 @@ class LinearEfficientEnsemble(nn.Module):
     avoids the term "adapter".
     """
 
-    r: Optional[Tensor]
-    s: Optional[Tensor]
-    bias: Optional[Tensor]
+    r: None | Tensor
+    s: None | Tensor
+    bias: None | Tensor
 
     def __init__(
         self,
@@ -257,8 +259,8 @@ class MLP(nn.Module):
     def __init__(
         self,
         *,
-        d_in: Optional[int] = None,
-        d_out: Optional[int] = None,
+        d_in: None | int = None,
+        d_out: None | int = None,
         n_blocks: int,
         d_block: int,
         dropout: float,
@@ -287,11 +289,8 @@ class MLP(nn.Module):
         return x
 
 
-# ======================================================================================
-# Functions
-# ======================================================================================
-def make_efficient_ensemble(module: nn.Module, **kwargs) -> None:
-    """Replace torch.nn.Linear modules with LinearEfficientEnsemble.
+def make_efficient_ensemble(module: nn.Module, EnsembleLayer, **kwargs) -> None:
+    """Replace linear layers with efficient ensembles of linear layers.
 
     NOTE
     In the paper, there are no experiments with networks with normalization layers.
@@ -303,7 +302,7 @@ def make_efficient_ensemble(module: nn.Module, **kwargs) -> None:
         if isinstance(submodule, nn.Linear):
             module.add_module(
                 name,
-                LinearEfficientEnsemble(
+                EnsembleLayer(
                     in_features=submodule.in_features,
                     out_features=submodule.out_features,
                     bias=submodule.bias is not None,
@@ -311,12 +310,10 @@ def make_efficient_ensemble(module: nn.Module, **kwargs) -> None:
                 ),
             )
         else:
-            make_efficient_ensemble(submodule, **kwargs)
+            make_efficient_ensemble(submodule, EnsembleLayer, **kwargs)
 
 
-def _get_first_ensemble_layer(
-    backbone: MLP,
-) -> LinearEfficientEnsemble:
+def _get_first_ensemble_layer(backbone: MLP) -> LinearEfficientEnsemble:
     if isinstance(backbone, MLP):
         return backbone.blocks[0][0]  # type: ignore[code]
     else:
@@ -327,7 +324,7 @@ def _get_first_ensemble_layer(
 def _init_first_adapter(
     weight: Tensor,
     distribution: Literal['normal', 'random-signs'],
-    init_sections: List[int],
+    init_sections: list[int],
 ) -> None:
     """Initialize the first adapter.
 
@@ -381,6 +378,58 @@ def make_module(type: str, *args, **kwargs) -> nn.Module:
 
 
 # ======================================================================================
+# Optimization
+# ======================================================================================
+def default_zero_weight_decay_condition(
+    module_name: str, module: nn.Module, parameter_name: str, parameter: nn.Parameter
+):
+
+    del module_name, parameter
+    return parameter_name.endswith('bias') or isinstance(
+        module,
+        nn.BatchNorm1d
+        | nn.LayerNorm
+        | nn.InstanceNorm1d
+        | rtdl_num_embeddings.LinearEmbeddings
+        | rtdl_num_embeddings.LinearReLUEmbeddings
+        | rtdl_num_embeddings._Periodic,
+    )
+
+
+def make_parameter_groups(
+    module: nn.Module,
+    zero_weight_decay_condition=default_zero_weight_decay_condition,
+    custom_groups: None | list[dict[str, Any]] = None,
+) -> list[dict[str, Any]]:
+    if custom_groups is None:
+        custom_groups = []
+    custom_params = frozenset(
+        itertools.chain.from_iterable(group['params'] for group in custom_groups)
+    )
+    assert len(custom_params) == sum(
+        len(group['params']) for group in custom_groups
+    ), 'Parameters in custom_groups must not intersect'
+    zero_wd_params = frozenset(
+        p
+        for mn, m in module.named_modules()
+        for pn, p in m.named_parameters()
+        if p not in custom_params and zero_weight_decay_condition(mn, m, pn, p)
+    )
+    default_group = {
+        'params': [
+            p
+            for p in module.parameters()
+            if p not in custom_params and p not in zero_wd_params
+        ]
+    }
+    return [
+        default_group,
+        {'params': list(zero_wd_params), 'weight_decay': 0.0},
+        *custom_groups,
+    ]
+
+
+# ======================================================================================
 # The model
 # ======================================================================================
 class Model(nn.Module):
@@ -390,37 +439,43 @@ class Model(nn.Module):
         self,
         *,
         n_num_features: int,
-        cat_cardinalities: List[int],
-        n_classes: Optional[int],
-        backbone: Dict,
-        bins: Optional[List[Tensor]],  # For piecewise-linear encoding/embeddings.
-        num_embeddings: Optional[Dict] = None,
+        cat_cardinalities: list[int],
+        n_classes: None | int,
+        backbone: dict,
+        bins: None | list[Tensor],  # For piecewise-linear encoding/embeddings.
+        num_embeddings: None | dict = None,
         arch_type: Literal[
             # Plain feed-forward network without any kind of ensembling.
             'plain',
             #
-            # TabM-mini
-            'tabm-mini',
-            #
-            # TabM-mini. The first adapter is initialized from the normal distribution.
-            # This is used in Section 5.1.
-            'tabm-mini-normal',
-            #
             # TabM
             'tabm',
             #
+            # TabM-mini
+            'tabm-mini',
+            #
+            # TabM-packed
+            'tabm-packed',
+            #
             # TabM. The first adapter is initialized from the normal distribution.
-            # This variation was is not used in the paper, but there is a preliminary
-            # evidence that may be a better default strategy.
+            # This variant was not used in the paper, but it may be useful in practice.
             'tabm-normal',
+            #
+            # TabM-mini. The adapter is initialized from the normal distribution.
+            # This variant was not used in the paper.
+            'tabm-mini-normal',
         ],
-        k: Optional[int] = None,
+        k: None | int = None,
+        share_training_batches: bool = True,
     ) -> None:
         # >>> Validate arguments.
         assert n_num_features >= 0
         assert n_num_features or cat_cardinalities
         if arch_type == 'plain':
             assert k is None
+            assert (
+                share_training_batches
+            ), 'If `arch_type` is set to "plain", then `simple` must remain True'
         else:
             assert k is not None
             assert k > 0
@@ -470,7 +525,9 @@ class Model(nn.Module):
         if arch_type != 'plain':
             assert k is not None
             first_adapter_init = (
-                'normal'
+                None
+                if arch_type == 'tabm-packed'
+                else 'normal'
                 if arch_type in ('tabm-mini-normal', 'tabm-normal')
                 # For other arch_types, the initialization depends
                 # on the presense of num_embeddings.
@@ -479,24 +536,13 @@ class Model(nn.Module):
                 else 'normal'
             )
 
-            if arch_type in ('tabm-mini', 'tabm-mini-normal'):
-                # Minimal ensemble
-                self.minimal_ensemble_adapter = ScaleEnsemble(
-                    k,
-                    d_flat,
-                    init='random-signs' if num_embeddings is None else 'normal',
-                )
-                _init_first_adapter(
-                    self.minimal_ensemble_adapter.weight,  # type: ignore[code]
-                    first_adapter_init,
-                    first_adapter_sections,
-                )
-
-            elif arch_type in ('tabm', 'tabm-normal'):
+            if arch_type in ('tabm', 'tabm-normal'):
                 # Like BatchEnsemble, but all multiplicative adapters,
                 # except for the very first one, are initialized with ones.
+                assert first_adapter_init is not None
                 make_efficient_ensemble(
                     self.backbone,
+                    LinearEfficientEnsemble,
                     k=k,
                     ensemble_scaling_in=True,
                     ensemble_scaling_out=True,
@@ -508,6 +554,27 @@ class Model(nn.Module):
                     first_adapter_init,
                     first_adapter_sections,
                 )
+
+            elif arch_type in ('tabm-mini', 'tabm-mini-normal'):
+                # MiniEnsemble
+                assert first_adapter_init is not None
+                self.minimal_ensemble_adapter = ScaleEnsemble(
+                    k,
+                    d_flat,
+                    init='random-signs' if num_embeddings is None else 'normal',
+                )
+                _init_first_adapter(
+                    self.minimal_ensemble_adapter.weight,  # type: ignore[code]
+                    first_adapter_init,
+                    first_adapter_sections,
+                )
+
+            elif arch_type == 'tabm-packed':
+                # Packed ensemble.
+                # In terms of the Packed Ensembles paper by Laurent et al.,
+                # TabM-packed is PackedEnsemble(alpha=k, M=k, gamma=1).
+                assert first_adapter_init is None
+                make_efficient_ensemble(self.backbone, NLinear, n=k)
 
             else:
                 raise ValueError(f'Unknown arch_type: {arch_type}')
@@ -524,9 +591,10 @@ class Model(nn.Module):
         # >>>
         self.arch_type = arch_type
         self.k = k
+        self.share_training_batches = share_training_batches
 
     def forward(
-        self, x_num: Optional[Tensor] = None, x_cat: Optional[Tensor] = None
+        self, x_num: None | Tensor = None, x_cat: None | Tensor = None
     ) -> Tensor:
         x = []
         if x_num is not None:
@@ -539,7 +607,12 @@ class Model(nn.Module):
         x = torch.column_stack([x_.flatten(1, -1) for x_ in x])
 
         if self.k is not None:
-            x = x[:, None].expand(-1, self.k, -1)  # (B, D) -> (B, K, D)
+            if self.share_training_batches or not self.training:
+                # (B, D) -> (B, K, D)
+                x = x[:, None].expand(-1, self.k, -1)
+            else:
+                # (B * K, D) -> (B, K, D)
+                x = x.reshape(len(x) // self.k, self.k, *x.shape[1:])
             if self.minimal_ensemble_adapter is not None:
                 x = self.minimal_ensemble_adapter(x)
         else:

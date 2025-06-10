@@ -38,7 +38,6 @@ dependencies = [
     # can also install the newer lightning package with more dependencies instead, it will be prioritized
     "pytorch_lightning>=2.0",
     "psutil>=5.0",  # used for getting logical CPU count in the sklearn base and for getting process RAM usage
-    "dill",  # more powerful pickle, used for file-saving and multiprocessing
 ]
 
 [project.optional-dependencies]
@@ -62,6 +61,9 @@ models = [
     # not necessary unless these things are actually used
     "probmetrics>=0.0.1",
 
+    # more powerful pickle, used for file-saving and multiprocessing.
+    # Unfortunately it can't save certain torch objects
+    "dill",
     # saving objects in yaml/msgpack
     # needed if used in utils.serialize() / deserialize()
     "pyyaml>=5.0",
