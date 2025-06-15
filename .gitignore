@@ -1,12 +1,16 @@
 *.pyc
 *.pdf
 *.zip
+*.ckpt
 
 experiments/*/
+experiments/trace.json
 !experiments/meta_hpo
 !experiments/prototypes
 public_export
 dist
+files
+plots
 
 docs/build
 docs/source/modules.rst

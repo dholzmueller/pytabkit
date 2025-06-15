@@ -337,7 +337,8 @@ class RealMLPParamSampler:
     def sample_params(self, seed: int) -> Dict[str, Any]:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
-                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9', 'alt10']
+                                       'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9', 'alt10',
+                                       'tabarena']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -620,6 +621,43 @@ class RealMLPParamSampler:
                       'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
                       'p_drop_sched': 'flat_cos',
                       }
+        elif self.hpo_space_name == 'tabarena':
+            # common search space
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice(["auto", True]),  # use label smoothing (will be ignored for regression)
+            }
+
+            if rng.uniform(0.0, 1.0) > 0.5:
+                # large configs
+                params['plr_hidden_1'] = rng.choice([8, 16, 32, 64])
+                params['plr_hidden_2'] = rng.choice([8, 16, 32, 64])
+                params['n_epochs'] = rng.choice([256, 512])
+                params['use_early_stopping'] = True
+
+                # set in the defaults of RealMLP in TabArena
+                params['early_stopping_multiplicative_patience'] = 3
+                params['early_stopping_additive_patience'] = 40
+            else:
+                # default values, used here to always set the same set of parameters
+                params['plr_hidden_1'] = 16
+                params['plr_hidden_2'] = 4
+                params['n_epochs'] = 256
+                params['use_early_stopping'] = False
 
         # print(f'{params=}')
 
@@ -651,6 +689,7 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
         # params = utils.update_dict(self.fit_params[0], self.config)
         if 'n_epochs' in self.config:
             params['n_epochs'] = self.config['n_epochs']
+        self.fit_params[0] = params
         return NNAlgInterface(fit_params=None, **params)
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,

@@ -1,16 +1,17 @@
+import copy
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict
 
 import numpy as np
 import torch
 
-from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.alg_interfaces import SingleSplitAlgInterface, AlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
 from pytabkit.models.data.data import DictDataset, TaskType
 from pytabkit.models.torch_utils import cat_if_necessary
 from pytabkit.models.training.logging import Logger
 from pytabkit.models.training.metrics import Metrics
+from pytabkit.models.utils import ObjectLoadingContext
 
 
 class WeightedPrediction:
@@ -26,25 +27,6 @@ class WeightedPrediction:
         if self.task_type == TaskType.CLASSIFICATION:
             weighted_sum = torch.log(weighted_sum + 1e-30)
         return weighted_sum
-
-
-class ObjectLoadingContext:
-    def __init__(self, obj: Any, filename: Optional[Union[str, Path]] = None):
-        self.obj = obj
-        self.filename = filename
-        self.saved = False
-
-    def __enter__(self) -> Any:
-        # use pickle since it works better with torch than dill
-        if self.saved:
-            self.obj = utils.deserialize(self.filename, use_pickle=True)
-        return self.obj
-
-    def __exit__(self, type, value, traceback) -> None:
-        if self.filename is not None:
-            utils.serialize(self.filename, self.obj, use_pickle=True)
-            self.saved = True
-            del self.obj
 
 
 class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
@@ -65,10 +47,15 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
+        assert len(idxs_list) == 1
+
+        # if tmp_folders is specified, then models will be saved there instead of holding all of them in memory
         tmp_folder = tmp_folders[0]
         self.alg_contexts_ = [ObjectLoadingContext(ai, None if tmp_folder is None else tmp_folder / f'model_{i}') for
                               i, ai in enumerate(self.alg_interfaces)]
-        self.alg_interfaces = None  # allow not holding all of them later, to free GPU memory
+        # store copies here, but the ones that will actually be trained are in alg_contexts_
+        # this means that models should not be held in RAM all the time
+        self.alg_interfaces = copy.deepcopy(self.alg_interfaces)
 
         sub_fit_params = []
 
@@ -94,7 +81,7 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
         if val_metric_name is None:
             val_metric_name = Metrics.default_val_metric_name(task_type=self.task_type)
 
-        n_caruana_steps = self.config.get('n_caruana_steps', 40)  # default value is taken from TaskRepo paper (IIRC)
+        n_caruana_steps = self.config.get('n_caruana_steps', 40)  # default value is taken from TabRepo paper (IIRC)
 
         y_preds_oob_list = []
         for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
@@ -114,6 +101,8 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
 
         wp = WeightedPrediction(y_preds_oob_list, self.task_type)
 
+        allow_negative_weights = self.config.get('allow_negative_weights', False)
+
         for step_idx in range(n_caruana_steps):
             best_step_weights = None
             best_step_loss = np.inf
@@ -128,6 +117,21 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
                     best_step_weights = np.copy(weights)
 
                 weights[weight_idx] -= 1
+
+                # negative weights option
+                # check weights >= 2 allowing for floating-point errors
+                if allow_negative_weights and np.sum(weights) >= 1.5:
+                    weights[weight_idx] -= 1
+
+                    y_pred_oob = wp.predict_for_weights(weights)
+                    loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
+                    # print(f'{weights=}, {loss=}')
+                    if loss < best_step_loss:
+                        best_step_loss = loss
+                        best_step_weights = np.copy(weights)
+
+                    weights[weight_idx] += 1
+
 
             if best_step_loss < best_loss:
                 best_loss = best_step_loss
@@ -179,13 +183,22 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
             logger: Logger, tmp_folders: List[Optional[Path]], name: str) -> None:
         assert len(idxs_list) == 1
 
+        # if tmp_folders is specified, then models will be saved there instead of holding all of them in memory
+        tmp_folder = tmp_folders[0]
+        self.alg_contexts_ = [ObjectLoadingContext(ai, None if tmp_folder is None else tmp_folder / f'model_{i}') for
+                              i, ai in enumerate(self.alg_interfaces)]
+        # store copies here, but the ones that will actually be trained are in alg_contexts_
+        # this means that models should not be held in RAM all the time
+        self.alg_interfaces = copy.deepcopy(self.alg_interfaces)
+
         if self.fit_params is not None:
             # this is the refit stage, there is no validation data set to determine the best model on,
             # instead the best model index is already in fit_params
             best_alg_idx = self.fit_params[0]['best_alg_idx']
             sub_tmp_folders = [tmp_folder / str(best_alg_idx) if tmp_folder is not None else None for tmp_folder in
                                tmp_folders]
-            self.alg_interfaces[best_alg_idx].fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders,
+            with self.alg_contexts_[best_alg_idx] as alg_interface:
+                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders,
                                                   name + f'sub-alg-{best_alg_idx}')
 
             return
@@ -206,28 +219,32 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
 
         best_alg_idx = 0
         best_alg_loss = np.inf
+        best_sub_fit_params = None
 
-        for alg_idx, alg_interface in enumerate(self.alg_interfaces):
-            sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
-                               tmp_folders]
-            alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
-            y_preds = alg_interface.predict(ds)
-            # get out-of-bag predictions
-            y_pred_oob = cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
-                                           for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
-            loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
-            if loss < best_alg_loss:
-                best_alg_loss = loss
-                best_alg_idx = alg_idx
+        for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            with alg_ctx as alg_interface:
+                sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
+                                   tmp_folders]
+                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
+                y_preds = alg_interface.predict(ds)
+                # get out-of-bag predictions
+                y_pred_oob = cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
+                                               for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
+                loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
+                if loss < best_alg_loss:
+                    best_alg_loss = loss
+                    best_alg_idx = alg_idx
+                    best_sub_fit_params = alg_interface.get_fit_params()[0]
 
         self.fit_params = [dict(best_alg_idx=best_alg_idx,
-                                sub_fit_params=self.alg_interfaces[best_alg_idx].get_fit_params()[0])]
+                                sub_fit_params=best_sub_fit_params)]
         logger.log(2, f'Best algorithm has index {best_alg_idx}')
         logger.log(2, f'Algorithm selection fit parameters: {self.fit_params[0]}')
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         alg_idx = self.fit_params[0]['best_alg_idx']
-        return self.alg_interfaces[alg_idx].predict(ds)
+        with self.alg_contexts_[alg_idx] as alg_interface:
+            return alg_interface.predict(ds)
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:

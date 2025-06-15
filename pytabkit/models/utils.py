@@ -516,3 +516,22 @@ class FunctionProcess:
         time.sleep(1e-2)
         self.process.terminate()
         return result
+
+
+class ObjectLoadingContext:
+    def __init__(self, obj: Any, filename: Optional[Union[str, Path]] = None):
+        self.obj = obj
+        self.filename = filename
+        self.saved = False
+
+    def __enter__(self) -> Any:
+        # use pickle since it works better with torch than dill
+        if self.saved:
+            self.obj = deserialize(self.filename, use_pickle=True)
+        return self.obj
+
+    def __exit__(self, type, value, traceback) -> None:
+        if self.filename is not None:
+            serialize(self.filename, self.obj, use_pickle=True)
+            self.saved = True
+            del self.obj

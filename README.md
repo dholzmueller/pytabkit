@@ -80,12 +80,13 @@ Our ML models are available in up to three variants, all with best-epoch selecti
 
 - library defaults (D)
 - our tuned defaults (TD)
-- random search hyperparameter optimization (HPO), sometimes also tree parzen estimator (HPO-TPE)
+- random search hyperparameter optimization (HPO), 
+  sometimes also tree parzen estimator (HPO-TPE) or weighted ensembling (Ensemble)
 
 We provide the following ML models:
 
-- **RealMLP** (TD, HPO): Our new neural net models with tuned defaults (TD)
-  or random search hyperparameter optimization (HPO)
+- **RealMLP** (TD, HPO, Ensemble): Our new neural net models with tuned defaults (TD),
+  random search hyperparameter optimization (HPO), or Ensembling
 - **XGB**, **LGBM**, **CatBoost** (D, TD, HPO, HPO-TPE): Interfaces for gradient-boosted
   tree libraries XGBoost, LightGBM, CatBoost
 - **MLP**, **ResNet**, **FTT** (D, HPO): Models
@@ -170,6 +171,16 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.4.2:
+    - fixed handling of custom `val_metric_name` HPO models and `Ensemble_TD_Regressor`.
+    - if `tmp_folder` is specified in HPO models, 
+      save each model to disk immediately instead of holding all of them in memory.
+      This can considerably reduce RAM/VRAM usage.
+      In this case, pickled HPO models will still rely on the models stored in the `tmp_folder`.
+    - We now provide `RealMLP_Ensemble_Classifier` and `RealMLP_Ensemble_Regressor`,
+      which will use weighted ensembling and usually perform better than HPO 
+      (but have slower inference time). We recommend using the new `hpo_space_name='tabarena'`
+      for best results.
 - v1.4.1: 
     - moved dill to optional dependencies
     - updated TabM code to a newer version: 

@@ -75,6 +75,14 @@ class ResultManager:
         rm.metrics_dict = utils.deserialize(path / 'metrics.yaml', use_yaml=True)
         if load_other:
             rm.other_dict = utils.deserialize(path / 'other.msgpack.gz', use_msgpack=True, compressed=True)
+            for mode in ['cv', 'refit']:
+                if mode in rm.other_dict and 'y_preds' in rm.other_dict[mode]:
+                    # other_dict was created by old code and still contains y_preds
+                    if mode == 'cv':
+                        rm.y_preds_cv = rm.other_dict[mode]['y_preds']
+                    else:
+                        rm.y_preds_refit = rm.other_dict[mode]['y_preds']
+
         if load_preds:
             if utils.existsFile(path / 'y_preds_cv.npz'):
                 rm.y_preds_cv = np.load(path / 'y_preds_cv.npz')['y_preds']

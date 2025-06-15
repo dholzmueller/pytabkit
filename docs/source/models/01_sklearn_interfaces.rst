@@ -9,17 +9,24 @@ and categorical features in the ``fit`` method:
 
 .. autofunction:: pytabkit.models.sklearn.sklearn_base.AlgInterfaceEstimator.fit
 
+Important: For HPO and ensemble interfaces, it is recommended to set `tmp_folder`
+to allow these methods to store fitted models instead of holding them in the RAM.
+This means that `tmp_folder` should not be deleted while the associated interface
+still exists (even when it is pickled).
 
 RealMLP
 -------
 
-For RealMLP, we provide TD (tuned default)
-and HPO (hyperparameter optimization with random search) variants:
+For RealMLP, we provide TD (tuned default),
+HPO (hyperparameter optimization with random search),
+and Ensemble (weighted ensembling of random search configurations) variants:
 
 - RealMLP_TD_Classifier
 - RealMLP_TD_Regressor
 - RealMLP_HPO_Classifier
 - RealMLP_HPO_Regressor
+- RealMLP_Ensemble_Classifier
+- RealMLP_Ensemble_Regressor
 
 While the TD variants have good defaults,
 they provide the option to override any hyperparameters.
@@ -32,7 +39,7 @@ and ``verbosity`` may be ignored by some of the methods.
 
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.RealMLP_TD_Classifier.__init__
 
-For the HPO variants, we currently only provide few options:
+For the HPO and Ensemble variants, we currently only provide few options:
 
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.RealMLP_HPO_Classifier.__init__
 
@@ -74,8 +81,8 @@ with our scikit-learn interfaces,
 although in this case the validation sets are not used.
 The respective classes are called
 ``RF_SKL_Classifier`` and ``MLP_SKL_Classifier`` etc.
-We also provide our ``Ensemble_TD_Classifier``,
-a weighted ensemble of our TD models (and similar for regression).
+We also provide our ``Ensemble_TD_Classifier`` and ``Ensemble_HPO_Classifier``,
+a weighted ensemble of our TD / HPO models (and similar for regression).
 
 ..
     test
@@ -97,6 +104,8 @@ can be saved using pickle-like modules.
 With standard pickling,
 a model trained on a GPU will be restored to use the same GPU,
 and fail to load if the GPU is not present.
+(Note that dill fails to save torch models in newer torch versions,
+while pickle can still save them.)
 
 The following code allows to load GPU-trained models to the CPU,
 but fails to run predict() due to pytorch-lightning device issues.

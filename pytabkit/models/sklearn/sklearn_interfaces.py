@@ -42,7 +42,7 @@ __all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classi
            "MLP_RTDL_HPO_Classifier", "MLP_RTDL_HPO_Regressor", "MLP_SKL_D_Classifier", "MLP_SKL_D_Regressor",
            "RF_HPO_Classifier",
            "RF_HPO_Regressor", "RF_SKL_D_Classifier", "RF_SKL_D_Regressor", "RealMLP_HPO_Classifier",
-           "RealMLP_HPO_Regressor",
+           "RealMLP_HPO_Regressor", "RealMLP_Ensemble_Classifier", "RealMLP_Ensemble_Regressor",
            "RealMLP_TD_Classifier", "RealMLP_TD_Regressor", "RealMLP_TD_S_Classifier", "RealMLP_TD_S_Regressor",
            "RealTabR_D_Classifier",
            "RealTabR_D_Regressor", "Resnet_RTDL_D_Classifier", "Resnet_RTDL_D_Regressor", "Resnet_RTDL_HPO_Classifier",
@@ -102,7 +102,7 @@ class RealMLPConstructorMixin:
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
-        For lists of default parameters, we refer to sklearn.default_params.DefaultParams.
+        For lists of default parameters, we refer to pytabkit.models.sklearn.default_params.DefaultParams.
         RealMLP-TD does automatic preprocessing,
         so no manual preprocessing is necessary except for imputing missing numerical values.
 
@@ -137,7 +137,9 @@ class RealMLPConstructorMixin:
             Only used if `n_cv==1` and no validation split is provided in fit().
         :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
         :param tmp_folder: Temporary folder in which data can be stored during fit().
-            (Currently unused for MLP-TD and variants.) If None, methods generally try to not store intermediate data.
+            (Currently unused for RealMLP-TD and variants.) If None, methods generally try to not store intermediate data.
+            Note that HPO and ensemble methods can use this to reduce RAM usage by storing fitted models,
+            and will need this folder to be available whenever they are used.
         :param verbosity: Verbosity level (default=0, higher means more verbose).
             Set to 2 to see logs from intermediate epochs.
         :param train_metric_name: Name of the training metric
@@ -835,7 +837,7 @@ class XGB_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface([RandomParamsXGBAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+             for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda']
@@ -866,7 +868,7 @@ class XGB_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface([RandomParamsXGBAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+             for i in range(n_hyperopt_steps)], **config)
 
     def _supports_multioutput(self) -> bool:
         return False
@@ -897,7 +899,7 @@ class LGBM_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface([RandomParamsLGBMAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+             for i in range(n_hyperopt_steps)], **config)
 
 
 class LGBM_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
@@ -919,7 +921,7 @@ class LGBM_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface([RandomParamsLGBMAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-             for i in range(n_hyperopt_steps)])
+             for i in range(n_hyperopt_steps)], **config)
 
     def _supports_multioutput(self) -> bool:
         return False
@@ -948,7 +950,7 @@ class CatBoost_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsCatBoostAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-                for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)], **config)
 
     def _supports_single_class(self) -> bool:
         return False
@@ -989,7 +991,7 @@ class CatBoost_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsCatBoostAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-                for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)], **config)
 
     def _supports_multioutput(self) -> bool:
         return False
@@ -1030,7 +1032,7 @@ class RF_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsRFAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-                for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)], **config)
 
     def _supports_single_class(self) -> bool:
         return False
@@ -1049,7 +1051,7 @@ class RF_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return AlgorithmSelectionAlgInterface(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsRFAlgInterface(model_idx=i, **config) for j in range(n_cv)])
-                for i in range(n_hyperopt_steps)])
+                for i in range(n_hyperopt_steps)], **config)
 
     def _supports_multioutput(self) -> bool:
         return False
@@ -1063,8 +1065,57 @@ class RealMLPHPOConstructorMixin:
                  n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_hyperopt_steps: Optional[int] = None, val_metric_name: Optional[str] = None,
-                 calibration_method: Optional[str] = None,
+                 calibration_method: Optional[str] = None, hpo_space_name: Optional[str] = None,
+                 n_caruana_steps: Optional[int] = None, n_epochs: Optional[int] = None,
                  ):
+        """
+
+        :param device: PyTorch device name like 'cpu', 'cuda', 'cuda:0', 'mps' (default=None).
+            If None, 'cuda' will be used if available, otherwise 'cpu'.
+        :param random_state: Random state to use for random number generation
+            (splitting, initialization, batch shuffling). If None, the behavior is not deterministic.
+        :param n_cv: Number of cross-validation splits to use (default=1).
+            If validation set indices or an explicit validation set are given in fit(),
+            `n_cv` models will be fitted using different random seeds.
+            Otherwise, `n_cv`-fold cross-validation will be used (stratified for classification).
+            For n_cv=1, a single train-validation split will be used,
+            where `val_fraction` controls the fraction of validation samples.
+            If `n_refit=0` is set,
+            the prediction will use the average of the models fitted during cross-validation.
+            (Averaging is over probabilities for classification, and over outputs for regression.)
+            Otherwise, refitted models will be used.
+        :param n_refit: Number of models that should be refitted on the training+validation dataset (default=0).
+            If zero, only the models from the cross-validation stage are used.
+            If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
+            and their predictions will be averaged during predict().
+        :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
+            Only used if `n_cv==1` and no validation split is provided in fit().
+        :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
+        :param tmp_folder: Folder in which models can be stored.
+            Setting this allows reducing RAM/VRAM usage by not having all models in RAM at the same time.
+            In this case, the folder needs to be preserved as long as the model exists
+            (including when the model is pickled to disk).
+        :param verbosity: Verbosity level (default=0, higher means more verbose).
+            Set to 2 to see logs from intermediate epochs.
+        :param n_hyperopt_steps: Number of random hyperparameter configs
+            that should be used to train models (default=50).
+        :param val_metric_name: Name of the validation metric (used for selecting the best epoch).
+            Defaults are 'class_error' for classification and 'rmse' for regression.
+            Main available classification metrics (all to be minimized): 'class_error', 'cross_entropy', '1-auc_ovo',
+            '1-auc_ovr', '1-auc_mu', 'brier', '1-balanced_accuracy', '1-mcc', 'ece'.
+            Main available regression metrics: 'rmse', 'mae', 'max_error',
+            'pinball(0.95)' (also works with other quantiles specified directly in the string).
+            For more metrics, we refer to `models.training.metrics.Metrics.apply()`.
+        :param calibration_method: Post-hoc calibration method (only for classification) (default=None).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
+        :param hpo_space_name: Name of the HPO space (default='default').
+            The search space used in the paper is 'default'. However, we recommend using 'tabarena' for the best results.
+        :param n_caruana_steps: Number of weight update iterations for Caruana et al. weighted ensembling (default=40).
+            This parameter is ignored for HPO.
+        :param n_epochs: Number of epochs to train for each NN (default=None).
+            If set, it will override the values from the search space.
+        """
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
@@ -1076,6 +1127,9 @@ class RealMLPHPOConstructorMixin:
         self.n_hyperopt_steps = n_hyperopt_steps
         self.val_metric_name = val_metric_name
         self.calibration_method = calibration_method
+        self.hpo_space_name = hpo_space_name
+        self.n_caruana_steps = n_caruana_steps
+        self.n_epochs = n_epochs
 
 
 class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
@@ -1086,7 +1140,7 @@ class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier)
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1100,7 +1154,35 @@ class RealMLP_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
+class RealMLP_Ensemble_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        return CaruanaEnsembleAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
+                                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
+class RealMLP_Ensemble_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        return CaruanaEnsembleAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1635,7 +1717,7 @@ class TabMConstructorMixin:
             Only used if `n_cv==1` and no validation split is provided in fit().
         :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
         :param tmp_folder: Temporary folder in which data can be stored during fit().
-            (Currently unused for MLP-TD and variants.) If None, methods generally try to not store intermediate data.
+            (Currently unused for TabM and variants.) If None, methods generally try to not store intermediate data.
         :param verbosity: Verbosity level (default=0, higher means more verbose).
             Set to 2 to see logs from intermediate epochs.
         :param arch_type: Architecture type for TabM, one of ['tabm', 'tabm-mini', 'tabm-normal', 'tabm-mini-normal', 'plain'].
@@ -1747,7 +1829,7 @@ class MLP_RTDL_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1761,7 +1843,7 @@ class MLP_RTDL_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1776,7 +1858,7 @@ class MLP_PLR_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier)
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, num_emb_type='plr',
                                                                                **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1791,7 +1873,7 @@ class MLP_PLR_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface(
             [RandomParamsRTDLMLPAlgInterface(model_idx=i, num_emb_type='plr', **config)
-             for i in range(n_hyperopt_steps)])
+             for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1805,7 +1887,7 @@ class Resnet_RTDL_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassif
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsResnetAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1819,7 +1901,7 @@ class Resnet_RTDL_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegresso
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsResnetAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1833,7 +1915,7 @@ class FTT_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1847,7 +1929,7 @@ class FTT_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1861,7 +1943,7 @@ class TabR_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsTabRAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1875,7 +1957,7 @@ class TabR_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
         return AlgorithmSelectionAlgInterface([RandomParamsTabRAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)])
+                                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1958,7 +2040,7 @@ class Ensemble_TD_Regressor(AlgInterfaceRegressor):
                  range(n_cv)]),
             NNAlgInterface(**DefaultParams.RealMLP_TD_REG, **extra_params),
         ]
-        return CaruanaEnsembleAlgInterface(td_interfaces)
+        return CaruanaEnsembleAlgInterface(td_interfaces, **extra_params)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
