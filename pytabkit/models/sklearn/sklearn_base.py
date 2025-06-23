@@ -161,6 +161,7 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         params = self.get_config()
         n_cv = params.get('n_cv', 1)
+        n_repeats = params.get('n_repeats', 1)
         # val_fraction is only relevant for n_cv == 1
         val_fraction = params.get('val_fraction', 0.2)
         n_refit = params.get('n_refit', 0)
@@ -290,9 +291,10 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         split_seed = seed
         refit_split_seed = seed + 1
-        sub_split_seeds = list(np.random.RandomState(split_seed).randint(0, 2 ** 31 - 1, size=n_cv))
+        sub_split_seeds = list(np.random.RandomState(split_seed).randint(0, 2 ** 31 - 1, size=n_cv * n_repeats))
         sub_split_seeds = [int(seed) for seed in sub_split_seeds]
-        refit_sub_split_seeds = list(np.random.RandomState(refit_split_seed).randint(0, 2 ** 31 - 1, size=n_refit))
+        refit_sub_split_seeds = list(
+            np.random.RandomState(refit_split_seed).randint(0, 2 ** 31 - 1, size=n_refit))
         refit_sub_split_seeds = [int(seed) for seed in refit_sub_split_seeds]
 
         # ----- get train/val split -----
@@ -300,6 +302,10 @@ class AlgInterfaceEstimator(BaseEstimator):
         if not isinstance(n_cv, int) or n_cv <= 0:
             raise ValueError(f'Expected n_cv to be an int >= 1, but got {n_cv=}')
         if val_idxs is not None:
+            if n_repeats != 1:
+                raise ValueError(f'Providing a validation split requires n_repeats=1, but got {n_repeats=}')
+
+            # provided split
             val_idxs = torch.as_tensor(val_idxs, dtype=torch.long)
             if len(val_idxs.shape) == 1:
                 val_idxs = val_idxs[None, :]
@@ -318,17 +324,24 @@ class AlgInterfaceEstimator(BaseEstimator):
             elif n_cv != val_idxs.shape[0]:
                 raise ValueError(f'Value provided for {n_cv=} is not equal to {val_idxs.shape[0]=}')
         else:
-            if n_cv == 1:
-                # random split
-                splitter = RandomSplitter(seed=split_seed, first_fraction=1.0 - val_fraction)
-                train_idxs, val_idxs = splitter.get_idxs(ds)
-                train_idxs = train_idxs[None, :]
-                val_idxs = val_idxs[None, :]
-            else:
-                splitter = KFoldSplitter(k=n_cv, seed=split_seed, stratified=self._is_classification())
-                idxs_tuples = splitter.get_idxs(ds)
-                train_idxs = torch.stack([t[0] for t in idxs_tuples], dim=0)
-                val_idxs = torch.stack([t[1] for t in idxs_tuples], dim=0)
+            train_idxs_list = []
+            val_idxs_list = []
+
+            for i in range(n_repeats):
+                if n_cv == 1:
+                    # random split
+                    splitter = RandomSplitter(seed=split_seed + i, first_fraction=1.0 - val_fraction)
+                    train_idxs, val_idxs = splitter.get_idxs(ds)
+                    train_idxs_list.append(train_idxs[None, :])
+                    val_idxs_list.append(val_idxs[None, :])
+                else:
+                    splitter = KFoldSplitter(k=n_cv, seed=split_seed + i, stratified=self._is_classification())
+                    idxs_tuples = splitter.get_idxs(ds)
+                    train_idxs_list.append(torch.stack([t[0] for t in idxs_tuples], dim=0))
+                    val_idxs_list.append(torch.stack([t[1] for t in idxs_tuples], dim=0))
+
+                train_idxs = torch.cat(train_idxs_list, dim=0)
+                val_idxs = torch.cat(val_idxs_list, dim=0)
 
         if val_idxs.shape[1] == 0:
             val_idxs = None  # no validation set
@@ -344,7 +357,7 @@ class AlgInterfaceEstimator(BaseEstimator):
         except ImportError:
             # this assumes that there are 2 logical threads per physical thread
             n_logical_threads = mp.cpu_count()
-            n_physical_threads = max(1, n_logical_threads//2)
+            n_physical_threads = max(1, n_logical_threads // 2)
 
         device = params.get('device', None)
         if device == 'cuda':

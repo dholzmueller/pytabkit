@@ -175,8 +175,11 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
 
     def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
         # todo: could use sub_fit_params
-        return AlgorithmSelectionAlgInterface([alg_interface.get_refit_interface(n_refit=n_refit)
-                                               for alg_interface in self.alg_interfaces],
+        refit_interfaces = []
+        for alg_context in self.alg_contexts_:
+            with alg_context as alg_interface:
+                refit_interfaces.append(alg_interface.get_refit_interface(n_refit=n_refit))
+        return AlgorithmSelectionAlgInterface(refit_interfaces,
                                               fit_params=fit_params or self.fit_params)
 
     def fit(self, ds: DictDataset, idxs_list: List[SplitIdxs], interface_resources: InterfaceResources,

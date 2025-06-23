@@ -7,9 +7,6 @@ import torch
 from pytabkit.models.data.data import DictDataset, ParallelDictDataLoader, TaskType, ValDictDataLoader
 from pytabkit.models.nn_models.base import set_hp_context, SequentialLayer, Layer, Variable
 from pytabkit.models.nn_models.models import NNFactory
-from pytabkit.models.optim.optimizers import get_opt_class
-from pytabkit.models.training.lightning_callbacks import StopAtEpochsCallback, HyperparamCallback, L1L2RegCallback, \
-    ModelCheckpointCallback
 from pytabkit.models.training.coord import HyperparamManager
 from pytabkit.models.training.logging import Logger
 from pytabkit.models.training.metrics import Metrics, mse, cross_entropy
@@ -181,6 +178,9 @@ class NNCreator:
         return vectorized_model
 
     def create_callbacks(self, model: Layer, logger: Logger, val_metric_names: List[str]):
+        from pytabkit.models.training.lightning_callbacks import StopAtEpochsCallback, HyperparamCallback, \
+            L1L2RegCallback, \
+            ModelCheckpointCallback
         callbacks = [HyperparamCallback(self.hp_manager), L1L2RegCallback(self.hp_manager, model)]
         # if validation
         if self.is_cv and self.fit_params is None and self.config.get('use_best_epoch', True):

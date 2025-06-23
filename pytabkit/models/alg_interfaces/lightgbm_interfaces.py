@@ -276,6 +276,8 @@ class LGBMHyperoptAlgInterface(OptAlgInterface):
         from hyperopt import hp
         default_config = {}
         max_config = dict()
+        if space is None:
+            space = config.get('hpo_space_name', None)
         if space == 'catboost_quality_benchmarks':
             # space from catboost quality benchmarks,
             # https://github.com/catboost/benchmarks/blob/master/quality_benchmarks/lightgbm_experiment.py
@@ -671,6 +673,26 @@ class RandomParamsLGBMAlgInterface(RandomParamsAlgInterface):
                 'min_data_in_leaf': rng.integers(2, 60, endpoint=True),
                 'num_leaves': rng.integers(16, 255, endpoint=True),
                 'extra_trees': rng.choice([False, True]),
+            }
+        elif hpo_space_name == 'tabarena':
+            space = {
+                'early_stopping_rounds': 300,  # not exactly equivalent, probably
+                'n_estimators': 10_000,
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'feature_fraction': rng.uniform(0.4, 1),
+                'bagging_fraction': rng.uniform(0.7, 1),
+                'bagging_freq': 1,  # already the default here but not in original LightGBM
+                'num_leaves': np.floor(np.exp(rng.uniform(np.log(2.0), np.log(201)))),
+                'min_data_in_leaf': np.floor(np.exp(rng.uniform(np.log(1.0), np.log(65)))),
+                'extra_trees': rng.choice([False, True]),
+
+                'min_data_per_group': np.floor(np.exp(rng.uniform(np.log(2.0), np.log(101)))),
+                'cat_l2': np.exp(rng.uniform(np.log(5e-3), np.log(2.0))),
+                'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
+                'max_cat_to_onehot': np.floor(np.exp(rng.uniform(np.log(8.0), np.log(101.0)))),
+
+                'lambda_l1': np.exp(rng.uniform(np.log(1e-5), np.log(1.0))),
+                'lambda_l2': np.exp(rng.uniform(np.log(1e-5), np.log(2.0))),
             }
         else:
             raise ValueError()

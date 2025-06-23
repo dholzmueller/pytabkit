@@ -15,6 +15,31 @@ on our benchmarks.
 
 ![Meta-test benchmark results](./figures/meta-test_benchmark_results.png)
 
+## When (not) to use pytabkit
+
+- **To get the best possible results**: 
+  - Generally we recommend AutoGluon for the best possible results, 
+    though it does not include all the models from pytabkit.
+    It will probably include RealMLP in the upcoming 1.4 version. 
+  - To get the best possible results from `pytabkit`, 
+    we recommend using 
+    `Ensemble_HPO_Classifier(n_cv=8, use_full_caruana_ensembling=True, use_tabarena_spaces=True, n_hpo_steps=50)` 
+    with a `val_metric_name` corresponding to your target metric 
+    (e.g., `class_error`, `cross_entropy`, `brier`, `1-auc_ovr`), or the corresponding `Regressor`. 
+    (This might take very long to fit.)
+  - For only a single model, we recommend using 
+    `RealMLP_HPO_Classifier(n_cv=8, hpo_space_name='tabarena', use_caruana_ensembling=True, n_hyperopt_steps=50)`,
+    also with `val_metric_name` as above, or the corresponding `Regressor`.
+- **Models**: [TabArena](https://github.com/AutoGluon/tabrepo) 
+  also includes some newer models like RealMLP and TabM 
+  with more general preprocessing (missing numericals, text, etc.),  
+  as well as very good boosted tree implementations.
+  `pytabkit` is currently still easier to use 
+  and supports vectorized cross-validation for RealMLP, 
+  which can significantly speed up the training.
+- **Benchmarking**: While pytabkit can be good for quick benchmarking for development, 
+  for method evaluation we recommend [TabArena](https://github.com/AutoGluon/tabrepo).
+
 ## Installation (new in 1.4.0: optional model dependencies)
 
 ```bash
@@ -171,6 +196,20 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.5.0:
+    - added `n_repeats` parameter to scikit-learn interfaces for repeated cross-validation
+    - HPO sklearn interfaces (the ones using random search)
+      can now do weighted ensembling instead by setting `use_caruana_ensembling=True`.
+      Removed the `RealMLP_Ensemble_Classifier` and `RealMLP_Ensemble_Regressor` from v1.4.2 
+      since they are now redundant through this feature.
+    - renamed `space` parameter of GBDT HPO interface 
+      to `hpo_space_name` so now it also works with non-TPE versions.
+    - Added new [TabArena](https://tabarena.ai) search spaces for boosted trees (not TPE), 
+      which should be almost equivalent to the ones from TabArena 
+      except for the early stopping logic. 
+    - TabM now supports `val_metric_name` for early stopping on different metrics.
+    - fixed issues #20 and #21 regarding HPO
+    - small updates for the ["Rethinking Early Stopping" paper](https://arxiv.org/abs/2501.19195)
 - v1.4.2:
     - fixed handling of custom `val_metric_name` HPO models and `Ensemble_TD_Regressor`.
     - if `tmp_folder` is specified in HPO models, 
@@ -246,7 +285,7 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
       Add time limit for RealMLP,
       add support for `lightning` (but also still allowing `pytorch-lightning`),
       making skorch a lazy import, removed msgpack\_numpy dependency.
-- v1.0.0: Release for the NeurIPS version and arXiv v2.
+- v1.0.0: Release for the NeurIPS version and arXiv v2+v3.
     - More baselines (MLP-PLR, FT-Transformer, TabR-HPO, RF-HPO),
       also some un-polished internal interfaces for other methods,
       esp. the ones in AutoGluon.

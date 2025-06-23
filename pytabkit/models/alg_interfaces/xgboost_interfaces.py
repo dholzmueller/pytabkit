@@ -297,6 +297,9 @@ class XGBHyperoptAlgInterface(OptAlgInterface):
         from hyperopt import hp
         default_config = {}
         max_config = dict()
+        if space is None:
+            space = config.get('hpo_space_name', None)
+
         if space == 'catboost_quality_benchmarks':
             # space from catboost quality benchmarks
             # https://github.com/catboost/benchmarks/blob/master/quality_benchmarks/xgboost_experiment.py
@@ -624,7 +627,22 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 'colsample_bytree': rng.uniform(0.5, 1),
                 # there is enable_categorical, but I don't know how it makes sense to tune it
             }
-
+        elif hpo_space_name == 'tabarena':
+            params = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 300,  # probably not exactly equivalent to TabArena
+                'eta': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'max_depth': rng.integers(4, 10, endpoint=True),
+                'min_child_weight': np.exp(rng.uniform(np.log(1e-3), np.log(5.0))),
+                'subsample': rng.uniform(0.6, 1),
+                'colsample_bylevel': rng.uniform(0.6, 1),
+                'colsample_bynode': rng.uniform(0.6, 1),
+                'reg_alpha': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'reg_lambda': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+                'grow_policy': rng.choice(['depthwise', 'lossguide']),
+                'max_cat_to_onehot': int(np.floor(np.exp(rng.uniform(np.log(8.0), np.log(101.0)))).item()),
+                'max_leaves': int(np.floor(np.exp(rng.uniform(np.log(8.0), np.log(1025.0)))).item()),
+            }
         else:
             raise ValueError(f'Unknown {hpo_space_name=}')
         return params

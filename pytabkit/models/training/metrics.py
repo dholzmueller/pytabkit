@@ -2,7 +2,6 @@ import traceback
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 import numpy as np
-import torchmetrics
 from sklearn.metrics import roc_auc_score, balanced_accuracy_score, matthews_corrcoef
 import torch.nn.functional as F
 import torch
@@ -228,7 +227,7 @@ def expected_calibration_error(y_pred: torch.Tensor, y: torch.Tensor):
         # print(f'{y_indiv.shape=}, {y_pred_indiv_probs.shape=}')
         # print(f'{torch.min(y_pred_indiv_probs)=}')
         # print(f'{torch.max(y_pred_indiv_probs)=}')
-
+        import torchmetrics
         metric = torchmetrics.CalibrationError(task='binary' if is_binary else 'multiclass', num_classes=num_classes)
         model_scores.append(metric.forward(y_pred_indiv_probs, y_indiv))
 
@@ -278,7 +277,7 @@ def auc_ovr_torchmetrics(y_pred: torch.Tensor, y: torch.Tensor):
         # print(f'{y_indiv.shape=}, {y_pred_indiv_probs.shape=}')
         # print(f'{torch.min(y_pred_indiv_probs)=}')
         # print(f'{torch.max(y_pred_indiv_probs)=}')
-
+        import torchmetrics
         metric = torchmetrics.AUROC(task='binary' if is_binary else 'multiclass', num_classes=num_classes)
         model_scores.append(metric.forward(y_pred_indiv_probs, y_indiv))
 

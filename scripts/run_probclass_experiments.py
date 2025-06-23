@@ -209,6 +209,8 @@ class ProbclassExperiments:
             'ag-inv-ts-mix': dict(calibration_method='autogluon-inv-ts', calibrate_with_mixture=True),
             'torchunc-ts': dict(calibration_method='torchunc-ts'),
             'torchunc-ts-mix': dict(calibration_method='torchunc-ts', calibrate_with_mixture=True),
+            'torchcal-ts': dict(calibration_method='torchcal-ts'),
+            'torchcal-ts-mix': dict(calibration_method='torchcal-ts', calibrate_with_mixture=True),
             'guo-ts': dict(calibration_method='guo-ts'),
             'guo-ts-mix': dict(calibration_method='guo-ts', calibrate_with_mixture=True),
             'ir': dict(calibration_method='isotonic'),

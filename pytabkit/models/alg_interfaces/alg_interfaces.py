@@ -347,6 +347,7 @@ class OptAlgInterface(SingleSplitAlgInterface):
         else:
             assert self.fit_params is not None
             fit_params = self.fit_params
+        # print(f'{fit_params=}')
         alg_interface = self.create_alg_interface(n_refit,
                                                   **utils.join_dicts(self.config, fit_params[0]['hyper_fit_params']))
         # the alg_interface itself may have other hypers that have been fit

@@ -6,20 +6,37 @@ import scipy
 import sklearn
 import torch
 import numpy as np
+from pytabkit.models.training.metrics import Metrics
 from torch import nn
 
 from pytabkit.models import utils
-from pytabkit.models.alg_interfaces.alg_interfaces import SingleSplitAlgInterface
+from pytabkit.models.alg_interfaces.alg_interfaces import SingleSplitAlgInterface, RandomParamsAlgInterface
 from typing import Optional, List, Dict, Any, Union, Tuple, Literal
 
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
 from pytabkit.models.alg_interfaces.resource_computation import ResourcePredictor
+from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.nn_models import rtdl_num_embeddings
 from pytabkit.models.nn_models.base import Fitter
 from pytabkit.models.nn_models.models import PreprocessingFactory
 from pytabkit.models.nn_models.tabm import Model, make_parameter_groups
 from pytabkit.models.training.logging import Logger
+
+
+def get_tabm_auto_batch_size(n_train: int) -> int:
+    # by Yury Gorishniy, inferred from the choices in the TabM paper.
+    if n_train < 2_800:
+        return 32
+    if n_train < 4_500:
+        return 64
+    if n_train < 6_400:
+        return 128
+    if n_train < 32_000:
+        return 256
+    if n_train < 108_000:
+        return 512
+    return 1024
 
 
 class TabMSubSplitInterface(SingleSplitAlgInterface):
@@ -58,6 +75,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         num_emb_n_bins = self.config.get('num_emb_n_bins', 48)
         # set default to True for backward compatibility
         share_training_batches = self.config.get("share_training_batches", False)
+        val_metric_name = self.config.get('val_metric_name', None)
 
         weight_decay = self.config.get('weight_decay', 0.0)
         gradient_clipping_norm = self.config.get('gradient_clipping_norm', None)
@@ -70,6 +88,16 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         task_type: TaskType = 'regression' if n_classes == 0 else ('binclass' if n_classes == 2 else 'multiclass')
         device = interface_resources.gpu_devices[0] if len(interface_resources.gpu_devices) >= 1 else 'cpu'
         device = torch.device(device)
+
+        if num_emb_n_bins >= n_train:
+            print(f'Reducing num_emb_n_bins to be smaller than n_train')
+            num_emb_n_bins = n_train-1
+
+        if val_metric_name is None:
+            val_metric_name = 'rmse' if task_type == 'regression' else 'class_error'
+
+        if batch_size == "auto":
+            batch_size = get_tabm_auto_batch_size(n_train=n_train)
 
         self.n_classes_ = n_classes
         self.task_type_ = task_type
@@ -225,7 +253,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
 
             # When using torch.compile, you may need to reduce the evaluation batch size.
             eval_batch_size = 1024
-            y_pred: np.ndarray = (
+            y_pred: torch.Tensor = (
                 torch.cat(
                     [
                         apply_model(part, idx)
@@ -234,8 +262,6 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                     )
                     ]
                 )
-                .cpu()
-                .numpy()
             )
             if task_type == 'regression':
                 # Transform the predictions back to the original label space.
@@ -244,19 +270,20 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             # Compute the mean of the k predictions.
             average_logits = self.config.get('average_logits', False)
             if average_logits:
-                y_pred = y_pred.mean(1)
+                y_pred = y_pred.mean(dim=1)
             if task_type != 'regression':
                 # For classification, the mean must be computed in the probability space.
-                y_pred = scipy.special.softmax(y_pred, axis=-1)
+                y_pred = y_pred.softmax(dim=-1)
             if not average_logits:
-                y_pred = y_pred.mean(1)
+                y_pred = y_pred.mean(dim=1)
 
-            y_true = data[part]['y'].cpu().numpy()
-            score = (
-                -(sklearn.metrics.mean_squared_error(y_true, y_pred) ** 0.5)
-                if task_type == 'regression'
-                else sklearn.metrics.accuracy_score(y_true, y_pred.argmax(1))
-            )
+            y_true = data[part]['y']
+            if task_type == 'regression' and len(y_true.shape) == 1:
+                y_true = y_true.unsqueeze(-1)
+            if task_type == 'regression' and len(y_pred.shape) == 1:
+                y_pred = y_pred.unsqueeze(-1)
+            # use minus so higher=better
+            score = -Metrics.apply(y_pred, y_true, val_metric_name).item()
             return float(score)  # The higher -- the better.
 
         # print(f'Test score before training: {evaluate("test"):.4f}')
@@ -401,3 +428,69 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params, gpu_ram_params=gpu_ram_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.02)  # , gpu_ram_params)
         return rc.get_required_resources(ds, n_train=n_train)
+
+
+
+class RandomParamsTabMAlgInterface(RandomParamsAlgInterface):
+    def _sample_params(self, is_classification: bool, seed: int, n_train: int):
+        rng = np.random.default_rng(seed)
+        # adapted from Grinsztajn et al. (2022)
+        hpo_space_name = self.config.get('hpo_space_name', 'default')
+        if hpo_space_name == 'default':
+            params = {
+                "batch_size": "auto",
+                "patience": 16,
+                "amp": True,
+                "arch_type": "tabm-mini",
+                "tabm_k": 32,
+                "gradient_clipping_norm": 1.0,
+                # this makes it probably slower with numerical embeddings, and also more RAM intensive
+                # according to the paper it's not very important but should be a bit better (?)
+                "share_training_batches": False,
+                "lr": np.exp(rng.uniform(np.log(1e-4), np.log(3e-3))),
+                "weight_decay": rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(1e-1)))]),
+                "n_blocks": rng.choice([1, 2, 3, 4]),
+                "d_block": rng.choice([i for i in range(64, 1024 + 1) if i % 16 == 0]),
+                "dropout": rng.choice([0.0, rng.uniform(0.0, 0.5)]),
+                # numerical embeddings
+                "num_emb_type": "pwl",
+                "d_embedding": rng.choice([i for i in range(8, 32 + 1) if i % 4 == 0]),
+                "num_emb_n_bins": rng.integers(2, 128, endpoint=True),
+            }
+        elif hpo_space_name == 'tabarena':
+            params = {
+                "batch_size": "auto",
+                "patience": 16,
+                "amp": False,  # only for GPU, maybe we should change it to True?
+                "arch_type": "tabm-mini",
+                "tabm_k": 32,
+                "gradient_clipping_norm": 1.0,
+                # this makes it probably slower with numerical embeddings, and also more RAM intensive
+                # according to the paper it's not very important but should be a bit better (?)
+                "share_training_batches": False,
+                "lr": np.exp(rng.uniform(np.log(1e-4), np.log(3e-3))),
+                "weight_decay": rng.choice([0.0, np.exp(rng.uniform(np.log(1e-4), np.log(1e-1)))]),
+                # removed n_blocks=1 according to Yury Gurishniy's advice
+                "n_blocks": rng.choice([2, 3, 4, 5]),
+                # increased lower limit from 64 to 128 according to Yury Gorishniy's advice
+                "d_block": rng.choice([i for i in range(128, 1024 + 1) if i % 16 == 0]),
+                "dropout": rng.choice([0.0, rng.uniform(0.0, 0.5)]),
+                # numerical embeddings
+                "num_emb_type": "pwl",
+                "d_embedding": rng.choice([i for i in range(8, 32 + 1) if i % 4 == 0]),
+                "num_emb_n_bins": rng.integers(2, 128, endpoint=True),
+            }
+        else:
+            raise ValueError(f'Unknown {hpo_space_name=}')
+        return params
+
+    def _create_interface_from_config(self, n_tv_splits: int, **config):
+        return SingleSplitWrapperAlgInterface([TabMSubSplitInterface(**config) for i in range(n_tv_splits)])
+
+    def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
+        return TabMSubSplitInterface(**self.config).get_available_predict_params()
+
+    def set_current_predict_params(self, name: str) -> None:
+        super().set_current_predict_params(name)
+
+

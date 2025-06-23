@@ -644,9 +644,9 @@ class RealMLPParamSampler:
 
             if rng.uniform(0.0, 1.0) > 0.5:
                 # large configs
-                params['plr_hidden_1'] = rng.choice([8, 16, 32, 64])
-                params['plr_hidden_2'] = rng.choice([8, 16, 32, 64])
-                params['n_epochs'] = rng.choice([256, 512])
+                params['plr_hidden_1'] = rng.choice([8, 16, 32, 64]).item()
+                params['plr_hidden_2'] = rng.choice([8, 16, 32, 64]).item()
+                params['n_epochs'] = rng.choice([256, 512]).item()
                 params['use_early_stopping'] = True
 
                 # set in the defaults of RealMLP in TabArena

@@ -12,7 +12,7 @@ matplotlib.rcParams.update(bundles.icml2024())
 matplotlib.rcParams.update(fonts.icml2024_tex())
 matplotlib.rcParams.update(fontsizes.icml2024())
 
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, ticker
 import matplotlib.colors as mcolors
 import matplotlib.patheffects
 
@@ -59,6 +59,15 @@ def load_stopping_times(paths: Paths, alg_name: str, n_cv: int, n_tt_splits: int
             results.append(result)
 
     return np.asarray(results)
+
+
+def get_desired_symlog_ticks():
+    pos_small = np.arange(0.1, 1.0, 0.1)
+    pos_mid = np.arange(1, 10, 1)
+    pos_large = np.arange(10, 101, 10)
+    pos_ticks = np.concatenate([pos_small, pos_mid, pos_large])
+    neg_ticks = -pos_ticks[::-1]
+    return np.concatenate([neg_ticks, [0], pos_ticks])
 
 
 def plot_barscatter_ax(ax: plt.Axes, df: pd.DataFrame, xlabel: Optional[str], ylabel: str,
@@ -117,7 +126,24 @@ def plot_barscatter_ax(ax: plt.Axes, df: pd.DataFrame, xlabel: Optional[str], yl
         ax.set_yscale('symlog', linthresh=1)
         ax.yaxis.set_minor_formatter(matplotlib.ticker.ScalarFormatter())
         ax.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        # ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
         ax.ticklabel_format(style='plain', axis='y')
+
+        # Get your custom minor tick positions
+        minor_ticks = get_desired_symlog_ticks()
+
+        # Exclude major ticks (1, 10, 100 and their negatives)
+        major_ticks = np.array([-100, -10, -1, 0, 1, 10, 100])
+        minor_ticks = [tick for tick in minor_ticks if tick not in major_ticks]
+
+        # Set the minor ticks
+        ax.yaxis.set_minor_locator(plt.FixedLocator(minor_ticks))
+
+        # Remove minor tick labels
+        ax.yaxis.set_minor_formatter(plt.NullFormatter())
+
+        # Disable minor grid lines
+        ax.yaxis.grid(False, which='minor')
 
     print(f'{len(hues)=}')
 
@@ -146,6 +172,24 @@ def plot_barscatter_ax(ax: plt.Axes, df: pd.DataFrame, xlabel: Optional[str], yl
         ax.set_xlabel(xlabel, fontsize='small')
     else:
         ax.set_xlabel('', fontsize='small')
+
+
+    # Draw a clean downward arrow labeled "better" under "Logloss+TS"
+    x_labels = df['label'].unique().tolist()
+    y_min, _ = ax.get_ylim()
+    if 'Logloss+TS' in x_labels:
+        x_idx = x_labels.index('Logloss+TS')
+        # Position arrow so it is visually below all data, regardless of y scale
+        arrow_tip_y = 8e-3 * y_min  # it's a symlog scale
+        arrow_base_y = 0.2 * y_min
+        text_y = arrow_base_y + 0.02 * y_min
+
+        ax.annotate(
+            '', xy=(x_idx, arrow_base_y), xytext=(x_idx, arrow_tip_y),
+            arrowprops=dict(arrowstyle='-|>', color='black', lw=1.1, shrinkA=0, shrinkB=0)
+        )
+        ax.text(x_idx, text_y, 'lower=better', ha='center', va='top',
+                fontsize='small', style='italic', color='black')
 
 
 def plot_results(paths: Paths, tables: ResultsTables, base_names: List[str], n_hpo_steps: int,
@@ -396,6 +440,7 @@ def plot_calib_benchmark(paths: Paths, tables: ResultsTables, metric_name: str =
                            'ag-ts': r'TS (AutoGluon)',
                            # 'ag-inv-ts': r'AutoGluon + inv. temp.',
                            'torchunc-ts': 'TS (TorchUncertainty)',
+                           'torchcal-ts': 'TS (TorchCal)',
                            'guo-ts': 'TS (Guo et al., 2017)',
                            }
 
@@ -415,7 +460,7 @@ def plot_calib_benchmark(paths: Paths, tables: ResultsTables, metric_name: str =
         plt.ylabel(f'Mean {val_metrics[metric_name]}')
         plt.xlabel(f'Mean runtime (ms) per 1K samples')
 
-        colors = ['tab:green', 'tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan']
+        colors = ['tab:green', 'tab:blue', 'tab:orange', 'tab:red', 'tab:purple', 'tab:cyan', 'tab:olive']
 
         lines = []
 
@@ -642,7 +687,7 @@ if __name__ == '__main__':
     for use_small_plot in [False, True]:
         for base_names in [['RealMLP-HPO', 'MLP-HPO', 'XGB-HPO'], ['RealMLP-TD', 'MLP-D', 'XGB-D']]:
             for coll_name in ['talent-class-small-above10k', 'talent-class-small']:
-                for metric_name in ['cross_entropy', 'class_error', '1-auroc-ovr']:
+                for metric_name in ['cross_entropy', 'class_error', '1-auroc-ovr', 'brier']:
                     plot_results(paths, tables, base_names, n_hpo_steps=30, n_tt_splits=5,
                                  use_percentages=True,
                                  metric_name=metric_name, coll_name=coll_name, use_validation_errors=False,

@@ -4,27 +4,13 @@ from typing import Optional, Any, Union, List, Dict, Literal
 import numpy as np
 
 from pytabkit.models import utils
-from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
 from pytabkit.models.sklearn.default_params import DefaultParams
 from pytabkit.models.sklearn.sklearn_base import AlgInterfaceRegressor, AlgInterfaceClassifier
-from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface, ResnetSubSplitInterface, \
-    FTTransformerSubSplitInterface, RandomParamsRTDLMLPAlgInterface, RandomParamsResnetAlgInterface, \
-    RandomParamsFTTransformerAlgInterface
 from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
-from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface, RandomParamsTabRAlgInterface
-from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, \
-    OptAlgInterface
+from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface
 from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomParamsNNAlgInterface
-from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface, CatBoostHyperoptAlgInterface, \
-    RandomParamsCatBoostAlgInterface
 from pytabkit.models.alg_interfaces.ensemble_interfaces import AlgorithmSelectionAlgInterface, \
     CaruanaEnsembleAlgInterface
-from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface, LGBMHyperoptAlgInterface, \
-    RandomParamsLGBMAlgInterface
-from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
-    RandomParamsRFAlgInterface
-from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface, XGBHyperoptAlgInterface, \
-    RandomParamsXGBAlgInterface
 
 # the list of methods can be auto-generated using scripts/get_sklearn_names.py
 __all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classifier",
@@ -42,20 +28,21 @@ __all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classi
            "MLP_RTDL_HPO_Classifier", "MLP_RTDL_HPO_Regressor", "MLP_SKL_D_Classifier", "MLP_SKL_D_Regressor",
            "RF_HPO_Classifier",
            "RF_HPO_Regressor", "RF_SKL_D_Classifier", "RF_SKL_D_Regressor", "RealMLP_HPO_Classifier",
-           "RealMLP_HPO_Regressor", "RealMLP_Ensemble_Classifier", "RealMLP_Ensemble_Regressor",
+           "RealMLP_HPO_Regressor",
            "RealMLP_TD_Classifier", "RealMLP_TD_Regressor", "RealMLP_TD_S_Classifier", "RealMLP_TD_S_Regressor",
            "RealTabR_D_Classifier",
            "RealTabR_D_Regressor", "Resnet_RTDL_D_Classifier", "Resnet_RTDL_D_Regressor", "Resnet_RTDL_HPO_Classifier",
            "Resnet_RTDL_HPO_Regressor", "TabR_HPO_Classifier", "TabR_HPO_Regressor", "TabR_S_D_Classifier",
            "TabR_S_D_Regressor",
-           "TabM_D_Classifier", "TabM_D_Regressor",
+           "TabM_D_Classifier", "TabM_D_Regressor", "TabM_HPO_Classifier", "TabM_HPO_Regressor",
            "XGB_D_Classifier", "XGB_D_Regressor", "XGB_HPO_Classifier", "XGB_HPO_Regressor", "XGB_HPO_TPE_Classifier",
            "XGB_HPO_TPE_Regressor", "XGB_PBB_D_Classifier", "XGB_TD_Classifier", "XGB_TD_Regressor"]
 
 
 class RealMLPConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  train_metric_name: Optional[str] = None, val_metric_name: Optional[str] = None,
                  n_epochs: Optional[int] = None,
@@ -133,6 +120,10 @@ class RealMLPConstructorMixin:
             If zero, only the models from the cross-validation stage are used.
             If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
             and their predictions will be averaged during predict().
+        :param n_repeats: Number of times that the (cross-)validation split should be repeated (default=1).
+            Values != 1 are only allowed when no custom validation split is provided.
+            Larger number of repeats make things slower but reduce the potential for validation set overfitting,
+            especially on smaller datasets.
         :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
             Only used if `n_cv==1` and no validation split is provided in fit().
         :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
@@ -266,6 +257,7 @@ class RealMLPConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -398,7 +390,8 @@ class RealMLP_TD_S_Regressor(RealMLPConstructorMixin, AlgInterfaceRegressor):
 
 class LGBMConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_estimators: Optional[int] = None,
                  max_depth: Optional[int] = None,
@@ -422,6 +415,7 @@ class LGBMConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -450,6 +444,7 @@ class LGBM_TD_Classifier(LGBMConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.LGBM_TD_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
         return SingleSplitWrapperAlgInterface([LGBMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
@@ -458,6 +453,7 @@ class LGBM_D_Classifier(LGBMConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.LGBM_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
         return SingleSplitWrapperAlgInterface([LGBMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
@@ -466,6 +462,7 @@ class LGBM_TD_Regressor(LGBMConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.LGBM_TD_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
         return SingleSplitWrapperAlgInterface([LGBMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_multioutput(self) -> bool:
@@ -477,6 +474,7 @@ class LGBM_D_Regressor(LGBMConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.LGBM_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
         return SingleSplitWrapperAlgInterface([LGBMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_multioutput(self) -> bool:
@@ -485,7 +483,8 @@ class LGBM_D_Regressor(LGBMConstructorMixin, AlgInterfaceRegressor):
 
 class XGBConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  train_metric_name: Optional[str] = None, val_metric_name: Optional[str] = None,
                  n_estimators: Optional[int] = None,
@@ -511,6 +510,7 @@ class XGBConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -542,6 +542,7 @@ class XGB_TD_Classifier(XGBConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.XGB_TD_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -553,6 +554,7 @@ class XGB_D_Classifier(XGBConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.XGB_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -564,6 +566,7 @@ class XGB_PBB_D_Classifier(XGBConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.XGB_PBB_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -575,6 +578,7 @@ class XGB_TD_Regressor(XGBConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.XGB_TD_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -589,6 +593,7 @@ class XGB_D_Regressor(XGBConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.XGB_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
         return SingleSplitWrapperAlgInterface([XGBSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -600,7 +605,8 @@ class XGB_D_Regressor(XGBConstructorMixin, AlgInterfaceRegressor):
 
 class CatBoostConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_estimators: Optional[int] = None,
                  max_depth: Optional[int] = None,
@@ -627,6 +633,7 @@ class CatBoostConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -657,6 +664,7 @@ class CatBoost_TD_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.CB_TD_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
         return SingleSplitWrapperAlgInterface([CatBoostSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_single_class(self) -> bool:
@@ -674,6 +682,7 @@ class CatBoost_D_Classifier(CatBoostConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.CB_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
         return SingleSplitWrapperAlgInterface([CatBoostSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_single_class(self) -> bool:
@@ -691,6 +700,7 @@ class CatBoost_TD_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.CB_TD_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
         return SingleSplitWrapperAlgInterface([CatBoostSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_multioutput(self) -> bool:
@@ -708,6 +718,7 @@ class CatBoost_D_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.CB_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
         return SingleSplitWrapperAlgInterface([CatBoostSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _supports_multioutput(self) -> bool:
@@ -722,7 +733,8 @@ class CatBoost_D_Regressor(CatBoostConstructorMixin, AlgInterfaceRegressor):
 
 class RFConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_estimators: Optional[int] = None,
                  calibration_method: Optional[str] = None,
@@ -733,6 +745,7 @@ class RFConstructorMixin:
         :param random_state:
         :param n_cv:
         :param n_refit:
+        :param n_repeats:
         :param val_fraction:
         :param n_threads:
         :param tmp_folder:
@@ -746,6 +759,7 @@ class RFConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -759,6 +773,7 @@ class RF_SKL_D_Classifier(RFConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.RF_SKL_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface
         return SingleSplitWrapperAlgInterface([RFSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
@@ -767,12 +782,14 @@ class RF_SKL_D_Regressor(RFConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.RF_SKL_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface
         return SingleSplitWrapperAlgInterface([RFSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
 class MLPSKLConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  calibration_method: Optional[str] = None,
                  ):
@@ -780,6 +797,7 @@ class MLPSKLConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -792,6 +810,7 @@ class MLP_SKL_D_Classifier(MLPSKLConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.MLP_SKL_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import SklearnMLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([SklearnMLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
@@ -800,6 +819,7 @@ class MLP_SKL_D_Regressor(MLPSKLConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.MLP_SKL_D
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import SklearnMLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([SklearnMLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
 
@@ -807,25 +827,29 @@ class MLP_SKL_D_Regressor(MLPSKLConstructorMixin, AlgInterfaceRegressor):
 
 class GBDTHPOConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_estimators: Optional[int] = None,
-                 space: Optional[str] = None,
+                 hpo_space_name: Optional[str] = None,
                  n_hyperopt_steps: Optional[int] = None,
                  calibration_method: Optional[str] = None,
+                 use_caruana_ensembling: Optional[bool] = None,
                  ):
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
         self.n_estimators = n_estimators
-        self.space = space
+        self.hpo_space_name = hpo_space_name
         self.n_hyperopt_steps = n_hyperopt_steps
         self.calibration_method = calibration_method
+        self.use_caruana_ensembling = use_caruana_ensembling
 
 
 class XGB_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
@@ -833,9 +857,12 @@ class XGB_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import RandomParamsXGBAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface([RandomParamsXGBAlgInterface(model_idx=i, **config) for j in range(n_cv)])
              for i in range(n_hyperopt_steps)], **config)
 
@@ -847,9 +874,10 @@ class XGB_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    tree_method='hist', space='grinsztajn')
+                    tree_method='hist', hpo_space_name='grinsztajn')
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBHyperoptAlgInterface
         return XGBHyperoptAlgInterface(**self.get_config())
 
     def _allowed_device_names(self) -> List[str]:
@@ -864,9 +892,12 @@ class XGB_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return ['cpu', 'cuda']
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import RandomParamsXGBAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface([RandomParamsXGBAlgInterface(model_idx=i, **config) for j in range(n_cv)])
              for i in range(n_hyperopt_steps)], **config)
 
@@ -878,12 +909,13 @@ class XGB_HPO_TPE_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    tree_method='hist', space='grinsztajn')
+                    tree_method='hist', hpo_space_name='grinsztajn')
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda']
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBHyperoptAlgInterface
         return XGBHyperoptAlgInterface(**self.get_config())
 
     def _supports_multioutput(self) -> bool:
@@ -895,9 +927,12 @@ class LGBM_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import RandomParamsLGBMAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface([RandomParamsLGBMAlgInterface(model_idx=i, **config) for j in range(n_cv)])
              for i in range(n_hyperopt_steps)], **config)
 
@@ -906,9 +941,10 @@ class LGBM_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    space='catboost_quality_benchmarks')
+                    hpo_space_name='catboost_quality_benchmarks')
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMHyperoptAlgInterface
         return LGBMHyperoptAlgInterface(**self.get_config())
 
 
@@ -917,9 +953,12 @@ class LGBM_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import RandomParamsLGBMAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface([RandomParamsLGBMAlgInterface(model_idx=i, **config) for j in range(n_cv)])
              for i in range(n_hyperopt_steps)], **config)
 
@@ -931,9 +970,10 @@ class LGBM_HPO_TPE_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    space='catboost_quality_benchmarks')
+                    hpo_space_name='catboost_quality_benchmarks')
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMHyperoptAlgInterface
         return LGBMHyperoptAlgInterface(**self.get_config())
 
     def _supports_multioutput(self) -> bool:
@@ -945,9 +985,12 @@ class CatBoost_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import RandomParamsCatBoostAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsCatBoostAlgInterface(model_idx=i, **config) for j in range(n_cv)])
                 for i in range(n_hyperopt_steps)], **config)
@@ -966,9 +1009,10 @@ class CatBoost_HPO_TPE_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifie
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    space='shwartz-ziv')
+                    hpo_space_name='shwartz-ziv')
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostHyperoptAlgInterface
         return CatBoostHyperoptAlgInterface(**self.get_config())
 
     def _supports_single_class(self) -> bool:
@@ -986,9 +1030,12 @@ class CatBoost_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import RandomParamsCatBoostAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsCatBoostAlgInterface(model_idx=i, **config) for j in range(n_cv)])
                 for i in range(n_hyperopt_steps)], **config)
@@ -1007,9 +1054,10 @@ class CatBoost_HPO_TPE_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor)
     def _get_default_params(self) -> Dict[str, Any]:
         return dict(n_estimators=1000, n_hyperopt_steps=50,
                     early_stopping_rounds=300,
-                    space='shwartz-ziv')
+                    hpo_space_name='shwartz-ziv')
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostHyperoptAlgInterface
         return CatBoostHyperoptAlgInterface(**self.get_config())
 
     def _supports_multioutput(self) -> bool:
@@ -1027,9 +1075,12 @@ class RF_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import RandomParamsRFAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsRFAlgInterface(model_idx=i, **config) for j in range(n_cv)])
                 for i in range(n_hyperopt_steps)], **config)
@@ -1046,9 +1097,12 @@ class RF_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.other_interfaces import RandomParamsRFAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [SingleSplitWrapperAlgInterface(
                 [RandomParamsRFAlgInterface(model_idx=i, **config) for j in range(n_cv)])
                 for i in range(n_hyperopt_steps)], **config)
@@ -1062,11 +1116,13 @@ class RF_HPO_Regressor(GBDTHPOConstructorMixin, AlgInterfaceRegressor):
 
 class RealMLPHPOConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  n_hyperopt_steps: Optional[int] = None, val_metric_name: Optional[str] = None,
                  calibration_method: Optional[str] = None, hpo_space_name: Optional[str] = None,
                  n_caruana_steps: Optional[int] = None, n_epochs: Optional[int] = None,
+                 use_caruana_ensembling: Optional[bool] = None, train_metric_name: Optional[str] = None,
                  ):
         """
 
@@ -1088,6 +1144,10 @@ class RealMLPHPOConstructorMixin:
             If zero, only the models from the cross-validation stage are used.
             If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
             and their predictions will be averaged during predict().
+        :param n_repeats: Number of times that the (cross-)validation split should be repeated (default=1).
+            Values != 1 are only allowed when no custom validation split is provided.
+            Larger number of repeats make things slower but reduce the potential for validation set overfitting,
+            especially on smaller datasets.
         :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
             Only used if `n_cv==1` and no validation split is provided in fit().
         :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
@@ -1112,14 +1172,20 @@ class RealMLPHPOConstructorMixin:
         :param hpo_space_name: Name of the HPO space (default='default').
             The search space used in the paper is 'default'. However, we recommend using 'tabarena' for the best results.
         :param n_caruana_steps: Number of weight update iterations for Caruana et al. weighted ensembling (default=40).
-            This parameter is ignored for HPO.
+            This parameter is only used when use_caruana_ensembling=True.
         :param n_epochs: Number of epochs to train for each NN (default=None).
             If set, it will override the values from the search space.
+        :param use_caruana_ensembling: Whether to use the algorithm by Caruana et al. (2004)
+            to select a weighted ensemble of models instead of only selecting the best model (default=False).
+        :param train_metric_name: Name of the training metric
+            (default is cross_entropy for classification and mse for regression).
+            For regression, pinball/multi_pinball can be used instead.
         """
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1130,6 +1196,8 @@ class RealMLPHPOConstructorMixin:
         self.hpo_space_name = hpo_space_name
         self.n_caruana_steps = n_caruana_steps
         self.n_epochs = n_epochs
+        self.use_caruana_ensembling = use_caruana_ensembling
+        self.train_metric_name = train_metric_name
 
 
 class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
@@ -1139,8 +1207,10 @@ class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier)
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsNNAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1153,36 +1223,10 @@ class RealMLP_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
-
-    def _allowed_device_names(self) -> List[str]:
-        return ['cpu', 'cuda', 'mps']
-
-
-class RealMLP_Ensemble_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
-    def _get_default_params(self):
-        return dict(n_hyperopt_steps=50)
-
-    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
-        config = self.get_config()
-        n_hyperopt_steps = config['n_hyperopt_steps']
-        return CaruanaEnsembleAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
-
-    def _allowed_device_names(self) -> List[str]:
-        return ['cpu', 'cuda', 'mps']
-
-
-class RealMLP_Ensemble_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
-    def _get_default_params(self):
-        return dict(n_hyperopt_steps=50)
-
-    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
-        config = self.get_config()
-        n_hyperopt_steps = config['n_hyperopt_steps']
-        return CaruanaEnsembleAlgInterface([RandomParamsNNAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsNNAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1214,7 +1258,8 @@ class ResnetConstructorMixin:
                  quantile_output_distribution: Optional[str] = None,
                  val_metric_name: Optional[str] = None,
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  calibration_method: Optional[str] = None,
                  ):
@@ -1244,6 +1289,7 @@ class ResnetConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1256,6 +1302,7 @@ class Resnet_RTDL_D_Classifier(ResnetConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.RESNET_RTDL_D_CLASS_TabZilla
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import ResnetSubSplitInterface
         return SingleSplitWrapperAlgInterface([ResnetSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1273,6 +1320,7 @@ class Resnet_RTDL_D_Regressor(ResnetConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.RESNET_RTDL_D_REG_TabZilla
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import ResnetSubSplitInterface
         return SingleSplitWrapperAlgInterface([ResnetSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1320,7 +1368,8 @@ class FTTransformerConstructorMixin:
                  quantile_output_distribution: Optional[str] = None,
                  val_metric_name: Optional[str] = None,
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  calibration_method: Optional[str] = None,
                  ):
@@ -1355,6 +1404,7 @@ class FTTransformerConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1367,6 +1417,7 @@ class FTT_D_Classifier(FTTransformerConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.FTT_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import FTTransformerSubSplitInterface
         return SingleSplitWrapperAlgInterface(
             [FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
@@ -1385,6 +1436,7 @@ class FTT_D_Regressor(FTTransformerConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.FTT_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import FTTransformerSubSplitInterface
         return SingleSplitWrapperAlgInterface(
             [FTTransformerSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
@@ -1431,7 +1483,8 @@ class RTDL_MLPConstructorMixin:
                  module_num_emb_sigma: Optional[float] = None,
                  module_num_emb_lite: Optional[bool] = None,
                  device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  calibration_method: Optional[str] = None,
                  ):
@@ -1464,6 +1517,7 @@ class RTDL_MLPConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1476,6 +1530,7 @@ class MLP_RTDL_D_Classifier(RTDL_MLPConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.MLP_RTDL_D_CLASS_TabZilla
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([RTDL_MLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1493,6 +1548,7 @@ class MLP_RTDL_D_Regressor(RTDL_MLPConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.MLP_RTDL_D_REG_TabZilla
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([RTDL_MLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1515,6 +1571,7 @@ class MLP_PLR_D_Classifier(RTDL_MLPConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.MLP_PLR_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([RTDL_MLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1532,6 +1589,7 @@ class MLP_PLR_D_Regressor(RTDL_MLPConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.MLP_PLR_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RTDL_MLPSubSplitInterface
         return SingleSplitWrapperAlgInterface([RTDL_MLPSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1583,7 +1641,8 @@ class TabrConstructorMixin:
                  ls_eps: Optional[float] = None,
                  device: Optional[str] = None,
                  random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  calibration_method: Optional[str] = None,
                  ):
@@ -1622,6 +1681,7 @@ class TabrConstructorMixin:
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1634,6 +1694,7 @@ class TabR_S_D_Classifier(TabrConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.TABR_S_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabRSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1645,6 +1706,7 @@ class TabR_S_D_Regressor(TabrConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.TABR_S_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabRSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1656,6 +1718,7 @@ class RealTabR_D_Classifier(TabrConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.RealTABR_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabRSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1667,6 +1730,7 @@ class RealTabR_D_Regressor(TabrConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.RealTABR_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import TabRSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabRSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1675,7 +1739,8 @@ class RealTabR_D_Regressor(TabrConstructorMixin, AlgInterfaceRegressor):
 
 class TabMConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  arch_type: Optional[str] = None,
                  tabm_k: Optional[int] = None,
@@ -1696,6 +1761,7 @@ class TabMConstructorMixin:
                  gradient_clipping_norm: Optional[Union[float, Literal['none']]] = None,
                  calibration_method: Optional[str] = None,
                  share_training_batches: Optional[bool] = None,
+                 val_metric_name: Optional[str] = None,
                  ):
         """
 
@@ -1713,6 +1779,10 @@ class TabMConstructorMixin:
             If zero, only the models from the cross-validation stage are used.
             If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
             and their predictions will be averaged during predict().
+        :param n_repeats: Number of times that the (cross-)validation split should be repeated (default=1).
+            Values != 1 are only allowed when no custom validation split is provided.
+            Larger number of repeats make things slower but reduce the potential for validation set overfitting,
+            especially on smaller datasets.
         :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
             Only used if `n_cv==1` and no validation split is provided in fit().
         :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
@@ -1753,11 +1823,15 @@ class TabMConstructorMixin:
             We adopt the default value False from the newer version of TabM,
             while the old code (prior to 1.4.1) was equivalent to share_training_batches=True,
             except that the new code also excludes certain parameters from weight decay.
+        :param val_metric_name: Name of the validation metric used for early stopping.
+            For classification, the default is 'class_error' but could be 'cross_entropy', 'brier', '1-auc_ovr' etc.
+            For regression, the default is 'rmse' but could be 'mae'.
         """
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1782,6 +1856,7 @@ class TabMConstructorMixin:
         self.gradient_clipping_norm = gradient_clipping_norm
         self.calibration_method = calibration_method
         self.share_training_batches = share_training_batches
+        self.val_metric_name = val_metric_name
 
 
 class TabM_D_Classifier(TabMConstructorMixin, AlgInterfaceClassifier):
@@ -1789,6 +1864,7 @@ class TabM_D_Classifier(TabMConstructorMixin, AlgInterfaceClassifier):
         return DefaultParams.TABM_D_CLASS
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1806,6 +1882,7 @@ class TabM_D_Regressor(TabMConstructorMixin, AlgInterfaceRegressor):
         return DefaultParams.TABM_D_REG
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabm_interface import TabMSubSplitInterface
         return SingleSplitWrapperAlgInterface([TabMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
 
     def _allowed_device_names(self) -> List[str]:
@@ -1818,6 +1895,46 @@ class TabM_D_Regressor(TabMConstructorMixin, AlgInterfaceRegressor):
         return False
 
 
+class TabM_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
+    """
+    HPO spaces ('default', 'tabarena') use TabM-mini with numerical embeddings
+    """
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabm_interface import RandomParamsTabMAlgInterface
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsTabMAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
+class TabM_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
+    """
+    HPO spaces ('default', 'tabarena') use TabM-mini with numerical embeddings
+    """
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabm_interface import RandomParamsTabMAlgInterface
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsTabMAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+
 # ------------------------------
 
 
@@ -1826,10 +1943,13 @@ class MLP_RTDL_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsRTDLMLPAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1840,10 +1960,13 @@ class MLP_RTDL_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsRTDLMLPAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsRTDLMLPAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1854,11 +1977,14 @@ class MLP_PLR_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier)
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsRTDLMLPAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsRTDLMLPAlgInterface(model_idx=i, num_emb_type='plr',
-                                                                               **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsRTDLMLPAlgInterface(model_idx=i, num_emb_type='plr',
+                                                               **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1869,9 +1995,12 @@ class MLP_PLR_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsRTDLMLPAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface(
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type(
             [RandomParamsRTDLMLPAlgInterface(model_idx=i, num_emb_type='plr', **config)
              for i in range(n_hyperopt_steps)], **config)
 
@@ -1884,10 +2013,13 @@ class Resnet_RTDL_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassif
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsResnetAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsResnetAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsResnetAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1898,10 +2030,13 @@ class Resnet_RTDL_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegresso
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsResnetAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsResnetAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsResnetAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1912,10 +2047,13 @@ class FTT_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsFTTransformerAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1926,10 +2064,13 @@ class FTT_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.rtdl_interfaces import RandomParamsFTTransformerAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsFTTransformerAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1940,10 +2081,13 @@ class TabR_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import RandomParamsTabRAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsTabRAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsTabRAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1954,10 +2098,13 @@ class TabR_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
         return dict(n_hyperopt_steps=50)
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.tabr_interface import RandomParamsTabRAlgInterface
         config = self.get_config()
         n_hyperopt_steps = config['n_hyperopt_steps']
-        return AlgorithmSelectionAlgInterface([RandomParamsTabRAlgInterface(model_idx=i, **config)
-                                               for i in range(n_hyperopt_steps)], **config)
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsTabRAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
@@ -1967,7 +2114,8 @@ class TabR_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
 
 class Ensemble_TD_Classifier(AlgInterfaceClassifier):
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  val_metric_name: Optional[str] = None, use_ls: Optional[bool] = None,
                  calibration_method: Optional[str] = None):
@@ -1975,6 +2123,7 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -1984,6 +2133,10 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
         self.calibration_method = calibration_method
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
+
         extra_params = dict()
         if self.val_metric_name is not None:
             extra_params['val_metric_name'] = self.val_metric_name
@@ -2011,13 +2164,15 @@ class Ensemble_TD_Classifier(AlgInterfaceClassifier):
 
 class Ensemble_TD_Regressor(AlgInterfaceRegressor):
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
                  val_metric_name: Optional[str] = None):
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
@@ -2025,6 +2180,10 @@ class Ensemble_TD_Regressor(AlgInterfaceRegressor):
         self.val_metric_name = val_metric_name
 
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface
+
         extra_params = dict()
         if self.val_metric_name is not None:
             extra_params['val_metric_name'] = self.val_metric_name
@@ -2046,91 +2205,116 @@ class Ensemble_TD_Regressor(AlgInterfaceRegressor):
         return ['cpu', 'cuda', 'mps']
 
 
-class Ensemble_HPO_Classifier(AlgInterfaceClassifier):
+class EnsembleHPOConstructorMixin:
     def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
                  tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
-                 val_metric_name: Optional[str] = None, use_ls: Optional[bool] = None,
-                 n_hpo_steps: Optional[int] = None,
-                 calibration_method: Optional[str] = None):
+                 val_metric_name: Optional[str] = None,
+                 n_hpo_steps: int = 50,
+                 calibration_method: Optional[str] = None,
+                 use_full_caruana_ensembling: bool = False,
+                 n_caruana_steps: int = 40,
+                 use_tabarena_spaces: bool = False,
+                 ):
+        """
+        :param device:
+        :param random_state:
+        :param n_cv:
+        :param n_refit:
+        :param n_repeats:
+        :param val_fraction:
+        :param n_threads:
+        :param tmp_folder:
+        :param verbosity:
+        :param val_metric_name:
+        :param n_hpo_steps: Number of HPO configs per method.
+        :param calibration_method: Calibration method (only for classification).
+        :param use_full_caruana_ensembling: Whether to also ensemble
+            different hyperparameter configs of the same method (default=False).
+            False corresponds to the method used in the paper,
+            True should give better results (with larger inference time).
+        :param n_caruana_steps: How many iterations to use for Caruana et al. (2004) weighted ensembling.
+        :param use_tabarena_spaces: Whether to use search spaces from TabArena instead of from the RealMLP paper.
+        """
         self.device = device
         self.random_state = random_state
         self.n_cv = n_cv
         self.n_refit = n_refit
+        self.n_repeats = n_repeats
         self.val_fraction = val_fraction
         self.n_threads = n_threads
         self.tmp_folder = tmp_folder
         self.verbosity = verbosity
         self.val_metric_name = val_metric_name
-        self.use_ls = use_ls
         self.n_hpo_steps = n_hpo_steps
         self.calibration_method = calibration_method
+        self.use_full_caruana_ensembling = use_full_caruana_ensembling
+        self.n_caruana_steps = n_caruana_steps
+        self.use_tabarena_spaces = use_tabarena_spaces
 
+
+class Ensemble_HPO_Classifier(EnsembleHPOConstructorMixin, AlgInterfaceClassifier):
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import RandomParamsCatBoostAlgInterface
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import RandomParamsLGBMAlgInterface
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import RandomParamsXGBAlgInterface
+
         extra_params = dict()
         if self.val_metric_name is not None:
             extra_params['val_metric_name'] = self.val_metric_name
-        if self.use_ls is not None:
-            extra_params['use_ls'] = self.use_ls
         if self.calibration_method is not None:
             extra_params['calibration_method'] = self.calibration_method
+        if self.use_tabarena_spaces:
+            extra_params['hpo_space_name'] = 'tabarena'
+        extra_params['n_caruana_steps'] = self.n_caruana_steps
         n_hpo_steps = self.n_hpo_steps or 50
-        hpo_interfaces = [
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
-                **extra_params),
+        hpo_configs = [
+            [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)],
+            [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)],
+            [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+                 range(n_hpo_steps)],
+            [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
         ]
+        if self.use_full_caruana_ensembling:
+            hpo_interfaces = sum(hpo_configs, [])
+        else:
+            hpo_interfaces = [AlgorithmSelectionAlgInterface(lst, **extra_params) for lst in hpo_configs]
+
         return CaruanaEnsembleAlgInterface(hpo_interfaces, **extra_params)
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
 
 
-class Ensemble_HPO_Regressor(AlgInterfaceRegressor):
-    def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
-                 n_cv: int = 1, n_refit: int = 0, val_fraction: float = 0.2, n_threads: Optional[int] = None,
-                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
-                 val_metric_name: Optional[str] = None,
-                 n_hpo_steps: Optional[int] = None):
-        self.device = device
-        self.random_state = random_state
-        self.n_cv = n_cv
-        self.n_refit = n_refit
-        self.val_fraction = val_fraction
-        self.n_threads = n_threads
-        self.tmp_folder = tmp_folder
-        self.verbosity = verbosity
-        self.val_metric_name = val_metric_name
-        self.n_hpo_steps = n_hpo_steps
-
+class Ensemble_HPO_Regressor(EnsembleHPOConstructorMixin, AlgInterfaceRegressor):
     def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.catboost_interfaces import RandomParamsCatBoostAlgInterface
+        from pytabkit.models.alg_interfaces.lightgbm_interfaces import RandomParamsLGBMAlgInterface
+        from pytabkit.models.alg_interfaces.xgboost_interfaces import RandomParamsXGBAlgInterface
+
         extra_params = dict()
         if self.val_metric_name is not None:
             extra_params['val_metric_name'] = self.val_metric_name
+        if self.use_tabarena_spaces:
+            extra_params['hpo_space_name'] = 'tabarena'
+        extra_params['n_caruana_steps'] = self.n_caruana_steps
         n_hpo_steps = self.n_hpo_steps or 50
-        hpo_interfaces = [
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
-                 range(n_hpo_steps)], **extra_params),
-            AlgorithmSelectionAlgInterface(
-                [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
-                **extra_params),
+        hpo_configs = [
+            [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+             range(n_hpo_steps)],
+            [RandomParamsXGBAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+             range(n_hpo_steps)],
+            [RandomParamsCatBoostAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
+             range(n_hpo_steps)],
+            [RandomParamsNNAlgInterface(model_idx=i, **extra_params) for i in range(n_hpo_steps)],
         ]
+        if self.use_full_caruana_ensembling:
+            hpo_interfaces = sum(hpo_configs, [])
+        else:
+            hpo_interfaces = [AlgorithmSelectionAlgInterface(lst, **extra_params) for lst in hpo_configs]
         return CaruanaEnsembleAlgInterface(hpo_interfaces, **extra_params)
 
     def _allowed_device_names(self) -> List[str]:

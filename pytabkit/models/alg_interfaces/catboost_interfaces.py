@@ -324,7 +324,8 @@ class CatBoostHyperoptAlgInterface(OptAlgInterface):
         #     'used_ram_limit': hp.choice('used_ram_limit', [100000000000]),
         # }
         # need to add defaults as well
-
+        if space is None:
+            space = config.get('hpo_space_name', None)
         if space == 'NODE' or space == 'popov':
             # space from NODE paper:
             # Popov, Morozov, and Babenko, Neural oblivious decision ensembles for deep learning on tabular data
@@ -720,6 +721,31 @@ class RandomParamsCatBoostAlgInterface(RandomParamsAlgInterface):
                 'max_ctr_complexity': rng.integers(1, 5, endpoint=True),
                 'one_hot_max_size': rng.choice([2, 3, 5, 10]),
                 'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+            }
+        elif hpo_space_name == 'tabarena':
+            space = {
+                'n_estimators': 10_000,
+                'early_stopping_rounds': 300,  # probably not exactly equivalent to TabArena
+                'learning_rate': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+
+                'bootstrap_type': 'Bernoulli',
+                'subsample': rng.uniform(0.7, 1.0),  # can only be used with Bernoulli (or Poisson)!
+
+                'grow_policy': rng.choice(['SymmetricTree', 'Depthwise']),
+                'max_depth': rng.integers(4, 8, endpoint=True),
+
+                'colsample_bylevel': rng.uniform(0.85, 1.0),
+                'l2_leaf_reg': np.exp(rng.uniform(np.log(1e-4), np.log(5.0))),
+
+                'leaf_estimation_iterations': np.floor(np.exp(rng.uniform(np.log(1.0), np.log(21.0)))),
+
+                # categorical features
+                'one_hot_max_size': np.floor(np.exp(rng.uniform(np.log(8.0), np.log(101.0)))),
+                'model_size_reg': np.exp(rng.uniform(np.log(0.1), np.log(1.5))),
+                'max_ctr_complexity': rng.integers(2, 5, endpoint=True),  # shrunk
+
+                'boosting_type': 'Plain',  # avoid Ordered as the default on GPU
+                'max_bin': 254,  # added this to be sure
             }
         else:
             raise ValueError()

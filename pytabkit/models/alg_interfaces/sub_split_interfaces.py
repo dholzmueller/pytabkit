@@ -38,8 +38,11 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
 
         config = utils.join_dicts(self.sub_split_interfaces[0].config, self.config)
         if config.get('use_best_mean_iteration_for_refit', True):
+            sub_fit_params = [utils.update_dict(fit_params[0], remove_keys='sub_fit_params')]
             return SingleSplitWrapperAlgInterface(
-                [self.sub_split_interfaces[0].get_refit_interface(n_refit=1, fit_params=fit_params) for i in
+                [self.sub_split_interfaces[0].get_refit_interface(
+                    n_refit=1, fit_params=sub_fit_params)
+                 for i in
                  range(n_refit)], fit_params=fit_params)
         else:
             if n_refit != len(self.sub_split_interfaces):
@@ -114,7 +117,9 @@ class SingleSplitWrapperAlgInterface(SingleSplitAlgInterface):
                     for ssi in self.sub_split_interfaces:
                         ssi.fit_params = self.fit_params
             else:
-                self.fit_params = [dict(sub_fit_params=[(ssi.fit_params[0] if ssi.fit_params is not None else None) for ssi in self.sub_split_interfaces])]
+                self.fit_params = [dict(
+                    sub_fit_params=[(ssi.fit_params[0] if ssi.fit_params is not None else None) for ssi in
+                                    self.sub_split_interfaces])]
 
         return None
 
@@ -338,7 +343,7 @@ class TreeBasedSubSplitInterface(SingleSplitAlgInterface):  # todo: insert more 
                 self.fit_params = [dict(n_estimators=len(val_errors))]
 
             if isinstance(val_errors, dict):
-                return None   # not implemented
+                return None  # not implemented
             else:
                 return [[[(dict(n_estimators=i + 1), err) for i, err in enumerate(val_errors)]]]
 
