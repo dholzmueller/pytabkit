@@ -119,7 +119,7 @@ features = ["models", "bench", "autogluon", "extra", "hpo", "dev"]
 
 [tool.hatch.envs.hatch-test]
 installer = "uv"
-features = ["models", "bench", "dev"]
+features = ["models", "bench", "dev", "hpo"]
 #features = ["models","bench","autogluon","extra","hpo","dev"]
 
 [tool.hatch.build.targets.sdist]
