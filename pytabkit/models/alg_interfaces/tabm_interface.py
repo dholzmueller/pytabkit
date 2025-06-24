@@ -261,7 +261,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                         eval_batch_size
                     )
                     ]
-                )
+                ).cpu()
             )
             if task_type == 'regression':
                 # Transform the predictions back to the original label space.
@@ -277,7 +277,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             if not average_logits:
                 y_pred = y_pred.mean(dim=1)
 
-            y_true = data[part]['y']
+            y_true = data[part]['y'].cpu()
             if task_type == 'regression' and len(y_true.shape) == 1:
                 y_true = y_true.unsqueeze(-1)
             if task_type == 'regression' and len(y_pred.shape) == 1:
