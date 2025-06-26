@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 from sklearn.base import ClassifierMixin
+import torch
 
 from pytabkit import TabM_D_Classifier, RealMLP_HPO_Classifier, Ensemble_HPO_Classifier, TabM_HPO_Regressor, \
     TabM_HPO_Classifier, LGBM_HPO_Classifier, CatBoost_HPO_Classifier, XGB_HPO_Classifier, Ensemble_HPO_Regressor, \
@@ -10,23 +11,24 @@ from pytabkit import TabM_D_Classifier, RealMLP_HPO_Classifier, Ensemble_HPO_Cla
 
 
 @pytest.mark.parametrize('estimator', [
-    RealMLP_TD_Regressor(n_cv=2, n_refit=2, n_repeats=2, device='cpu'),
-    RealMLP_HPO_Regressor(device='cpu', n_hyperopt_steps=2, train_metric_name='multi_pinball(0.1,0.9)',
+    RealMLP_TD_Regressor(n_cv=2, n_refit=2, n_repeats=2),
+    RealMLP_HPO_Regressor(n_hyperopt_steps=2, train_metric_name='multi_pinball(0.1,0.9)',
                           val_metric_name='multi_pinball(0.1,0.9)'),
-    TabM_D_Classifier(val_metric_name='cross_entropy', num_emb_type='pwl', tabm_k=16, device='cpu', random_state=0),
-    TabM_D_Regressor(val_metric_name='cross_entropy', num_emb_type='pwl', tabm_k=16, device='cpu', random_state=0),
-    TabM_HPO_Regressor(val_metric_name='mae', n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu',
+    TabM_D_Classifier(val_metric_name='cross_entropy', num_emb_type='pwl', tabm_k=16, random_state=0),
+    TabM_D_Regressor(val_metric_name='cross_entropy', num_emb_type='pwl', tabm_k=16, random_state=0),
+    TabM_HPO_Regressor(val_metric_name='mae', n_hyperopt_steps=2, hpo_space_name='tabarena',
                        random_state=0),
-    TabM_HPO_Classifier(val_metric_name='mae', n_hyperopt_steps=2, hpo_space_name='default', device='cpu',
+    TabM_HPO_Classifier(val_metric_name='mae', n_hyperopt_steps=2, hpo_space_name='default',
                         random_state=0, use_caruana_ensembling=True),
+    # use CPU since GPU might not support some features in the search space (it has problems with rsm for catboost)
     LGBM_HPO_Classifier(use_caruana_ensembling=True, n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu'),
     XGB_HPO_Classifier(use_caruana_ensembling=True, n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu'),
     CatBoost_HPO_Classifier(use_caruana_ensembling=True, n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu'),
     RealMLP_HPO_Classifier(val_metric_name='cross_entropy', n_hyperopt_steps=3, use_caruana_ensembling=True,
-                           hpo_space_name='tabarena', n_caruana_steps=10, random_state=0, device='cpu'),
-    Ensemble_HPO_Classifier(val_metric_name='brier', device='cpu', n_hpo_steps=2, use_full_caruana_ensembling=True,
+                           hpo_space_name='tabarena', n_caruana_steps=10, random_state=0),
+    Ensemble_HPO_Classifier(val_metric_name='brier', n_hpo_steps=2, use_full_caruana_ensembling=True,
                             use_tabarena_spaces=True),
-    Ensemble_HPO_Regressor(val_metric_name='brier', device='cpu', n_hpo_steps=2, use_full_caruana_ensembling=True,
+    Ensemble_HPO_Regressor(val_metric_name='brier', n_hpo_steps=2, use_full_caruana_ensembling=True,
                            use_tabarena_spaces=True),
     LGBM_HPO_TPE_Regressor(n_cv=2, n_refit=2, n_hyperopt_steps=2),
 ])
@@ -37,7 +39,9 @@ def test_sklearn_not_crash(estimator):
     X['b'] = X['b'].astype('category')
 
     est = sklearn.base.clone(estimator)
-    est.device = 'cpu'
+    if not torch.cuda.is_available():
+        # don't use mps even if it's available
+        est.device = 'cpu'
     if isinstance(est, ClassifierMixin):
         y = np.random.randint(3, size=(n_train,))
     else:

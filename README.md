@@ -196,6 +196,7 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.5.2: fixed more device bugs for HPO and ensembling
 - v1.5.1: fixed a device bug in TabM for GPU
 - v1.5.0:
     - added `n_repeats` parameter to scikit-learn interfaces for repeated cross-validation

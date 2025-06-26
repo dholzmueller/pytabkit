@@ -110,7 +110,7 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
                 weights[weight_idx] += 1
 
                 y_pred_oob = wp.predict_for_weights(weights)
-                loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
+                loss = Metrics.apply(y_pred_oob.cpu(), y_oob.cpu(), val_metric_name).item()
                 # print(f'{weights=}, {loss=}')
                 if loss < best_step_loss:
                     best_step_loss = loss
@@ -124,7 +124,7 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
                     weights[weight_idx] -= 1
 
                     y_pred_oob = wp.predict_for_weights(weights)
-                    loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
+                    loss = Metrics.apply(y_pred_oob.cpu(), y_oob.cpu(), val_metric_name).item()
                     # print(f'{weights=}, {loss=}')
                     if loss < best_step_loss:
                         best_step_loss = loss
@@ -233,7 +233,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
                 # get out-of-bag predictions
                 y_pred_oob = cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]
                                                for j in range(idxs_list[0].val_idxs.shape[0])], dim=0)
-                loss = Metrics.apply(y_pred_oob, y_oob, val_metric_name).item()
+                loss = Metrics.apply(y_pred_oob.cpu(), y_oob.cpu(), val_metric_name).item()
                 if loss < best_alg_loss:
                     best_alg_loss = loss
                     best_alg_idx = alg_idx
