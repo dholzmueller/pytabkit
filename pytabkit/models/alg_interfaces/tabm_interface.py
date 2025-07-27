@@ -263,11 +263,12 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             )
 
         if train_metric_name is None:
-            base_loss_fn = torch.nn.functional.mse_loss if self.n_classes_ == 0 else torch.nn.functional.cross_entropy  # defaults
-        elif train_metric_name == 'mse':
+            train_metric_name = 'mse' if self.n_classes_ == 0 else 'cross_entropy'
+
+        if train_metric_name == 'mse':
             base_loss_fn = torch.nn.functional.mse_loss
         elif train_metric_name == 'cross_entropy':
-            base_loss_fn = torch.nn.functional.cross_entropy
+            base_loss_fn = lambda a, b: torch.nn.functional.cross_entropy(a, b.squeeze(-1))
         else:
             base_loss_fn = functools.partial(Metrics.apply, metric_name=train_metric_name)
 
@@ -276,6 +277,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             # (regression)     y_pred.shape == (batch_size, k)
             # (classification) y_pred.shape == (batch_size, k, n_classes)
             k = y_pred.shape[1]
+            print(f'{y_pred.flatten(0, 1).shape=}, {y_true.shape=}')
             return base_loss_fn(
                 y_pred.flatten(0, 1),
                 y_true.repeat_interleave(k) if model.share_training_batches else y_true,
