@@ -346,6 +346,9 @@ class AlgInterfaceEstimator(BaseEstimator):
         if val_idxs.shape[1] == 0:
             val_idxs = None  # no validation set
 
+        # print(f'{val_idxs=}')
+        # print(f'{np.mean(X / (1e-8 + np.linalg.norm(X, axis=0, keepdims=True)))=}')
+
         idxs_list = [SplitIdxs(train_idxs=train_idxs, val_idxs=val_idxs, test_idxs=None, split_seed=split_seed,
                                sub_split_seeds=sub_split_seeds, split_id=0)]
 

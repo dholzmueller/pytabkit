@@ -105,8 +105,9 @@ class TabNNModule(pl.LightningModule):
         ds_x, _ = ds.split_xy()
         ds_x = self.creator.static_model.forward_ds(ds_x)
         idxs_single = torch.arange(ds.n_samples, dtype=torch.long)
+        n_ens = self.config.get('n_ens', 1)
         idxs = idxs_single[None, :].expand(
-            self.creator.n_tt_splits * self.creator.n_tv_splits, -1
+            self.creator.n_tt_splits * self.creator.n_tv_splits * n_ens, -1
         )
 
         return ParallelDictDataLoader(ds=ds_x, idxs=idxs,
@@ -134,10 +135,16 @@ class TabNNModule(pl.LightningModule):
             val_metric_name in self.val_metric_names}
 
     def training_step(self, batch, batch_idx):
+        # x = batch["x_cont"]
+        # x = x / (1e-8 + x.std(dim=-2, keepdim=True))
+        # print(f'{x.mean().item()=}')
+        # print(f'{list(self.model.parameters())[0].mean().item()=}')
+        # print(f'{list(self.model.parameters())[-1].mean().item()=}')
         output = self.model(batch)
         opt = self.optimizers()
         # do sum() over models dimension
         loss = self.criterion(output["x_cont"], output["y"]).sum()
+        # print(f'{loss.item()=}')
         # Callbacks for regularization are called before the backward pass
         self.manual_backward(loss)
         opt.step(loss=loss)
@@ -160,9 +167,13 @@ class TabNNModule(pl.LightningModule):
     def on_validation_epoch_end(self):
         self.model.train(self.old_training)
         self.old_training = None
-        y_pred = torch.cat(self.val_preds, dim=-2)
+        y_pred = self._postprocess_ens_pred(torch.cat(self.val_preds, dim=-2))
 
         y_pred = postprocess_multiquantile(y_pred, **self.config)
+
+        n_ens = self.config.get('n_ens', 1)
+        # y is duplicated by the dataloader as well in the ensemble case, deduplicate it
+        y = self.val_dl.val_y[::n_ens]
 
         use_early_stopping = self.config.get('use_early_stopping', False)
         early_stopping_additive_patience = self.config.get('early_stopping_additive_patience', 20)
@@ -172,7 +183,7 @@ class TabNNModule(pl.LightningModule):
             val_errors = torch.as_tensor(
                 [
                     Metrics.apply(
-                        y_pred[i, :, :], self.val_dl.val_y[i, :, :], val_metric_name
+                        y_pred[i, :, :], y[i, :, :], val_metric_name
                     )
                     for i in range(y_pred.shape[0])
                 ]
@@ -259,7 +270,21 @@ class TabNNModule(pl.LightningModule):
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         self.model.eval()
         with torch.no_grad():
-            return self.model(batch)["x_cont"].to("cpu")
+            return self._postprocess_ens_pred(self.model(batch)["x_cont"].to("cpu"))
+
+    def _postprocess_ens_pred(self, y_pred: torch.Tensor) -> torch.Tensor:
+        # if n_ens > 1, we need to average the predictions of the ensemble members
+        n_ens = self.config.get('n_ens', 1)
+        if n_ens == 1:
+            return y_pred
+
+        old_shape = y_pred.shape
+        y_pred = y_pred.reshape(y_pred.shape[0] // n_ens, n_ens, *y_pred.shape[1:])
+        # todo: we're averaging logits for now because it's easier
+        #  (don't have to find out if it's classification or regression)
+        y_pred = y_pred.mean(dim=1)
+        return y_pred
+
 
     def configure_optimizers(self):
         param_groups = [{"params": [p], "lr": 0.01} for p in self.model.parameters()]

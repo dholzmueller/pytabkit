@@ -17,9 +17,10 @@ from pytabkit.models.training.logging import Logger
 
 
 class ParamCheckpointer:
-    def __init__(self, n_tv_splits, n_tt_splits):
+    def __init__(self, n_tv_splits: int, n_tt_splits: int, n_ens: int):
         self.n_tv_splits = n_tv_splits
         self.n_tt_splits = n_tt_splits
+        self.n_ens = n_ens
         self.ckpt_params = [None] * (self.n_tt_splits * self.n_tv_splits)
         self.ckpt_buffers = [None] * (self.n_tt_splits * self.n_tv_splits)
 
@@ -28,10 +29,10 @@ class ParamCheckpointer:
         with torch.no_grad():
             for ckpt, values in [(self.ckpt_params, model.parameters()), (self.ckpt_buffers, model.buffers())]:
                 if ckpt[idx] is None:
-                    ckpt[idx] = [v[idx].clone() for v in values]
+                    ckpt[idx] = [v[idx*self.n_ens:(idx+1)*self.n_ens].clone() for v in values]
                 else:
                     for c, v in zip(ckpt[idx], values):
-                        c.copy_(v[idx])
+                        c.copy_(v[idx*self.n_ens:(idx+1)*self.n_ens])
 
     def restore(self, parallel_idx: int, model_idx: int, model: Layer):
         idx = self.n_tv_splits * parallel_idx + model_idx
@@ -40,7 +41,7 @@ class ParamCheckpointer:
                 if ckpt[idx] is not None:
                     for c, v in zip(ckpt[idx], values):
                         # print(f'Restore diff: {v[start:end]-c}')
-                        v[idx] = c
+                        v[idx*self.n_ens:(idx+1)*self.n_ens] = c
 
     def save_all(self, model: Layer):
         for parallel_idx in range(self.n_tt_splits):
@@ -92,14 +93,15 @@ class L1L2RegCallback(Callback):
 
 
 class ModelCheckpointCallback(Callback):
-    def __init__(self, n_tt_splits: int, n_tv_splits: int, use_best_mean_epoch: bool, val_metric_name: str,
+    def __init__(self, n_tt_splits: int, n_tv_splits: int, n_ens: int, use_best_mean_epoch: bool, val_metric_name: str,
                  restore_best: bool = False):
         self.n_tt_splits = n_tt_splits
         self.n_tv_splits = n_tv_splits
+        self.n_ens = n_ens
         self.val_metric_name = val_metric_name
         self.restore_best = restore_best
         self.use_best_mean_epoch = use_best_mean_epoch
-        self.ckpt = ParamCheckpointer(n_tv_splits=n_tv_splits, n_tt_splits=self.n_tt_splits)
+        self.ckpt = ParamCheckpointer(n_tv_splits=n_tv_splits, n_tt_splits=self.n_tt_splits, n_ens=n_ens)
 
     def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.ckpt.save_all(pl_module.model)
@@ -136,7 +138,7 @@ class ModelCheckpointCallback(Callback):
 
 
 class StopAtEpochsCallback(Callback):
-    def __init__(self, stop_epochs: List[List[Union[Dict[str, int], int]]], n_models: int, model: Layer, logger: Optional[Logger] = None):
+    def __init__(self, stop_epochs: List[List[Union[Dict[str, int], int]]], n_models: int, n_ens: int, model: Layer, logger: Optional[Logger] = None):
         print(f'Refit: {stop_epochs=}')
 
         # stop_epochs now has a dict with {metric_name: stop_epoch}, so we need to extract just the stop_epoch
@@ -150,7 +152,7 @@ class StopAtEpochsCallback(Callback):
         self.stop_epochs = [[get_epoch(ep) for ep in lst] for lst in stop_epochs]
         self.final_stop_epoch = np.max(sum(self.stop_epochs, []))
         self.model = model
-        self.ckpt = ParamCheckpointer(n_tv_splits=n_models, n_tt_splits=len(stop_epochs))
+        self.ckpt = ParamCheckpointer(n_tv_splits=n_models, n_tt_splits=len(stop_epochs), n_ens=n_ens)
         self.logger = logger
         self.n_models = n_models
 

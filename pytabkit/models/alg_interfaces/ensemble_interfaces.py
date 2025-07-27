@@ -64,7 +64,15 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
             with alg_ctx as alg_interface:
                 sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
                                    tmp_folders]
-                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
+                if self.config.get('diversify_seeds', False):
+                    sub_idxs_list = [SplitIdxs(train_idxs=idxs.train_idxs, val_idxs=idxs.val_idxs,
+                                               test_idxs=idxs.test_idxs, split_seed=idxs.split_seed + alg_idx,
+                                               sub_split_seeds=[sss + alg_idx for sss in idxs.sub_split_seeds],
+                                               split_id=idxs.split_id) for idxs in idxs_list]
+                else:
+                    sub_idxs_list = idxs_list
+                alg_interface.fit(ds, sub_idxs_list, interface_resources, logger, sub_tmp_folders,
+                                  name + f'sub-alg-{alg_idx}')
                 sub_fit_params.append(alg_interface.get_fit_params()[0])
 
         if self.fit_params is not None:
@@ -131,7 +139,6 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
                         best_step_weights = np.copy(weights)
 
                     weights[weight_idx] += 1
-
 
             if best_step_loss < best_loss:
                 best_loss = best_step_loss
@@ -202,7 +209,7 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
                                tmp_folders]
             with self.alg_contexts_[best_alg_idx] as alg_interface:
                 alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders,
-                                                  name + f'sub-alg-{best_alg_idx}')
+                                  name + f'sub-alg-{best_alg_idx}')
 
             return
 
@@ -228,7 +235,8 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
             with alg_ctx as alg_interface:
                 sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
                                    tmp_folders]
-                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders, name + f'sub-alg-{alg_idx}')
+                alg_interface.fit(ds, idxs_list, interface_resources, logger, sub_tmp_folders,
+                                  name + f'sub-alg-{alg_idx}')
                 y_preds = alg_interface.predict(ds)
                 # get out-of-bag predictions
                 y_pred_oob = cat_if_necessary([y_preds[j, idxs_list[0].val_idxs[j]]

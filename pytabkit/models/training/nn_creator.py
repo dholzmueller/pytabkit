@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, Callable, Dict, Any
 import numpy as np
 import torch
 
+from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset, ParallelDictDataLoader, TaskType, ValDictDataLoader
 from pytabkit.models.nn_models.base import set_hp_context, SequentialLayer, Layer, Variable
 from pytabkit.models.nn_models.models import NNFactory
@@ -115,43 +116,50 @@ class NNCreator:
         # in the single split case, we can already apply static fitters to the dataset
         is_single_split = len(idxs_list) == 1 and idxs_list[0].n_trainval_splits == 1
 
+        n_ens = self.config.get('n_ens', 1)
+
         models = []
         # Build non-static models
         for split_idx, split_idxs in enumerate(idxs_list):
+            # loop over different trainval-test splits
             # fit initial values only on train
             model_idx = 0
             with torch.no_grad():
                 # fit initial values on train_ds
                 for sub_idx in range(split_idxs.n_trainval_splits):
-                    if 'feature_importances' in self.config:
-                        self.hp_manager.get_more_info_dict()['feature_importances'] = \
-                            self.config['feature_importances'][model_idx]
-                    if 'fixed_weight' in self.config:
-                        self.hp_manager.get_more_info_dict()['fixed_weight'] = \
-                            self.config['fixed_weight'][model_idx]
-                    train_ds = ds.get_sub_dataset(split_idxs.train_idxs[sub_idx, :])
-                    # still call it 'trainval_ds'
-                    # because that's what the clipping and output standardization layers use
-                    self.hp_manager.get_more_info_dict()['trainval_ds'] = train_ds
-                    data_fitter, individual_fitter = dynamic_fitter.split_off_individual()
-                    ram_limit_gb = self.config.get('init_ram_limit_gb', 1.0)
-                    with set_hp_context(self.hp_manager):
-                        torch.manual_seed(split_idxs.split_seed)  # should not be necessary, but just in case
-                        data_tfm, tfmd_ds = data_fitter.fit_transform_subsample(
-                            train_ds, ram_limit_gb, needs_tensors=individual_fitter.needs_tensors)
+                    for ens_idx in range(n_ens):
+                        # loop over different train-val splits
+                        if 'feature_importances' in self.config:
+                            assert n_ens == 1  # don't know if model_idx is handled correctly otherwise
+                            self.hp_manager.get_more_info_dict()['feature_importances'] = \
+                                self.config['feature_importances'][model_idx]
+                        if 'fixed_weight' in self.config:
+                            assert n_ens == 1  # don't know if model_idx is handled correctly otherwise
+                            self.hp_manager.get_more_info_dict()['fixed_weight'] = \
+                                self.config['fixed_weight'][model_idx]
+                        train_ds = ds.get_sub_dataset(split_idxs.train_idxs[sub_idx, :])
+                        # still call it 'trainval_ds'
+                        # because that's what the clipping and output standardization layers use
+                        self.hp_manager.get_more_info_dict()['trainval_ds'] = train_ds
+                        data_fitter, individual_fitter = dynamic_fitter.split_off_individual()
+                        ram_limit_gb = self.config.get('init_ram_limit_gb', 1.0)
+                        with set_hp_context(self.hp_manager):
+                            torch.manual_seed(utils.combine_seeds(split_idxs.split_seed, ens_idx))  # should not be necessary, but just in case
+                            data_tfm, tfmd_ds = data_fitter.fit_transform_subsample(
+                                train_ds, ram_limit_gb, needs_tensors=individual_fitter.needs_tensors)
 
-                    torch.manual_seed(split_idxs.sub_split_seeds[sub_idx])
-                    with set_hp_context(self.hp_manager):
-                        individual_tfm = individual_fitter.fit_transform_subsample(
-                            tfmd_ds, ram_limit_gb=ram_limit_gb, needs_tensors=False)[0]
-                    if is_single_split and self.config.get('allow_single_split_opt', True):
-                        self.static_model = SequentialLayer([self.static_model, data_tfm])
-                        models.append(individual_tfm)
-                    else:
-                        models.append(SequentialLayer([data_tfm, individual_tfm]))
-                    self.hp_manager.get_more_info_dict()['trainval_ds'] = None
+                        torch.manual_seed(utils.combine_seeds(split_idxs.sub_split_seeds[sub_idx], ens_idx))
+                        with set_hp_context(self.hp_manager):
+                            individual_tfm = individual_fitter.fit_transform_subsample(
+                                tfmd_ds, ram_limit_gb=ram_limit_gb, needs_tensors=False)[0]
+                        if is_single_split and self.config.get('allow_single_split_opt', True):
+                            self.static_model = SequentialLayer([self.static_model, data_tfm])
+                            models.append(individual_tfm)
+                        else:
+                            models.append(SequentialLayer([data_tfm, individual_tfm]))
+                        self.hp_manager.get_more_info_dict()['trainval_ds'] = None
 
-                    model_idx += 1
+                        model_idx += 1
 
         # print(f'{models[0]=}')
         # for p in models[0].parameters():
@@ -160,6 +168,7 @@ class NNCreator:
 
         fixed_init_params: Optional[List[Variable]] = self.config.get('fixed_init_params', None)
         if fixed_init_params is not None:
+            assert n_ens == 1
             fixed_init_param_patterns = self.config['fixed_init_param_patterns']
             reinit_lr_factor = self.config.get('reinit_lr_factor', 1.0)
             for param, fixed_init_param in zip(vectorized_model.parameters(), fixed_init_params):
@@ -182,10 +191,12 @@ class NNCreator:
             L1L2RegCallback, \
             ModelCheckpointCallback
         callbacks = [HyperparamCallback(self.hp_manager), L1L2RegCallback(self.hp_manager, model)]
+        n_ens = self.config.get('n_ens', 1)
         # if validation
         if self.is_cv and self.fit_params is None and self.config.get('use_best_epoch', True):
             for val_metric_name in val_metric_names:
-                callbacks.append(ModelCheckpointCallback(self.n_tt_splits, n_tv_splits=self.n_tv_splits,
+                callbacks.append(ModelCheckpointCallback(n_tt_splits=self.n_tt_splits, n_tv_splits=self.n_tv_splits,
+                                                         n_ens=n_ens,
                                                          use_best_mean_epoch=self.config.get('use_best_mean_epoch_for_cv',
                                                                                              False),
                                                          val_metric_name=val_metric_name,
@@ -200,7 +211,7 @@ class NNCreator:
                                      f'requires setting use_best_epoch=True and n_cv==n_refit')
                 stop_epochs = [params['best_indiv_stop_epochs'] for params in self.fit_params]
             callbacks.append(
-                StopAtEpochsCallback(stop_epochs=stop_epochs, n_models=self.n_tv_splits, model=model,
+                StopAtEpochsCallback(stop_epochs=stop_epochs, n_models=self.n_tv_splits, n_ens=n_ens, model=model,
                                      logger=logger))
             # only for debugging:
             # callbacks.append(ValidationCallback(ds=ds, val_idxs=test_idxs,
@@ -214,11 +225,12 @@ class NNCreator:
         ds = ds.to(self.device_info)
         ds = self.static_model(ds)
         batch_size = self.config.get('batch_size', 256)
+        n_ens = self.config.get('n_ens', 1)
         if batch_size == 'auto':
             batch_size = get_realmlp_auto_batch_size(self.train_idxs.shape[0])
-        train_dl = ParallelDictDataLoader(ds, self.train_idxs, batch_size=batch_size,
+        train_dl = ParallelDictDataLoader(ds, self.train_idxs.repeat_interleave(n_ens, dim=0), batch_size=batch_size,
                                           shuffle=True, drop_last=True, adjust_bs=self.config.get('adjust_bs', False))
         val_dl = None
         if self.is_cv and self.fit_params is None:
-            val_dl = ValDictDataLoader(ds, self.val_idxs, val_batch_size=self.config.get('predict_batch_size', 1024))
+            val_dl = ValDictDataLoader(ds, self.val_idxs.repeat_interleave(n_ens, dim=0), val_batch_size=self.config.get('predict_batch_size', 1024))
         return train_dl, val_dl

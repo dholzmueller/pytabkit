@@ -51,7 +51,7 @@ pip install pytabkit[models]
   [faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md),
   which is only available on **conda**.
 - Please install torch separately if you want to control the version (CPU/GPU etc.)
-- Use `pytabkit[models,autogluon,extra,hpo,bench,dev]` to install additional dependencies for
+- Use `pytabkit[models,autogluon,extra,hpo,bench,dev]` to install additional dependencies for the other models,
   AutoGluon models, extra preprocessing,
   hyperparameter optimization methods beyond random search (hyperopt/SMAC),
   the benchmarking part, and testing/documentation. For the hpo part,
@@ -196,6 +196,15 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.6.0:
+    - Added support for other training losses in TabM through the `train_metric_name` parameter, 
+      for example, (multi)quantile regression via `train_metric_name='multi_pinball(0.05,0.95)'`.
+    - RealMLP-TD now adds the `n_ens` hyperparameter, which can be set to values >1 
+      to train ensembles per train-validation split (called PackedEnsemble in the TabM paper). 
+      This is especially useful when using holdout validation instead of cross-validation ensembles, 
+      and to get more reliable validation predictions and scores for tuning/ensembling.
+    - fixed RealMLP TabArena search space (`hpo_space_name='tabarena'`) for classification 
+      (allow no label smoothing through `use_ls=False` instead of `use_ls="auto"`).
 - v1.5.2: fixed more device bugs for HPO and ensembling
 - v1.5.1: fixed a device bug in TabM for GPU
 - v1.5.0:

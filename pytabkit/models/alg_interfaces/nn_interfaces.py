@@ -167,7 +167,7 @@ class NNAlgInterface(AlgInterface):
         static_tensor_infos = static_fitter.forward_tensor_infos(tensor_infos)
         n_params = fitter.get_n_params(tensor_infos)
         n_forward = fitter.get_n_forward(tensor_infos)
-        n_parallel = max(n_cv, n_refit) * n_splits
+        n_parallel = max(n_cv, n_refit) * n_splits * self.config.get('n_ens', 1)
         batch_size = self.config.get('batch_size', 256)
         if batch_size == 'auto':
             batch_size = get_realmlp_auto_batch_size(n_train)
@@ -191,6 +191,8 @@ class NNAlgInterface(AlgInterface):
         init_ram_gb_max = 1.2  # todo: rough estimate, a bit larger than what is allowed in fit_transform_subsample()
         init_ram_gb = min(init_ram_gb_max, init_ram_gb_full)
         # init_ram_gb = 1.5
+
+        # print(f'{ds_ram_gb=}, {pass_memory/(1024**3)=}, {param_memory/(1024**3)=}, {init_ram_gb=}')
 
         factor = 1.2  # to go safe on ram
         gpu_ram_gb = fixed_ram_gb + ds_ram_gb + max(init_ram_gb,
@@ -639,7 +641,7 @@ class RealMLPParamSampler:
                 'p_drop_sched': 'flat_cos',
                 'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
                 'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
-                'use_ls': rng.choice(["auto", True]),  # use label smoothing (will be ignored for regression)
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
             }
 
             if rng.uniform(0.0, 1.0) > 0.5:
@@ -685,7 +687,7 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
             is_classification = not ds.tensor_infos['y'].is_cont()
             self.fit_params = [RealMLPParamSampler(is_classification, **self.config).sample_params(hparam_seed)]
         # todo: need epoch for refit
-        params = utils.update_dict(self.config, self.fit_params[0])
+        params = utils.join_dicts(self.config, self.fit_params[0], self.config.get('override_params', dict()) or dict())
         # params = utils.update_dict(self.fit_params[0], self.config)
         if 'n_epochs' in self.config:
             params['n_epochs'] = self.config['n_epochs']

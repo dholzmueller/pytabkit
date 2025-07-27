@@ -92,10 +92,12 @@ def pinball_loss(y_pred: torch.Tensor, y: torch.Tensor, quantile: float, reducti
 def multi_pinball_loss(y_pred: torch.Tensor, y: torch.Tensor, quantiles: List[float], reduction='mean'):
     if y_pred.dim() != y.dim():
         raise RuntimeError('Multi-Pinball loss: y_pred.dim() != y.dim(): could lead to broadcasting errors')
+    # print(f'{y_pred.shape=}, {y.shape=}')
     err = y_pred - y
     assert y.shape[-1] == 1
     assert err.shape[-1] == len(quantiles)
     # print(f'{quantile*err=}')
+    # print(f'{y_pred[:5]=}, {y[:5]=}')
     quantiles = torch.as_tensor(quantiles, dtype=torch.float32, device=err.device)
     res = torch.maximum((1 - quantiles) * err, -quantiles * err).mean(dim=-1)
     return apply_reduction(res, reduction)

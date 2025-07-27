@@ -1,3 +1,4 @@
+import functools
 import math
 import random
 from pathlib import Path
@@ -76,6 +77,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         # set default to True for backward compatibility
         share_training_batches = self.config.get("share_training_batches", False)
         val_metric_name = self.config.get('val_metric_name', None)
+        train_metric_name = self.config.get('train_metric_name', None)
 
         weight_decay = self.config.get('weight_decay', 0.0)
         gradient_clipping_norm = self.config.get('gradient_clipping_norm', None)
@@ -145,9 +147,11 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
 
         Y_train = ds_parts['train'].tensors['y'].clone()
         if task_type == 'regression':
-            assert ds.tensor_infos['y'].get_n_features() == 1
-            self.y_mean_ = ds_parts['train'].tensors['y'].mean().item()
-            self.y_std_ = ds_parts['train'].tensors['y'].std(correction=0).item()
+            assert Y_train.shape[-1] == 1
+            self.y_mean_ = ds_parts['train'].tensors['y'].mean(dim=0, keepdim=True).item()
+            self.y_std_ = ds_parts['train'].tensors['y'].std(dim=0, keepdim=True, correction=0).item()
+            self.y_max_ = ds_parts['train'].tensors['y'].max().item()
+            self.y_min_ = ds_parts['train'].tensors['y'].min().item()
 
             Y_train = (Y_train - self.y_mean_) / (self.y_std_ + 1e-30)
 
@@ -170,7 +174,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             else None
         )
         # Changing False to True will result in faster training on compatible hardware.
-        amp_enabled = allow_amp and amp_dtype is not None
+        amp_enabled = allow_amp and amp_dtype is not None and device.type == 'cuda'
         grad_scaler = torch.cuda.amp.GradScaler() if amp_dtype is torch.float16 else None  # type: ignore
 
         # fmt: off
@@ -186,11 +190,14 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
 
         # TabM
         bins = None if num_emb_type != 'pwl' or n_cont_features == 0 else rtdl_num_embeddings.compute_bins(data['train']['x_cont'], n_bins=num_emb_n_bins)
+        d_out = n_classes if n_classes > 0 else 1
+        if train_metric_name is not None and train_metric_name.startswith('multi_pinball'):
+            d_out = train_metric_name.count(',')+1
 
         model = Model(
             n_num_features=n_cont_features,
             cat_cardinalities=cat_cardinalities,
-            n_classes=n_classes if n_classes > 0 else None,
+            n_classes=d_out,
             backbone={
                 'type': 'MLP',
                 'n_blocks': n_blocks if n_blocks != 'auto' else (3 if bins is None else 2),
@@ -212,6 +219,27 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             k=tabm_k,
             share_training_batches=share_training_batches,
         ).to(device)
+
+        # import tabm
+        # num_embeddings = None if bins is None else rtdl_num_embeddings.PiecewiseLinearEmbeddings(
+        #     bins=bins,
+        #     d_embedding=d_embedding,
+        #     activation=False,
+        #     version='B',
+        # )
+        # model = tabm.TabM(
+        #     n_num_features=n_cont_features,
+        #     cat_cardinalities=cat_cardinalities,
+        #     d_out = n_classes if n_classes > 0 else 1,
+        #     num_embeddings = num_embeddings,
+        #     n_blocks=n_blocks if n_blocks != 'auto' else (3 if bins is None else 2),
+        #     d_block=d_block,
+        #     dropout=dropout,
+        #     arch_type=arch_type,
+        #     k=tabm_k,
+        #     # todo: can introduce activation
+        #     share_training_batches=share_training_batches,  # todo: disappeared?
+        # )
         optimizer = torch.optim.AdamW(make_parameter_groups(model), lr=lr, weight_decay=weight_decay)
 
 
@@ -231,11 +259,17 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                     data[part]['x_cont'][idx],
                     data[part]['x_cat'][idx] if 'x_cat' in data[part] else None,
                 )
-                .squeeze(-1)  # Remove the last dimension for regression tasks.
                 .float()
             )
 
-        base_loss_fn = torch.nn.functional.mse_loss if task_type == 'regression' else torch.nn.functional.cross_entropy
+        if train_metric_name is None:
+            base_loss_fn = torch.nn.functional.mse_loss if self.n_classes_ == 0 else torch.nn.functional.cross_entropy  # defaults
+        elif train_metric_name == 'mse':
+            base_loss_fn = torch.nn.functional.mse_loss
+        elif train_metric_name == 'cross_entropy':
+            base_loss_fn = torch.nn.functional.cross_entropy
+        else:
+            base_loss_fn = functools.partial(Metrics.apply, metric_name=train_metric_name)
 
         def loss_fn(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
             # TabM produces k predictions per object. Each of them must be trained separately.
@@ -244,7 +278,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             k = y_pred.shape[1]
             return base_loss_fn(
                 y_pred.flatten(0, 1),
-                y_true.repeat_interleave(k) if model.share_training_batches else y_true.squeeze(-1),
+                y_true.repeat_interleave(k) if model.share_training_batches else y_true,
             )
 
         @evaluation_mode()
@@ -261,7 +295,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                         eval_batch_size
                     )
                     ]
-                ).cpu()
+                )
             )
             if task_type == 'regression':
                 # Transform the predictions back to the original label space.
@@ -278,6 +312,8 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                 y_pred = y_pred.mean(dim=1)
 
             y_true = data[part]['y'].cpu()
+            y_pred = y_pred.cpu()
+
             if task_type == 'regression' and len(y_true.shape) == 1:
                 y_true = y_true.unsqueeze(-1)
             if task_type == 'regression' and len(y_pred.shape) == 1:
@@ -390,7 +426,6 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                             ds.tensors['x_cont'][idx],
                             ds.tensors['x_cat'][idx] if not ds.tensor_infos['x_cat'].is_empty() else None,
                         )
-                        .squeeze(-1)  # Remove the last dimension for regression tasks.
                         .float()
                         for idx in torch.arange(ds.n_samples, device=self.device_).split(
                         eval_batch_size
@@ -400,9 +435,10 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             )
         if self.task_type_ == 'regression':
             # Transform the predictions back to the original label space.
-            y_pred = y_pred * self.y_std_ + self.y_mean_
             y_pred = y_pred.mean(1)
-            y_pred = y_pred.unsqueeze(-1)  # add extra "features" dimension
+            y_pred = y_pred * self.y_std_ + self.y_mean_
+            if self.config.get('clamp_output', False):
+                y_pred = torch.clamp(y_pred, self.y_min_, self.y_max_)
         else:
             average_logits = self.config.get('average_logits', False)
             if average_logits:
@@ -411,7 +447,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                 # For classification, the mean must be computed in the probability space.
                 y_pred = torch.log(torch.softmax(y_pred, dim=-1).mean(1) + 1e-30)
 
-        return y_pred[None]  # add n_models dimension
+        return y_pred[None].cpu()  # add n_models dimension
 
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:
@@ -440,7 +476,7 @@ class RandomParamsTabMAlgInterface(RandomParamsAlgInterface):
             params = {
                 "batch_size": "auto",
                 "patience": 16,
-                "amp": True,
+                "allow_amp": True,
                 "arch_type": "tabm-mini",
                 "tabm_k": 32,
                 "gradient_clipping_norm": 1.0,
@@ -461,7 +497,7 @@ class RandomParamsTabMAlgInterface(RandomParamsAlgInterface):
             params = {
                 "batch_size": "auto",
                 "patience": 16,
-                "amp": False,  # only for GPU, maybe we should change it to True?
+                "allow_amp": False,  # only for GPU, maybe we should change it to True?
                 "arch_type": "tabm-mini",
                 "tabm_k": 32,
                 "gradient_clipping_norm": 1.0,

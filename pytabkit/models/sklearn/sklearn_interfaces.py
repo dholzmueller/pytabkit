@@ -86,6 +86,8 @@ class RealMLPConstructorMixin:
                  calibration_method: Optional[str] = None,
                  sort_quantile_predictions: Optional[bool] = None,
                  stop_epoch: Optional[int] = None,
+                 use_best_mean_epoch_for_cv: Optional[bool] = None,
+                 n_ens: Optional[int] = None,
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
@@ -251,6 +253,11 @@ class RealMLPConstructorMixin:
             Epoch at which training should be stopped (for refitting).
             The total length of training used for the schedules will be determined by n_epochs,
             but the stopping epoch will be min(stop_epoch, n_epochs).
+        :param use_best_mean_epoch_for_cv: If training an ensemble,
+            whether they should all use a checkpoint from the same epoch with the best average loss,
+            instead of using the best individual epochs (default=False).
+        :param n_ens: Number of ensemble members that should be used per train-validation split (default=1).
+            For best-epoch selection, the validation scores of averaged predictions will be used.
         """
         super().__init__()  # call the constructor of the other superclass for multiple inheritance
         self.device = device
@@ -323,6 +330,8 @@ class RealMLPConstructorMixin:
         self.calibration_method = calibration_method
         self.sort_quantile_predictions = sort_quantile_predictions
         self.stop_epoch = stop_epoch
+        self.use_best_mean_epoch_for_cv = use_best_mean_epoch_for_cv
+        self.n_ens = n_ens
 
 
 class RealMLP_TD_Classifier(RealMLPConstructorMixin, AlgInterfaceClassifier):
@@ -1762,6 +1771,7 @@ class TabMConstructorMixin:
                  calibration_method: Optional[str] = None,
                  share_training_batches: Optional[bool] = None,
                  val_metric_name: Optional[str] = None,
+                 train_metric_name: Optional[str] = None,
                  ):
         """
 
@@ -1826,6 +1836,9 @@ class TabMConstructorMixin:
         :param val_metric_name: Name of the validation metric used for early stopping.
             For classification, the default is 'class_error' but could be 'cross_entropy', 'brier', '1-auc_ovr' etc.
             For regression, the default is 'rmse' but could be 'mae'.
+        :param train_metric_name: Name of the metric (loss) used for training.
+            For classification, the default is 'cross_entropy'.
+            For regression, it is 'mse' but could be set to something like 'multi_pinball(0.05,0.95)'.
         """
         self.device = device
         self.random_state = random_state
