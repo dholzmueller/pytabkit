@@ -1870,6 +1870,7 @@ class TabMConstructorMixin:
         self.calibration_method = calibration_method
         self.share_training_batches = share_training_batches
         self.val_metric_name = val_metric_name
+        self.train_metric_name = train_metric_name
 
 
 class TabM_D_Classifier(TabMConstructorMixin, AlgInterfaceClassifier):
