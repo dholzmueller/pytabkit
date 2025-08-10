@@ -35,7 +35,7 @@ for continuous and categorical variables.
 Moreover, during training, we also pass the labels 'y' through the Layer, 
 which allows to implement mixup, label smoothing, 
 and output standardization as Layer objects.
-- `Fitter` classes initialize the NN based on a single foward pass 
+- `Fitter` classes initialize the NN based on a single forward pass 
 on the (subsampled) training (and possibly validation) set. 
 This is done using the `fit()` or `fit_transform()` functions 
 similar to scikit-learn preprocessing classes, 

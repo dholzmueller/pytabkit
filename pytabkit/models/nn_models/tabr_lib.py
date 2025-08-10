@@ -821,7 +821,7 @@ def cat(data: List[T], /, dim: int = 0) -> T:
     The same works for sequences of named tuples, dataclasses, tensors and
     nested combinations of all mentioned collection types.
 
-    *Below, additinal technical examples are provided.*
+    *Below, additional technical examples are provided.*
 
     The common setup:
 

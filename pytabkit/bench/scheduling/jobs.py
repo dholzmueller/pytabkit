@@ -17,12 +17,12 @@ class JobResult:
         """
         :param job_id: Job id.
         :param time_s: Time in seconds that the job ran for.
-        :param oom_cpu: Whether an out-of-memory error occured on the CPU.
-        :param oom_gpu: Whether an out-of-memory error occured on the GPU.
+        :param oom_cpu: Whether an out-of-memory error occurred on the CPU.
+        :param oom_gpu: Whether an out-of-memory error occurred on the GPU.
         :param finished_normally: Whether the job ran normally,
             such that its time and RAM values are representative of how it would normally run.
             For example, if the job ran faster because the results were already partially precomputed,
-            it should not count towards the time estimation. Of course, if an exception occured,
+            it should not count towards the time estimation. Of course, if an exception occurred,
             we should have finished_normally=False.
         :param exception_msg: Exception message (if there was any).
         """

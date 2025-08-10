@@ -796,7 +796,7 @@ class NeuralNetClassifierWrapped(NeuralNetClassifier):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.categorical_indicator = None
-        self.n_classes = None  # automatically infered from train if not set
+        self.n_classes = None  # automatically inferred from train if not set
 
     def set_categorical_indicator(self, categorical_indicator):
         self.categorical_indicator = categorical_indicator
@@ -843,7 +843,7 @@ def initialize_optimizer_ft_transformer(self, triggered_directly=None):
         Deprecated, don't use it anymore.
 
     """
-    # handle deprecated paramter
+    # handle deprecated parameter
     # if triggered_directly is not None:
     #     warnings.warn(
     #         "The 'triggered_directly' argument to 'initialize_optimizer' is "

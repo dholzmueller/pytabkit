@@ -31,7 +31,7 @@ class _SwishJitAutoFn(torch.autograd.Function):
         return _swish_jit_bwd(x, grad_output)
 
 
-# don't use the optimized version since this seems to behave slighty differently for Pytorch Lightning
+# don't use the optimized version since this seems to behave slightly differently for Pytorch Lightning
 # def swish(x): return _SwishJitAutoFn.apply(x)
 def swish(x): return x * torch.sigmoid(x)
 
@@ -59,7 +59,7 @@ class MishJitAutoFn(torch.autograd.Function):
         return _mish_jit_bwd(x, grad_output)
 
 
-# don't use the optimized version since this seems to behave slighty differently for Pytorch Lightning
+# don't use the optimized version since this seems to behave slightly differently for Pytorch Lightning
 # def mish(x): return MishJitAutoFn.apply(x)
 def mish(x): return x.mul(torch.tanh(F.softplus(x)))
 

@@ -112,7 +112,7 @@ but fails to run predict() due to pytorch-lightning device issues.
 
 .. code-block:: language
     import torch
-    import dill  # might also work with pickle instad
+    import dill  # might also work with pickle instead
     torch.save(model, 'model.pkl', pickle_module=dill, _use_new_zipfile_serialization=False)
     model = torch.load('model.pkl', map_location='cpu', pickle_module=dill)
 

@@ -70,9 +70,9 @@ import torch
 #     predictions = clf.predict(X_test)
 #     # If no error is raised, the classifier can handle unseen categories
 #
-# @pytest.mark.parametrize("tranformed_target", [True, False])
+# @pytest.mark.parametrize("transformed_target", [True, False])
 # @pytest.mark.parametrize("model_name", ["resnet", "mlp", "ft_transformer"])
-# def test_regressor_numerical_categorical(tranformed_target, model_name):
+# def test_regressor_numerical_categorical(transformed_target, model_name):
 #     # Generate synthetic data with a mix of numerical and categorical features
 #     X, y = make_regression(n_samples=1000, n_features=3, n_informative=2, random_state=43)
 #     cat_feature = np.random.choice([1, 2, 3], size=X.shape[0])
@@ -84,11 +84,11 @@ import torch
 #     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=43)
 #
 #     if model_name == "resnet":
-#         regressor = Resnet_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
+#         regressor = Resnet_RTDL_D_Regressor(transformed_target=transformed_target, random_state=41, device="cpu")
 #     elif model_name == "mlp":
-#         regressor = MLP_RTDL_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
+#         regressor = MLP_RTDL_D_Regressor(transformed_target=transformed_target, random_state=41, device="cpu")
 #     elif model_name == "ft_transformer":
-#         regressor = FTT_D_Regressor(transformed_target=tranformed_target, random_state=41, device="cpu")
+#         regressor = FTT_D_Regressor(transformed_target=transformed_target, random_state=41, device="cpu")
 #     regressor.fit(X_train, y_train, cat_indicator=cat_features)
 #     predictions = regressor.predict(X_test)
 #

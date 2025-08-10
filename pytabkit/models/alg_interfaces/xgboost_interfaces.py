@@ -498,7 +498,7 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 # 'max_bin'  # also makes things slower
             }
         elif hpo_space_name == 'large-v3':
-            # shrunk verion of large-v2: removed gamma, colsample_bytree
+            # shrunk version of large-v2: removed gamma, colsample_bytree
             params = {
                 'n_estimators': 1000,
                 'early_stopping_rounds': 50,
@@ -513,7 +513,7 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 'grow_policy': rng.choice(['depthwise', 'lossguide']),
             }
         elif hpo_space_name == 'large-v4':
-            # modified verion of large-v3
+            # modified version of large-v3
             params = {
                 'n_estimators': 1000,
                 'early_stopping_rounds': 50,
@@ -529,7 +529,7 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 'max_leaves': round(np.exp(rng.uniform(np.log(2.0), np.log(2048.0))))  # added
             }
         elif hpo_space_name == 'large-v5':
-            # shrunk verion of large-v3 but without the extra stuff from large-v4
+            # shrunk version of large-v3 but without the extra stuff from large-v4
             params = {
                 'n_estimators': 1000,
                 'early_stopping_rounds': 50,
@@ -543,7 +543,7 @@ class RandomParamsXGBAlgInterface(RandomParamsAlgInterface):
                 'reg_lambda': np.exp(rng.uniform(np.log(1e-3), np.log(20.0))),  # modified
             }
         elif hpo_space_name == 'large-v6':
-            # shrunk verion of large-v4
+            # shrunk version of large-v4
             params = {
                 'n_estimators': 1000,
                 'early_stopping_rounds': 50,

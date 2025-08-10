@@ -1053,7 +1053,7 @@ class GrandeWrapper:
             'learning_rate_weights': 0.005,  # learning rate for leaf weights
             'learning_rate_index': 0.01,  # learning rate for split indices
             'learning_rate_values': 0.01,  # learning rate for split values
-            'learning_rate_leaf': 0.01,  # learning rate for leafs (logits)
+            'learning_rate_leaf': 0.01,  # learning rate for leaves (logits)
 
             'optimizer': 'adam',  # optimizer
             'cosine_decay_steps': 0,  # decay steps for lr schedule (CosineDecayRestarts)
