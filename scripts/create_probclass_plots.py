@@ -98,7 +98,7 @@ def plot_barscatter_ax(ax: plt.Axes, df: pd.DataFrame, xlabel: Optional[str], yl
     hue_order = hues
 
     # Make sure to remove the 'facecolor': 'w' property here, otherwise
-    # the palette gets overrided
+    # the palette gets overridden
     boxprops = {'edgecolor': 'k', 'linewidth': 1}
     lineprops = {'color': 'k', 'linewidth': 1}
 

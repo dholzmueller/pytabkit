@@ -14,7 +14,7 @@ a list of the most important hyperparameters.
 
 ## Datasets
 
-We represent our datasets using the `DictDatset` class from `tab_models`.
+We represent our datasets using the `DictDataset` class from `tab_models`.
 These datasets can be loaded as follows:
 
 ```python

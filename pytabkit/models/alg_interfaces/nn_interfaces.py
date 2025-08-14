@@ -307,7 +307,7 @@ class NNHyperoptAlgInterface(OptAlgInterface):
             }
             utils.update_dict(default_config, remove_keys=list(space.keys()))
         elif not isinstance(space, dict):
-            print(f'Unkown hyperparameter space: {space}')
+            print(f'Unknown hyperparameter space: {space}')
 
         config = utils.update_dict(default_config, config)
         opt_class = SMACOptimizer if opt_method == 'smac' else HyperoptOptimizer

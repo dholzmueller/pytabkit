@@ -334,7 +334,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         }
         best_params = [p.clone() for p in model.parameters()]
         # Early stopping: the training stops when
-        # there are more than `patience` consequtive bad updates.
+        # there are more than `patience` consecutive bad updates.
         remaining_patience = patience
 
         try:

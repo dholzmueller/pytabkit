@@ -252,7 +252,7 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
             # with these parameters, catboost will reload from the model automatically if it is there
         bst = catboost.CatBoost(params)
         with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', message='Can\'t optimze method "evaluate" because self argument is used')
+            warnings.filterwarnings('ignore', message='Can\'t optimize method "evaluate" because self argument is used')
             bst.fit(self._convert_ds(train_ds), eval_set=None if val_ds is None else self._convert_ds(val_ds))
 
         if val_ds is not None:

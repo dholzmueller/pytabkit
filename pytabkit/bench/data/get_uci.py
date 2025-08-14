@@ -621,7 +621,7 @@ def get_metro_interstate_traffic_volume():
     replace_chars_in_file('metro_interstate_traffic_volume.data', '  ', ' ')
     
     
-    # Now we are in the position ot read the data, convert the time and date, and movel the labels
+    # Now we are in the position to read the data, convert the time and date, and movel the labels
     
     
     data = load_raw_data('metro_interstate_traffic_volume_short.data', ',', description_columns = 0, date_column = 16, date_sep = '-', date_order = 'Ymd', time_column = 17, time_sep = ':')
@@ -736,7 +736,7 @@ def get_tarvel_review_ratings():
     prepare_new_data_set_group_id()
     
     
-    # Download the data and correct the mispelling of its name
+    # Download the data and correct the misspelling of its name
     
     download_and_save('http://archive.ics.uci.edu/ml/machine-learning-databases/00485/google_review_ratings.csv', 'travel_review_ratings.data')
     
@@ -1332,8 +1332,8 @@ def get_smartphone_human_activity():
 def get_artificial_characters():
     
     prepare_new_data_set_group_id()
-    #download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/artificial-characters/character.tar.Z', 'artficial_characters.tar.Z')
-    #download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/artificial-characters/character.names', 'artficial_characters.description')
+    #download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/artificial-characters/character.tar.Z', 'artificial_characters.tar.Z')
+    #download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/artificial-characters/character.names', 'artificial_characters.description')
 
     print("Artificial Characters is currently not processed since:")
     print("  - the data comes in a rather convoluted form")
@@ -1534,7 +1534,7 @@ def get_thyroids():
     download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/thyroid-disease/dis.test', 'thyroid_dis.test.data') 
     download_and_save('https://archive.ics.uci.edu/ml/machine-learning-databases/thyroid-disease/dis.names', 'thyroid_dis.description')
 
-    # new-thyroid.data only contains 215 samples and is thus ommitted
+    # new-thyroid.data only contains 215 samples and is thus omitted
 
     download_and_save('http://archive.ics.uci.edu/ml/machine-learning-databases/thyroid-disease/hypothyroid.data', 'thyroid_hypo.data') 
     download_and_save('http://archive.ics.uci.edu/ml/machine-learning-databases/thyroid-disease/hypothyroid.names', 'thyroid_hypo.description')
@@ -2819,7 +2819,7 @@ def get_wave_energy():
 
     # For each of the 4 data sets, the last column contains the sum of columns 32 to 47.
     # I assume the last column is the label and columns 32 to 47 are intermediate results
-    # and that only the first 32 colums should be used as features.
+    # and that only the first 32 columns should be used as features.
     indices = range(32, 48)
 
     data_adelaide = load_raw_data('WECs_DataSet/Adelaide_Data.csv', sep=',')

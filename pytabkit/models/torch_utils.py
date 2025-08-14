@@ -54,7 +54,7 @@ def cat_if_necessary(tensors: List[torch.Tensor], dim: int):
     This can make it faster if no copying behavior is needed.
     :param tensors: Tensors to be concatenated.
     :param dim: Dimension in which the tensor should be concatenated.
-    :return: The concatendated tensor.
+    :return: The concatenated tensor.
     """
     if len(tensors) == 1:
         return tensors[0]

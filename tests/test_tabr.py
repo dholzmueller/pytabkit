@@ -57,8 +57,8 @@ import torch
 #     # If no error is raised, the classifier can handle unseen categories
 #
 #
-# @pytest.mark.parametrize("tranformed_target", [True, False])
-# def test_regressor_numerical_categorical(tranformed_target):
+# @pytest.mark.parametrize("transformed_target", [True, False])
+# def test_regressor_numerical_categorical(transformed_target):
 #     # Generate synthetic data with a mix of numerical and categorical features
 #     X, y = make_regression(n_samples=1000, n_features=5, n_informative=3, random_state=42)
 #     cat_feature = np.random.choice([1, 2, 3], size=X.shape[0])
@@ -70,7 +70,7 @@ import torch
 #     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 #
 #     # Train the regressor
-#     regressor = TabR_S_D_Regressor(n_epochs=20, transformed_target=tranformed_target)
+#     regressor = TabR_S_D_Regressor(n_epochs=20, transformed_target=transformed_target)
 #     regressor.fit(X_train, y_train, cat_features=cat_features)
 #     predictions = regressor.predict(X_test)
 #

@@ -136,7 +136,7 @@ class RealMLPConstructorMixin:
         :param verbosity: Verbosity level (default=0, higher means more verbose).
             Set to 2 to see logs from intermediate epochs.
         :param train_metric_name: Name of the training metric
-            (default='cross_entropy' for clasification and 'mse' for regression).
+            (default='cross_entropy' for classification and 'mse' for regression).
             Currently most other metrics are not available for training.
         :param val_metric_name: Name of the validation metric (used for selecting the best epoch).
             Defaults are 'class_error' for classification and 'rmse' for regression.
