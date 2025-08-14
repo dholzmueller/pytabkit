@@ -86,6 +86,7 @@ class TabNNModule(pl.LightningModule):
         self.creator.setup_from_dataset(
             ds, idxs_list=idxs_list, interface_resources=interface_resources
         )
+        self.is_classification_ = ds.tensor_infos['y'].is_cat()
         self.model = self.creator.create_model(ds, idxs_list=idxs_list)
         self.train_dl, self.val_dl = self.creator.create_dataloaders(ds)
         self.criterion, self.val_metric_names = self.creator.get_criterions()
@@ -278,11 +279,13 @@ class TabNNModule(pl.LightningModule):
         if n_ens == 1:
             return y_pred
 
-        old_shape = y_pred.shape
         y_pred = y_pred.reshape(y_pred.shape[0] // n_ens, n_ens, *y_pred.shape[1:])
-        # todo: we're averaging logits for now because it's easier
-        #  (don't have to find out if it's classification or regression)
-        y_pred = y_pred.mean(dim=1)
+        if self.is_classification_ and not self.config.get('ens_av_before_softmax', False):
+            y_pred = torch.softmax(y_pred, dim=-1)
+            y_pred = y_pred.mean(dim=1)
+            y_pred = torch.log(y_pred + 1e-30)
+        else:
+            y_pred = y_pred.mean(dim=1)
         return y_pred
 
 

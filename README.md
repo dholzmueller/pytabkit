@@ -19,8 +19,8 @@ on our benchmarks.
 
 - **To get the best possible results**: 
   - Generally we recommend AutoGluon for the best possible results, 
-    though it does not include all the models from pytabkit.
-    It will probably include RealMLP in the upcoming 1.4 version. 
+    though it does not include all the models from pytabkit. AutoGluon 1.4
+    includes RealMLP (though not in a default configuration) and TabM (in the "extreme" preset for <= 30K samples).
   - To get the best possible results from `pytabkit`, 
     we recommend using 
     `Ensemble_HPO_Classifier(n_cv=8, use_full_caruana_ensembling=True, use_tabarena_spaces=True, n_hpo_steps=50)` 
@@ -32,7 +32,7 @@ on our benchmarks.
     also with `val_metric_name` as above, or the corresponding `Regressor`.
 - **Models**: [TabArena](https://github.com/AutoGluon/tabrepo) 
   also includes some newer models like RealMLP and TabM 
-  with more general preprocessing (missing numericals, text, etc.),  
+  with more general preprocessing (missing numericals, text, etc.),
   as well as very good boosted tree implementations.
   `pytabkit` is currently still easier to use 
   and supports vectorized cross-validation for RealMLP, 
@@ -196,6 +196,11 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.6.1:
+    - For `n_ens>1`, changed the default behavior for classification to averaging probabilities instead of logits.
+      This can be reverted by setting `ens_av_before_softmax=True`.
+    - Implemented time limit for HPO/ensemble methods through `time_limit_s` parameter.
+    - Support `torch>=2.6` and Python 3.13.
 - v1.6.0:
     - Added support for other training losses in TabM through the `train_metric_name` parameter, 
       for example, (multi)quantile regression via `train_metric_name='multi_pinball(0.05,0.95)'`.

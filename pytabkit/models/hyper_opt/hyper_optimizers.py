@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from typing import Callable, Tuple, Any, Dict, Union
+from typing import Callable, Tuple, Any, Dict, Union, Optional
 
 import numpy as np
 
@@ -156,7 +156,8 @@ class HyperoptOptimizer(HyperOptimizer):
         else:
             raise ValueError(f'Unknown hyperopt_algo name "{algo_name}"')
         fn = HyperoptOptimizer.HyperoptFuncWrapper(f, self.fixed_params)
-        _ = hyperopt.fmin(fn=fn,
+        time_limit_s: Optional[float] = self.config.get('time_limit_s', None)
+        _ = hyperopt.fmin(fn=fn, timeout=None if time_limit_s is None else int(time_limit_s),
                           space=self.space, algo=algo, max_evals=self.n_hyperopt_steps, trials=trials,
                           rstate=np.random.default_rng(seed=seed), verbose=False, show_progressbar=False)
 

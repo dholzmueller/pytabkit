@@ -1,4 +1,5 @@
 import copy
+import time
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -92,7 +93,13 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
         n_caruana_steps = self.config.get('n_caruana_steps', 40)  # default value is taken from TabRepo paper (IIRC)
 
         y_preds_oob_list = []
+
+        time_limit_s: Optional[float] = self.config.get('time_limit_s', None)
+        start_time = time.time()
+
         for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            if alg_idx > 0 and time_limit_s is not None and (alg_idx+1)/alg_idx*(time.time()-start_time) > time_limit_s:
+                break
             with alg_ctx as alg_interface:
                 y_preds = alg_interface.predict(ds)
                 # get out-of-bag predictions
@@ -231,7 +238,12 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
         best_alg_loss = np.inf
         best_sub_fit_params = None
 
+        time_limit_s: Optional[float] = self.config.get('time_limit_s', None)
+        start_time = time.time()
+
         for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            if alg_idx > 0 and time_limit_s is not None and (alg_idx+1)/alg_idx*(time.time()-start_time) > time_limit_s:
+                break
             with alg_ctx as alg_interface:
                 sub_tmp_folders = [tmp_folder / str(alg_idx) if tmp_folder is not None else None for tmp_folder in
                                    tmp_folders]

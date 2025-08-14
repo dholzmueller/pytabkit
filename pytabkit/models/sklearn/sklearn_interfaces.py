@@ -88,6 +88,7 @@ class RealMLPConstructorMixin:
                  stop_epoch: Optional[int] = None,
                  use_best_mean_epoch_for_cv: Optional[bool] = None,
                  n_ens: Optional[int] = None,
+                 ens_av_before_softmax: Optional[int] = None,
                  ):
         """
         Constructor for RealMLP, using the default parameters from RealMLP-TD.
@@ -258,6 +259,9 @@ class RealMLPConstructorMixin:
             instead of using the best individual epochs (default=False).
         :param n_ens: Number of ensemble members that should be used per train-validation split (default=1).
             For best-epoch selection, the validation scores of averaged predictions will be used.
+        :param ens_av_before_softmax: When using classifiction with n_ens>1, whether to average
+            the ensemble predictions on each train-val split before taking the softmax (default=False). We recommend
+            using False as it is representative of the averaging of models across train-val splits.
         """
         super().__init__()  # call the constructor of the other superclass for multiple inheritance
         self.device = device
@@ -332,6 +336,7 @@ class RealMLPConstructorMixin:
         self.stop_epoch = stop_epoch
         self.use_best_mean_epoch_for_cv = use_best_mean_epoch_for_cv
         self.n_ens = n_ens
+        self.ens_av_before_softmax = ens_av_before_softmax
 
 
 class RealMLP_TD_Classifier(RealMLPConstructorMixin, AlgInterfaceClassifier):
@@ -844,6 +849,7 @@ class GBDTHPOConstructorMixin:
                  n_hyperopt_steps: Optional[int] = None,
                  calibration_method: Optional[str] = None,
                  use_caruana_ensembling: Optional[bool] = None,
+                 time_limit_s: Optional[float] = None,
                  ):
         self.device = device
         self.random_state = random_state
@@ -859,6 +865,7 @@ class GBDTHPOConstructorMixin:
         self.n_hyperopt_steps = n_hyperopt_steps
         self.calibration_method = calibration_method
         self.use_caruana_ensembling = use_caruana_ensembling
+        self.time_limit_s = time_limit_s
 
 
 class XGB_HPO_Classifier(GBDTHPOConstructorMixin, AlgInterfaceClassifier):
@@ -1132,6 +1139,7 @@ class RealMLPHPOConstructorMixin:
                  calibration_method: Optional[str] = None, hpo_space_name: Optional[str] = None,
                  n_caruana_steps: Optional[int] = None, n_epochs: Optional[int] = None,
                  use_caruana_ensembling: Optional[bool] = None, train_metric_name: Optional[str] = None,
+                 time_limit_s: Optional[float] = None,
                  ):
         """
 
@@ -1189,6 +1197,7 @@ class RealMLPHPOConstructorMixin:
         :param train_metric_name: Name of the training metric
             (default is cross_entropy for classification and mse for regression).
             For regression, pinball/multi_pinball can be used instead.
+        :param time_limit_s: Time limit in seconds (default=None).
         """
         self.device = device
         self.random_state = random_state
@@ -1207,6 +1216,7 @@ class RealMLPHPOConstructorMixin:
         self.n_epochs = n_epochs
         self.use_caruana_ensembling = use_caruana_ensembling
         self.train_metric_name = train_metric_name
+        self.time_limit_s = time_limit_s
 
 
 class RealMLP_HPO_Classifier(RealMLPHPOConstructorMixin, AlgInterfaceClassifier):
@@ -2230,6 +2240,7 @@ class EnsembleHPOConstructorMixin:
                  use_full_caruana_ensembling: bool = False,
                  n_caruana_steps: int = 40,
                  use_tabarena_spaces: bool = False,
+                 time_limit_s: Optional[float] = None,
                  ):
         """
         :param device:
@@ -2250,6 +2261,7 @@ class EnsembleHPOConstructorMixin:
             True should give better results (with larger inference time).
         :param n_caruana_steps: How many iterations to use for Caruana et al. (2004) weighted ensembling.
         :param use_tabarena_spaces: Whether to use search spaces from TabArena instead of from the RealMLP paper.
+        :param time_limit_s: Time limit in seconds (default=None).
         """
         self.device = device
         self.random_state = random_state
@@ -2266,6 +2278,7 @@ class EnsembleHPOConstructorMixin:
         self.use_full_caruana_ensembling = use_full_caruana_ensembling
         self.n_caruana_steps = n_caruana_steps
         self.use_tabarena_spaces = use_tabarena_spaces
+        self.time_limit_s = time_limit_s
 
 
 class Ensemble_HPO_Classifier(EnsembleHPOConstructorMixin, AlgInterfaceClassifier):
@@ -2282,6 +2295,7 @@ class Ensemble_HPO_Classifier(EnsembleHPOConstructorMixin, AlgInterfaceClassifie
         if self.use_tabarena_spaces:
             extra_params['hpo_space_name'] = 'tabarena'
         extra_params['n_caruana_steps'] = self.n_caruana_steps
+        extra_params['time_limit_s'] = self.time_limit_s
         n_hpo_steps = self.n_hpo_steps or 50
         hpo_configs = [
             [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in
@@ -2315,6 +2329,7 @@ class Ensemble_HPO_Regressor(EnsembleHPOConstructorMixin, AlgInterfaceRegressor)
         if self.use_tabarena_spaces:
             extra_params['hpo_space_name'] = 'tabarena'
         extra_params['n_caruana_steps'] = self.n_caruana_steps
+        extra_params['time_limit_s'] = self.time_limit_s
         n_hpo_steps = self.n_hpo_steps or 50
         hpo_configs = [
             [RandomParamsLGBMAlgInterface(model_idx=i, **extra_params, allow_gpu=False) for i in

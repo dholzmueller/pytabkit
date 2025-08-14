@@ -340,7 +340,8 @@ class RealMLPParamSampler:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
                                        'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9', 'alt10',
-                                       'tabarena']
+                                       'tabarena', 'alt11', 'alt12', 'alt13', 'alt14', 'alt15', 'alt16', 'alt17',
+                                       'alt18']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -660,6 +661,186 @@ class RealMLPParamSampler:
                 params['plr_hidden_2'] = 4
                 params['n_epochs'] = 256
                 params['use_early_stopping'] = False
+        elif self.hpo_space_name == 'alt11':
+            # tabarena without the large configs
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+            }
+        elif self.hpo_space_name == 'alt12':
+            # alt11 with n_hidden_layers=1 in the search space
+            params = {
+                'n_hidden_layers': rng.integers(1, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+            }
+        elif self.hpo_space_name == 'alt13':
+            # alt11 with more categorical hyperparameters
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+            }
+        elif self.hpo_space_name == 'alt14':
+            # alt13 with weight_init_mode='normal'
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'weight_init_mode': 'normal',
+            }
+        elif self.hpo_space_name == 'alt15':
+            # alt13 with tuning momentum (beta1)
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'mom': 1.0 - np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))), # tune in [0.7, 0.98]
+            }
+        elif self.hpo_space_name == 'alt16':
+            # alt13 with n_ens=2
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'n_ens': 2,
+                'ens_av_before_softmax': True,
+            }
+        elif self.hpo_space_name == 'alt17':
+            # alt13 with n_ens=4
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'n_ens': 4,
+                'ens_av_before_softmax': True,
+            }
+        elif self.hpo_space_name == 'alt18':
+            # alt17 but with averaging after softmax
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'n_ens': 4,
+                'ens_av_before_softmax': False,
+            }
 
         # print(f'{params=}')
 

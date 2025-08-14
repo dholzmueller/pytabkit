@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "License :: OSI Approved :: Apache Software License",
@@ -44,7 +45,7 @@ dependencies = [
 models = [
     # use <2.6 for now since it can run into pickling issues with skorch if the skorch version is too old
     # see https://github.com/skorch-dev/skorch/commit/be93b7769d61aa22fb928d2e89e258c629bfeaf9
-    "torch>=2.0,<2.6",
+    "torch>=2.0",
     "xgboost>=2.0",
     "catboost>=1.2",
     "lightgbm>=4.1",
@@ -69,8 +70,8 @@ models = [
     "pyyaml>=5.0",
     "msgpack>=1.0",
     # apparently msgpack_numpy fixed some bug in using numpy arrays in msgpack?
-    # but apparently it can also cause a bug in ray due to its monkey-patching of msgpack functions# in theory we shouldn't be using if for numpy arrays at the moment, not sure why the need for this occured
-    # maybe it occured because we tried to save hyperparameters that were numpy scalars instead of python scalars
+    # but apparently it can also cause a bug in ray due to its monkey-patching of msgpack functions# in theory we shouldn't be using if for numpy arrays at the moment, not sure why the need for this occurred
+    # maybe it occurred because we tried to save hyperparameters that were numpy scalars instead of python scalars
     # "msgpack_numpy>=0.4",
 ]
 autogluon = [

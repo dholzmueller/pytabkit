@@ -145,10 +145,12 @@ class NNCreator:
                         ram_limit_gb = self.config.get('init_ram_limit_gb', 1.0)
                         with set_hp_context(self.hp_manager):
                             torch.manual_seed(utils.combine_seeds(split_idxs.split_seed, ens_idx))  # should not be necessary, but just in case
+                            # torch.manual_seed(split_idxs.split_seed + ens_idx)  # should not be necessary, but just in case
                             data_tfm, tfmd_ds = data_fitter.fit_transform_subsample(
                                 train_ds, ram_limit_gb, needs_tensors=individual_fitter.needs_tensors)
 
                         torch.manual_seed(utils.combine_seeds(split_idxs.sub_split_seeds[sub_idx], ens_idx))
+                        # torch.manual_seed(split_idxs.sub_split_seeds[sub_idx] + ens_idx)
                         with set_hp_context(self.hp_manager):
                             individual_tfm = individual_fitter.fit_transform_subsample(
                                 tfmd_ds, ram_limit_gb=ram_limit_gb, needs_tensors=False)[0]
