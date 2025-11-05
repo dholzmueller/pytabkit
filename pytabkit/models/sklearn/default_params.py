@@ -389,6 +389,24 @@ class DefaultParams:
     )
     VANILLA_MLP_REG = utils.join_dicts(VANILLA_MLP_CLASS, dict(normalize_output=True))
 
+    XRFM_D_CLASS = dict(
+        bandwidth=10.0,
+        p_interp=1.0,
+        exponent=1.0,
+        reg=1e-3,
+        iters=5,
+        diag=True,
+        bandwidth_mode='constant',
+        kernel_type='l2',
+        max_leaf_samples=60_000,
+        early_stop_rfm=True,
+        early_stop_multiplier=1.1,
+        classification_mode='prevalence',
+        M_batch_size=8000,
+    )
+
+    XRFM_D_REG = XRFM_D_CLASS
+
     # ----- sklearn versions ------
 
     LGBM_D = dict(

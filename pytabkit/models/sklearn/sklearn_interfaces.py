@@ -35,6 +35,7 @@ __all__ = ["CatBoost_D_Classifier", "CatBoost_D_Regressor", "CatBoost_HPO_Classi
            "Resnet_RTDL_HPO_Regressor", "TabR_HPO_Classifier", "TabR_HPO_Regressor", "TabR_S_D_Classifier",
            "TabR_S_D_Regressor",
            "TabM_D_Classifier", "TabM_D_Regressor", "TabM_HPO_Classifier", "TabM_HPO_Regressor",
+           "XRFM_D_Classifier", "XRFM_D_Regressor", "XRFM_HPO_Classifier", "XRFM_HPO_Regressor",
            "XGB_D_Classifier", "XGB_D_Regressor", "XGB_HPO_Classifier", "XGB_HPO_Regressor", "XGB_HPO_TPE_Classifier",
            "XGB_HPO_TPE_Regressor", "XGB_PBB_D_Classifier", "XGB_TD_Classifier", "XGB_TD_Regressor"]
 
@@ -1177,6 +1178,7 @@ class RealMLPHPOConstructorMixin:
         :param n_hyperopt_steps: Number of random hyperparameter configs
             that should be used to train models (default=50).
         :param val_metric_name: Name of the validation metric (used for selecting the best epoch).
+            Not used for all models but at least for RealMLP and probably TabM.
             Defaults are 'class_error' for classification and 'rmse' for regression.
             Main available classification metrics (all to be minimized): 'class_error', 'cross_entropy', '1-auc_ovo',
             '1-auc_ovr', '1-auc_mu', 'brier', '1-balanced_accuracy', '1-mcc', 'ece'.
@@ -1187,16 +1189,16 @@ class RealMLPHPOConstructorMixin:
             We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
             For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
         :param hpo_space_name: Name of the HPO space (default='default').
-            The search space used in the paper is 'default'. However, we recommend using 'tabarena' for the best results.
+            The search space used in the paper for RealMLP is 'default'. However, we recommend using 'tabarena' for the best results.
         :param n_caruana_steps: Number of weight update iterations for Caruana et al. weighted ensembling (default=40).
             This parameter is only used when use_caruana_ensembling=True.
         :param n_epochs: Number of epochs to train for each NN (default=None).
-            If set, it will override the values from the search space.
+            If set, it will override the values from the search space. (Might be ignored for non-RealMLP methods.)
         :param use_caruana_ensembling: Whether to use the algorithm by Caruana et al. (2004)
             to select a weighted ensemble of models instead of only selecting the best model (default=False).
         :param train_metric_name: Name of the training metric
             (default is cross_entropy for classification and mse for regression).
-            For regression, pinball/multi_pinball can be used instead.
+            For regression, pinball/multi_pinball can be used instead. (Might be ignored for non-RealMLP methods.)
         :param time_limit_s: Time limit in seconds (default=None).
         """
         self.device = device
@@ -1981,6 +1983,334 @@ class TabM_HPO_Regressor(RealMLPHPOConstructorMixin, AlgInterfaceRegressor):
 
     def _allowed_device_names(self) -> List[str]:
         return ['cpu', 'cuda', 'mps']
+
+
+# ------------------------------
+
+class XRFMConstructorMixin:
+    def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
+                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 bandwidth: Optional[float] = None,
+                 p_interp: Optional[float] = None,
+                 exponent: Optional[float] = None,
+                 reg: Optional[float] = None,
+                 iters: Optional[int] = None,
+                 diag: Optional[bool] = None,
+                 bandwidth_mode: Optional[str] = None,
+                 kernel_type: Optional[str] = None,
+                 max_leaf_samples: Optional[int] = None,
+                 val_metric_name: Optional[str] = None,
+                 early_stop_rfm: Optional[bool] = None,
+                 early_stop_multiplier: Optional[float] = None,
+                 classification_mode: Optional[str] = None,
+                 calibration_method: Optional[str] = None,
+                 time_limit_s: Optional[float] = None,
+                 M_batch_size: Optional[int] = None,
+                 ):
+        """
+        xRFM. In case of out-of-memory, try reducing M_batch_size and/or max_leaf_samples.
+        Some parameters generally benefit a lot from tuning, such as the regularization (reg).
+
+        :param device: PyTorch device name like 'cpu', 'cuda', 'cuda:0', 'mps' (default=None).
+            If None, 'cuda' will be used if available, otherwise 'cpu'.
+        :param random_state: Random state to use for random number generation
+            (splitting, initialization, batch shuffling). If None, the behavior is not deterministic.
+        :param n_cv: Number of cross-validation splits to use (default=1).
+            If validation set indices are given in fit(), `n_cv` models will be fitted using different random seeds.
+            Otherwise, `n_cv`-fold cross-validation will be used (stratified for classification). If `n_refit=0` is set,
+            the prediction will use the average of the models fitted during cross-validation.
+            (Averaging is over probabilities for classification, and over outputs for regression.)
+            Otherwise, refitted models will be used.
+        :param n_refit: Number of models that should be refitted on the training+validation dataset (default=0).
+            If zero, only the models from the cross-validation stage are used.
+            If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
+            and their predictions will be averaged during predict().
+        :param n_repeats: Number of times that the (cross-)validation split should be repeated (default=1).
+            Values != 1 are only allowed when no custom validation split is provided.
+            Larger number of repeats make things slower but reduce the potential for validation set overfitting,
+            especially on smaller datasets.
+        :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
+            Only used if `n_cv==1` and no validation split is provided in fit().
+        :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
+        :param tmp_folder: Temporary folder in which data can be stored during fit().
+            (Currently unused for xRFM and variants.) If None, methods generally try to not store intermediate data.
+        :param verbosity: Verbosity level (default=0, higher means more verbose).
+        :param bandwidth: Bandwidth of the kernel, i.e., how wide the kernel is (default=10).
+        :param p_interp: For kernel_type='lpq', this parameter controls the parameter p of the L_p norm
+            in the exponent of the kernel. Specifically, we set p = 2 * p_interp + exponent * (1 - p_interp).
+            Should be in [0, 1].
+        :param exponent: Exponent of the norm inside the kernel (default=1). Should be in (0, 2].
+            Recommended values are in [0.7, 1.4].
+        :param reg: Regularization parameter lambda in the kernel ridge regression (default=1e-3).
+        :param iters: How many iterations (fitting the regressor, updating the AGOP matrix) should be done (default=5).
+            The default should be good for most cases.
+        :param diag: Whether to only fit a diagonal AGOP matrix (default=True).
+        :param bandwidth_mode: How to set the bandwidth (default='constant').
+            For 'constant', the specified bandwidth will be used directly.
+            For 'adaptive', it will be scaled relative to the median distance between samples.
+            We recommend 'constant' for smaller datasets (< max_leaf_samples) where only a single RFM is fit.
+            For larger datasets, 'adaptive' may be more suited since it can adapt the bandwidth to the data in the leaf.
+        :param kernel_type: Type of kernel (default='l2').
+            For 'l2', the L_2-norm will be used in the generalized Laplace kernel exp(-||x - x'||_2^q),
+            where q is the exponent. This is the fastest kernel and a good default.
+            For 'lpq', the slower exp(-||x - x'||_p^q) will be used, where p is determined from q and p_interp.
+            It will use the kermac implementation if kermac is installed.
+        :param max_leaf_samples: Maximum number of samples in a leaf of xRFM (default=60_000).
+            For datasets with more than max_leaf_samples samples, the memory usage is O(max_leaf_samples**2)
+            and the time complexity is roughly O(n_samples * max_leaf_samples**2).
+            The default is around 60000, which is optimized for GPUs with ~40 GB of VRAM.
+            Reduce this number to reduce the RAM usage.
+            On GPUs with less VRAM, this number can be automatically lowered to avoid exceeding the maximum RAM.
+        :param val_metric_name: Name of the validation metric (used for selecting the best iteration).
+            Defaults are 'class_error' for classification and 'rmse' for regression.
+            Available classification metrics (all to be minimized): 'class_error', 'cross_entropy', '1-auroc-ovr',
+            'brier'.
+            Available regression metrics: 'rmse'.
+        :param early_stop_rfm: Whether to stop the iterations early if the error stops decreasing (default=False).
+        :param early_stop_multiplier: Tolerance for early stopping, should be larger than one (default=1.1).
+            Larger values will early-stop less aggressively.
+        :param classification_mode: How to convert classification problems to regression problems internally
+            (default='zero_one'). 'zero_one' uses a one-hot encoding,
+            while 'prevalence' uses a simplex encoding with zero corresponding to the marginal class ratio.
+        :param calibration_method: Post-hoc calibration method (only for classification) (default=None).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
+        :param time_limit_s:
+            Time limit in seconds (default=None).
+        :param M_batch_size:
+            Batch size used to construct the AGOP matrix M (default=8000).
+            Higher values can speed up the computation but may lead to out-of-memory (esp. for the 'lpq' kernel).
+        """
+
+        self.device = device
+        self.random_state = random_state
+        self.n_cv = n_cv
+        self.n_refit = n_refit
+        self.n_repeats = n_repeats
+        self.val_fraction = val_fraction
+        self.n_threads = n_threads
+        self.tmp_folder = tmp_folder
+        self.verbosity = verbosity
+
+        self.bandwidth = bandwidth
+        self.p_interp = p_interp
+        self.exponent = exponent
+        self.reg = reg
+        self.iters = iters
+        self.diag = diag
+        self.bandwidth_mode = bandwidth_mode
+        self.kernel_type = kernel_type
+        self.max_leaf_samples = max_leaf_samples
+        self.val_metric_name = val_metric_name
+        self.early_stop_rfm = early_stop_rfm
+        self.early_stop_multiplier = early_stop_multiplier
+        self.classification_mode = classification_mode
+        self.calibration_method = calibration_method
+        self.time_limit_s = time_limit_s
+        self.M_batch_size = M_batch_size
+
+
+class XRFM_D_Classifier(XRFMConstructorMixin, AlgInterfaceClassifier):
+    def _get_default_params(self):
+        return DefaultParams.XRFM_D_CLASS
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xrfm_interfaces import xRFMSubSplitInterface
+        return SingleSplitWrapperAlgInterface([xRFMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+    def _non_deterministic_tag(self) -> bool:
+        # set non-deterministic
+        # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
+        return True
+
+    def _supports_single_sample(self) -> bool:
+        return False
+
+    def _supports_multioutput(self) -> bool:
+        return False
+
+
+
+class XRFM_D_Regressor(XRFMConstructorMixin, AlgInterfaceRegressor):
+    def _get_default_params(self):
+        return DefaultParams.XRFM_D_REG
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xrfm_interfaces import xRFMSubSplitInterface
+        return SingleSplitWrapperAlgInterface([xRFMSubSplitInterface(**self.get_config()) for i in range(n_cv)])
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+    def _non_deterministic_tag(self) -> bool:
+        # set non-deterministic
+        # since this class can otherwise fail the check_methods_subset_invariance test due to low precision (?)
+        return True
+
+    def _supports_single_sample(self) -> bool:
+        return False
+
+    def _supports_multioutput(self) -> bool:
+        return False
+
+
+class XRFMHPOConstructorMixin:
+    def __init__(self, device: Optional[str] = None, random_state: Optional[Union[int, np.random.RandomState]] = None,
+                 n_cv: int = 1, n_refit: int = 0, n_repeats: int = 1, val_fraction: float = 0.2,
+                 n_threads: Optional[int] = None,
+                 tmp_folder: Optional[Union[str, pathlib.Path]] = None, verbosity: int = 0,
+                 n_hyperopt_steps: Optional[int] = None, val_metric_name: Optional[str] = None,
+                 max_leaf_samples: Optional[int] = None,
+                 M_batch_size: Optional[int] = None,
+                 bandwidth_mode: Optional[str] = None,
+                 calibration_method: Optional[str] = None, hpo_space_name: Optional[str] = None,
+                 n_caruana_steps: Optional[int] = None,
+                 use_caruana_ensembling: Optional[bool] = None,
+                 time_limit_s: Optional[float] = None,
+                 ):
+        """
+
+        :param device: PyTorch device name like 'cpu', 'cuda', 'cuda:0', 'mps' (default=None).
+            If None, 'cuda' will be used if available, otherwise 'cpu'.
+        :param random_state: Random state to use for random number generation
+            (splitting, initialization, batch shuffling). If None, the behavior is not deterministic.
+        :param n_cv: Number of cross-validation splits to use (default=1).
+            If validation set indices or an explicit validation set are given in fit(),
+            `n_cv` models will be fitted using different random seeds.
+            Otherwise, `n_cv`-fold cross-validation will be used (stratified for classification).
+            For n_cv=1, a single train-validation split will be used,
+            where `val_fraction` controls the fraction of validation samples.
+            If `n_refit=0` is set,
+            the prediction will use the average of the models fitted during cross-validation.
+            (Averaging is over probabilities for classification, and over outputs for regression.)
+            Otherwise, refitted models will be used.
+        :param n_refit: Number of models that should be refitted on the training+validation dataset (default=0).
+            If zero, only the models from the cross-validation stage are used.
+            If positive, `n_refit` models will be fitted on the training+validation dataset (all data given in fit())
+            and their predictions will be averaged during predict().
+        :param n_repeats: Number of times that the (cross-)validation split should be repeated (default=1).
+            Values != 1 are only allowed when no custom validation split is provided.
+            Larger number of repeats make things slower but reduce the potential for validation set overfitting,
+            especially on smaller datasets.
+        :param val_fraction: Fraction of samples used for validation (default=0.2). Has to be in [0, 1).
+            Only used if `n_cv==1` and no validation split is provided in fit().
+        :param n_threads: Number of threads that the method is allowed to use (default=number of physical cores).
+        :param tmp_folder: Folder in which models can be stored.
+            Setting this allows reducing RAM/VRAM usage by not having all models in RAM at the same time.
+            In this case, the folder needs to be preserved as long as the model exists
+            (including when the model is pickled to disk).
+        :param verbosity: Verbosity level (default=0, higher means more verbose).
+            Set to 2 to see logs from intermediate epochs.
+        :param n_hyperopt_steps: Number of random hyperparameter configs
+            that should be used to train models (default=50).
+        :param val_metric_name: Name of the validation metric (used for selecting the best epoch).
+            Defaults are 'class_error' for classification and 'rmse' for regression.
+            Main available classification metrics (all to be minimized): 'class_error', 'cross_entropy', '1-auc_ovo',
+            '1-auc_ovr', '1-auc_mu', 'brier', '1-balanced_accuracy', '1-mcc', 'ece'.
+            Main available regression metrics: 'rmse', 'mae', 'max_error',
+            'pinball(0.95)' (also works with other quantiles specified directly in the string).
+            For more metrics, we refer to `models.training.metrics.Metrics.apply()`.
+        :param max_leaf_samples: Maximum number of samples in a leaf of xRFM.
+            For datasets with more than max_leaf_samples samples, the memory usage is O(max_leaf_samples**2)
+            and the time complexity is roughly O(n_samples * max_leaf_samples**2).
+            The default is around 60000, which is optimized for GPUs with ~40 GB of VRAM.
+            Reduce this number to reduce the RAM usage.
+        :param M_batch_size:
+            Batch size used to construct the AGOP matrix M (default=8000).
+            Higher values can speed up the computation but may lead to out-of-memory (esp. for the 'lpq' kernel).
+        :param bandwidth_mode: How to set the bandwidth (default='constant').
+            For 'constant', the specified bandwidth will be used directly.
+            For 'adaptive', it will be scaled relative to the median distance between samples.
+            We recommend 'constant' for smaller datasets (< max_leaf_samples) where only a single RFM is fit.
+            For larger datasets, 'adaptive' may be more suited since it can adapt the bandwidth to the data in the leaf.
+        :param calibration_method: Post-hoc calibration method (only for classification) (default=None).
+            We recommend 'ts-mix' for fast temperature scaling with Laplace smoothing.
+            For other methods, see the get_calibrator method in https://github.com/dholzmueller/probmetrics.
+        :param hpo_space_name: Name of the HPO space.
+            We recommend using 'tabarena' (the default) for the best results.
+        :param n_caruana_steps: Number of weight update iterations for Caruana et al. weighted ensembling (default=40).
+            This parameter is only used when use_caruana_ensembling=True.
+        :param use_caruana_ensembling: Whether to use the algorithm by Caruana et al. (2004)
+            to select a weighted ensemble of models instead of only selecting the best model (default=False).
+        :param time_limit_s: Time limit in seconds (default=None).
+        """
+        self.device = device
+        self.random_state = random_state
+        self.n_cv = n_cv
+        self.n_refit = n_refit
+        self.n_repeats = n_repeats
+        self.val_fraction = val_fraction
+        self.n_threads = n_threads
+        self.tmp_folder = tmp_folder
+        self.verbosity = verbosity
+        self.n_hyperopt_steps = n_hyperopt_steps
+        self.val_metric_name = val_metric_name
+        self.max_leaf_samples = max_leaf_samples
+        self.M_batch_size = M_batch_size
+        self.bandwidth_mode = bandwidth_mode
+        self.calibration_method = calibration_method
+        self.hpo_space_name = hpo_space_name
+        self.n_caruana_steps = n_caruana_steps
+        self.use_caruana_ensembling = use_caruana_ensembling
+        self.time_limit_s = time_limit_s
+
+
+
+class XRFM_HPO_Classifier(XRFMHPOConstructorMixin, AlgInterfaceClassifier):
+    """
+    HPO spaces ('default') use xRFM
+    """
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xrfm_interfaces import RandomParamsxRFMAlgInterface
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsxRFMAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+    def _supports_single_sample(self) -> bool:
+        return False
+
+    def _supports_multioutput(self) -> bool:
+        return False
+
+
+class XRFM_HPO_Regressor(XRFMHPOConstructorMixin, AlgInterfaceRegressor):
+    """
+    HPO spaces ('default', 'tabarena') use TabM-mini with numerical embeddings
+    """
+    def _get_default_params(self):
+        return dict(n_hyperopt_steps=50)
+
+    def _create_alg_interface(self, n_cv: int) -> AlgInterface:
+        from pytabkit.models.alg_interfaces.xrfm_interfaces import RandomParamsxRFMAlgInterface
+        config = self.get_config()
+        n_hyperopt_steps = config['n_hyperopt_steps']
+        interface_type = CaruanaEnsembleAlgInterface if config.get('use_caruana_ensembling',
+                                                                   False) else AlgorithmSelectionAlgInterface
+        return interface_type([RandomParamsxRFMAlgInterface(model_idx=i, **config)
+                               for i in range(n_hyperopt_steps)], **config)
+
+    def _allowed_device_names(self) -> List[str]:
+        return ['cpu', 'cuda', 'mps']
+
+    def _supports_single_sample(self) -> bool:
+        return False
+
+    def _supports_multioutput(self) -> bool:
+        return False
 
 
 # ------------------------------

@@ -105,6 +105,7 @@ class TabNNModule(pl.LightningModule):
         """ Helper method to create a dataloader for inference."""
         ds_x, _ = ds.split_xy()
         ds_x = self.creator.static_model.forward_ds(ds_x)
+        # ds_x = self.static_model.forward_ds(ds_x)
         idxs_single = torch.arange(ds.n_samples, dtype=torch.long)
         n_ens = self.config.get('n_ens', 1)
         idxs = idxs_single[None, :].expand(
@@ -268,6 +269,15 @@ class TabNNModule(pl.LightningModule):
                 for i in range(self.creator.n_tt_splits)
             ]
 
+        # delete stuff so we don't save the dataset when pickling RealMLP
+        del self.creator.train_idxs
+        del self.creator.val_idxs
+        del self.train_dl
+        del self.val_dl
+
+        # put in eval() mode for predict(), so we don't need to save the trainer and the optimizer state
+        self.optimizers(use_pl_optimizer=False).eval()
+
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         self.model.eval()
         with torch.no_grad():
@@ -298,10 +308,11 @@ class TabNNModule(pl.LightningModule):
 
     # from https://github.com/Lightning-AI/pytorch-lightning/discussions/19759
     # def on_fit_start(self) -> None:
-    #     self.optimizers().train()  # already abovef
+    #     self.optimizers().train()  # already above
 
-    def on_predict_start(self) -> None:
-        self.optimizers(use_pl_optimizer=False).eval()
+    # def on_predict_start(self) -> None:
+    #     print(f'predict start')
+    #     self.optimizers(use_pl_optimizer=False).eval()
 
     def on_validation_model_eval(self) -> None:
         self.model.eval()
@@ -321,4 +332,5 @@ class TabNNModule(pl.LightningModule):
 
     def on_predict_model_eval(self) -> None:  # redundant with on_predict_start()
         self.model.eval()
-        self.optimizers(use_pl_optimizer=False).eval()
+        # don't do it here in case we don't have the optimizers at predict time
+        # self.optimizers(use_pl_optimizer=False).eval()

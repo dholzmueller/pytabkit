@@ -74,6 +74,14 @@ We offer interfaces (D and HPO variants) for
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabR_S_D_Classifier.__init__
 .. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.TabM_D_Classifier.__init__
 
+xRFM
+------
+
+We offer D and HPO variants for xRFM.
+
+.. autofunction:: pytabkit.models.sklearn.sklearn_interfaces.XRFM_D_Classifier.__init__
+
+
 Other methods
 -------------
 For convenience, we wrap the scikit-learn RF and MLP interfaces

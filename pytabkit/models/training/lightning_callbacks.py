@@ -69,6 +69,9 @@ class HyperparamCallback(Callback):
         if len(reg_terms) > 0:
             pl_module.loss += sum(reg_terms)
 
+    def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        del self.hp_manager  # todo: added
+
 
 class L1L2RegCallback(Callback):
     def __init__(self, hp_manager: HyperparamManager, model: Layer):

@@ -1,4 +1,5 @@
 import copy
+import functools
 from typing import Dict, Tuple
 
 import numpy as np
@@ -67,8 +68,8 @@ class BlockFactory(FitterFactory):
         return SequentialFitter(fitters), tensor_infos
 
 
-def smooth_clip_func(x):
-    return x / (1 + (1 / 9) * x ** 2).sqrt()
+def smooth_clip_func(x, max_abs_value: float = 3.0):
+    return x / (1 + (1 / (max_abs_value ** 2)) * x ** 2).sqrt()
 
 
 def tanh_clip_func(x):
@@ -92,7 +93,8 @@ class PreprocessingFactory(FitterFactory):
             elif tfm == 'robust_scale':
                 tfm_factories.append(RobustScaleFactory(**self.config))
             elif tfm == 'smooth_clip':
-                tfm_factories.append(FunctionFactory(smooth_clip_func))
+                tfm_factories.append(FunctionFactory(functools.partial(smooth_clip_func, max_abs_value=self.config.get(
+                    'smooth_clip_max_abs_value', 3.0))))
             elif tfm == 'tanh_5_clip':
                 tfm_factories.append(FunctionFactory(tanh_clip_func))
             elif tfm == 'mean_center':

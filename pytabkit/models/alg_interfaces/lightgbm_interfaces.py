@@ -235,7 +235,7 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
                              valid_names=valid_names, feval=feval,
                              callbacks=[record_evaluation(evals_result)],
                              num_boost_round=params['n_estimators'])
-            print(f'{params["n_estimators"]=}')
+            # print(f'{params["n_estimators"]=}')
 
         if val_ds is not None:
             # print('evals_result val:', evals_result['val'], flush=True)

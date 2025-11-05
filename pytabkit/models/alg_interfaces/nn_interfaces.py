@@ -104,7 +104,20 @@ class NNAlgInterface(AlgInterface):
         max_time = None if interface_resources.time_in_seconds is None else timedelta(
             seconds=interface_resources.time_in_seconds)
 
-        self.trainer = pl.Trainer(
+        self.min_trainer_kwargs = dict(
+            max_time=max_time,
+            accelerator=pl_accelerator,
+            devices=pl_devices,
+            max_epochs=n_epochs,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            num_sanity_val_steps=0,
+            enable_model_summary=False,
+            log_every_n_steps=1,
+        )
+
+        # don't save the trainer in self, otherwise it stores the dataset
+        trainer = pl.Trainer(
             max_time=max_time,
             accelerator=pl_accelerator,
             devices=pl_devices,
@@ -118,7 +131,7 @@ class NNAlgInterface(AlgInterface):
             log_every_n_steps=1,
         )
 
-        self.trainer.fit(
+        trainer.fit(
             model=self.model, train_dataloaders=self.model.train_dl, val_dataloaders=self.model.val_dl
         )
 
@@ -129,8 +142,7 @@ class NNAlgInterface(AlgInterface):
 
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
 
-        # print(f'Importances (sorted):', self.get_importances().sort()[0])  # todo
-        self.trainer.max_time = None
+        # print(f'Importances (sorted):', self.get_importances().sort()[0])
 
     def predict(self, ds: DictDataset) -> torch.Tensor:
         pred_dict = self.get_current_predict_params_dict()
@@ -141,7 +153,9 @@ class NNAlgInterface(AlgInterface):
         self.model.to(self.device)
         ds = ds.to(self.device)
         ds_x, _ = ds.split_xy()
-        y_pred = self.trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
+        # create new trainer so we don't have to pickle the full trainer that references the dataset somehow
+        trainer = pl.Trainer(**self.min_trainer_kwargs)
+        y_pred = trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
         y_pred = cat_if_necessary(y_pred, dim=-2).to('cpu')  # concat along batch dimension
         y_pred = postprocess_multiquantile(y_pred, **self.config)  # postprocessing in case of multiquantile loss
         torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
@@ -340,8 +354,8 @@ class RealMLPParamSampler:
         assert self.hpo_space_name in ['default', 'clr', 'moresigma', 'moresigmadim', 'moresigmadimreg',
                                        'moresigmadimsize', 'moresigmadimlr', 'probclass', 'probclass-mlp', 'large',
                                        'alt1', 'alt2', 'alt3', 'alt4', 'alt5', 'alt6', 'alt7', 'alt8', 'alt9', 'alt10',
-                                       'tabarena', 'alt11', 'alt12', 'alt13', 'alt14', 'alt15', 'alt16', 'alt17',
-                                       'alt18']
+                                       'tabarena', 'tabarena-new', 'alt11', 'alt12', 'alt13', 'alt14', 'alt15', 'alt16',
+                                       'alt17', 'alt18', 'alt19', 'alt20']
         rng = np.random.default_rng(seed=seed)
 
         if self.hpo_space_name == 'probclass-mlp':
@@ -661,6 +675,49 @@ class RealMLPParamSampler:
                 params['plr_hidden_2'] = 4
                 params['n_epochs'] = 256
                 params['use_early_stopping'] = False
+        elif self.hpo_space_name == 'tabarena-new':
+            # common search space
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+
+                # added in tabarena-new compared to tabarena
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'n_ens': 8,
+                "ens_av_before_softmax": False,
+            }
+
+            if rng.uniform(0.0, 1.0) > 0.5:
+                # large configs
+                params['plr_hidden_1'] = rng.choice([8, 16, 32, 64]).item()
+                params['plr_hidden_2'] = rng.choice([8, 16, 32, 64]).item()
+                params['n_epochs'] = rng.choice([256, 512]).item()
+                params['use_early_stopping'] = True
+
+                # set in the defaults of RealMLP in TabArena
+                params['early_stopping_multiplicative_patience'] = 3
+                params['early_stopping_additive_patience'] = 40
+            else:
+                # default values, used here to always set the same set of parameters
+                params['plr_hidden_1'] = 16
+                params['plr_hidden_2'] = 4
+                params['n_epochs'] = 256
+                params['use_early_stopping'] = False
         elif self.hpo_space_name == 'alt11':
             # tabarena without the large configs
             params = {
@@ -840,6 +897,61 @@ class RealMLPParamSampler:
                 'embedding_size': int(rng.choice([4, 8, 16])),
                 'n_ens': 4,
                 'ens_av_before_softmax': False,
+            }
+        elif self.hpo_space_name == 'alt19':
+            # alt13 with numerical preprocessing tuning
+            tfms_list = [
+                ['one_hot', 'median_center', 'robust_scale', 'smooth_clip', 'embedding'],
+                ['one_hot', 'mean_center', 'l2_normalize', 'smooth_clip', 'embedding'],
+            ]
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'tfms': tfms_list[int(rng.choice([0, 1]))],
+                'smooth_clip_max_abs_value': np.exp(rng.uniform(np.log(1.0), np.log(10.0)))
+            }
+        elif self.hpo_space_name == 'alt20':
+            # alt13 with numerical preprocessing tuning (but without the max_abs_value unlike alt19)
+            tfms_list = [
+                ['one_hot', 'median_center', 'robust_scale', 'smooth_clip', 'embedding'],
+                ['one_hot', 'mean_center', 'l2_normalize', 'smooth_clip', 'embedding'],
+            ]
+            params = {
+                'n_hidden_layers': rng.integers(2, 4, endpoint=True),
+                'hidden_sizes': 'rectangular',
+                'hidden_width': rng.choice([256, 384, 512]),
+                'p_drop': rng.uniform(0.0, 0.5),
+                'act': 'mish',
+                'plr_sigma': np.exp(rng.uniform(np.log(1e-2), np.log(50))),
+                'sq_mom': 1.0 - np.exp(rng.uniform(np.log(5e-3), np.log(5e-2))),
+                'plr_lr_factor': np.exp(rng.uniform(np.log(5e-2), np.log(3e-1))),
+                'scale_lr_factor': np.exp(rng.uniform(np.log(2.0), np.log(10.0))),
+                'first_layer_lr_factor': np.exp(rng.uniform(np.log(0.3), np.log(1.5))),
+                'ls_eps_sched': 'coslog4',
+                'ls_eps': np.exp(rng.uniform(np.log(5e-3), np.log(1e-1))),
+                'p_drop_sched': 'flat_cos',
+                'lr': np.exp(rng.uniform(np.log(2e-2), np.log(3e-1))),
+                'wd': np.exp(rng.uniform(np.log(1e-3), np.log(5e-2))),
+                'use_ls': rng.choice([False, True]),  # use label smoothing (will be ignored for regression)
+                'max_one_hot_cat_size': int(np.floor(np.exp(rng.uniform(np.log(4.0), np.log(33.0)))).item()),
+                'embedding_size': int(rng.choice([4, 8, 16])),
+                'tfms': tfms_list[int(rng.choice([0, 1]))],
             }
 
         # print(f'{params=}')

@@ -85,15 +85,12 @@ def show_eval(coll_name: str = 'meta-train-class', n_cv: int = 1, show_alg_group
                                          [td for td in task_collection.task_descs if td.task_name not in exclude_names])
     print('load table')
     # table = MultiResultsTable.load_summaries(task_collection, n_cv=n_cv, paths=paths)
-    if tag is None:
-        alg_filter = None
-    else:
-        show_tags = tag.split(',') if isinstance(tag, str) else list(
-            tag)  # commas are converted to tuples in the command line, apparently
-        alg_filter = lambda an, tags, config: (np.any([show_tag in tags for show_tag in show_tags])
-                                               and (algs_prefix is None or an.startswith(algs_prefix))
-                                               and (algs_suffix is None or an.endswith(algs_suffix))
-                                               and (algs_contains is None or algs_contains in an))
+    # commas are converted to tuples in the command line, apparently
+    show_tags = tag.split(',') if isinstance(tag, str) else (list(tag) if tag is not None else [])
+    alg_filter = lambda an, tags, config: ((tag is None or np.any([show_tag in tags for show_tag in show_tags]))
+                                           and (algs_prefix is None or an.startswith(algs_prefix))
+                                           and (algs_suffix is None or an.endswith(algs_suffix))
+                                           and (algs_contains is None or algs_contains in an))
     table = MultiResultsTable.load(task_collection, n_cv=n_cv, paths=paths, max_n_algs=max_n_algs,
                                    split_type=split_type, alg_filter=alg_filter, max_n_splits=max_n_splits)
     print('process table')

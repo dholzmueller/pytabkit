@@ -63,6 +63,10 @@ class MishJitAutoFn(torch.autograd.Function):
 # def mish(x): return MishJitAutoFn.apply(x)
 def mish(x): return x.mul(torch.tanh(F.softplus(x)))
 
+
+def golu(x):
+    return x * torch.exp(-torch.exp(-torch.clamp(x, min=-10)))
+
 # ----- end fastai2
 
 
@@ -121,6 +125,8 @@ class ActivationFactory(FitterFactory):
             f = F.gelu
         elif act_name == 'elu':
             f = F.elu
+        elif act_name == 'golu':
+            f = golu
         else:
             raise ValueError(f'Activation {act_name} unknown')
 

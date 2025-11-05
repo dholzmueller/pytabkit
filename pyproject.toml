@@ -49,6 +49,7 @@ models = [
     "xgboost>=2.0",
     "catboost>=1.2",
     "lightgbm>=4.1",
+    "xrfm>=0.4.3",  # lower bound is not checked extensively
     # for rtdl models (MLP, ResNet) but also lightly used in TabR
     # note that scikit-learn 1.6 needs skorch >= 1.1.0
     "skorch>=0.15",

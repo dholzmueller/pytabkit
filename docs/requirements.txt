@@ -33,3 +33,4 @@ tqdm
 tueplots>=0.0.12
 xgboost>=2.0
 xlrd>=2.0
+xrfm>=0.4.3

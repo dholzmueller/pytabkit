@@ -228,6 +228,10 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
         import catboost
 
         x_df = ds.without_labels().to_df()
+        if self.config.get('shuffle_columns', False):
+            if not hasattr(self, 'col_perm_'):
+                self.col_perm_ = np.random.permutation(x_df.shape[1])
+            x_df = x_df.iloc[:, self.col_perm_]
         label = None if 'y' not in ds.tensors else ds.tensors['y'].cpu().numpy()
         cat_features = x_df.select_dtypes(include='category').columns.tolist()
         return catboost.Pool(x_df, label, cat_features=cat_features)

@@ -30,7 +30,7 @@ on our benchmarks.
   - For only a single model, we recommend using 
     `RealMLP_HPO_Classifier(n_cv=8, hpo_space_name='tabarena', use_caruana_ensembling=True, n_hyperopt_steps=50)`,
     also with `val_metric_name` as above, or the corresponding `Regressor`.
-- **Models**: [TabArena](https://github.com/AutoGluon/tabrepo) 
+- **Models**: [TabArena](https://github.com/AutoGluon/tabarena) 
   also includes some newer models like RealMLP and TabM 
   with more general preprocessing (missing numericals, text, etc.),
   as well as very good boosted tree implementations.
@@ -38,7 +38,7 @@ on our benchmarks.
   and supports vectorized cross-validation for RealMLP, 
   which can significantly speed up the training.
 - **Benchmarking**: While pytabkit can be good for quick benchmarking for development, 
-  for method evaluation we recommend [TabArena](https://github.com/AutoGluon/tabrepo).
+  for method evaluation we recommend [TabArena](https://github.com/AutoGluon/tabarena).
 
 ## Installation (new in 1.4.0: optional model dependencies)
 
@@ -47,6 +47,8 @@ pip install pytabkit[models]
 ```
 
 - RealMLP (and TabM) can be used without the `[models]` part.
+- For xRFM on GPU, faster kernels will be used if you install `kermac[cu12]` or `kermac[cu11]` 
+(depending on your CUDA version).
 - If you want to use **TabR**, you have to manually install
   [faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md),
   which is only available on **conda**.
@@ -120,8 +122,9 @@ We provide the following ML models:
   from [On Embeddings for Numerical Features in Tabular Deep Learning](https://proceedings.neurips.cc/paper_files/paper/2022/hash/9e9f0ffc3d836836ca96cbf8fe14b105-Abstract-Conference.html)
 - **TabR** (D, HPO): TabR model
   from [TabR: Tabular Deep Learning Meets Nearest Neighbors](https://openreview.net/forum?id=rhgIgTSSxW)
-- **TabM** (D): TabM model
+- **TabM** (D, HPO): TabM model
   from [TabM: Advancing Tabular Deep Learning with Parameter-Efficient Ensembling](https://arxiv.org/abs/2410.24210)
+- **XRFM** (D, HPO): xRFM model from [here](https://arxiv.org/abs/2508.10053) ([original repo](https://github.com/dmbeaglehole/xRFM))
 - **RealTabR** (D): Our new TabR variant with default parameters
 - **Ensemble-TD**: Weighted ensemble of all TD models (RealMLP, XGB, LGBM, CatBoost)
 
@@ -183,6 +186,7 @@ If you use this repository for research purposes, please cite our [paper](https:
 - Katharina Strecker (PyTorch-Lightning interface)
 - Lennart Purucker (some features/fixes)
 - Jérôme Dockès (deployment, continuous integration)
+- 
 
 ## Acknowledgements
 
@@ -196,6 +200,17 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.7.0:
+    - added [xRFM](https://arxiv.org/abs/2508.10053) (D, HPO)
+    - added new `'tabarena-new'` search space for RealMLP-HPO, including per-fold ensembling (more expensive)
+      and tuning two more categorical hyperparameters
+      (with [better results](https://github.com/autogluon/tabarena/pull/195))
+    - reduced RealMLP pickle size by not storing the dataset ([#33](https://github.com/dholzmueller/pytabkit/issues/33))
+    - fixed gradient clipping for TabM 
+      (it did nothing previously, see [#34](https://github.com/dholzmueller/pytabkit/issues/34)).
+      To ensure backward compatibility, it is set to None in the HPO search spaces now 
+      (it was already None in the default parameters).
+    - removed debug print in TabM training loop
 - v1.6.1:
     - For `n_ens>1`, changed the default behavior for classification to averaging probabilities instead of logits.
       This can be reverted by setting `ens_av_before_softmax=True`.

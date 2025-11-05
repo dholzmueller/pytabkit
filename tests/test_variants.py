@@ -7,7 +7,8 @@ import torch
 
 from pytabkit import TabM_D_Classifier, RealMLP_HPO_Classifier, Ensemble_HPO_Classifier, TabM_HPO_Regressor, \
     TabM_HPO_Classifier, LGBM_HPO_Classifier, CatBoost_HPO_Classifier, XGB_HPO_Classifier, Ensemble_HPO_Regressor, \
-    LGBM_HPO_TPE_Regressor, RealMLP_TD_Regressor, RealMLP_HPO_Regressor, TabM_D_Regressor
+    LGBM_HPO_TPE_Regressor, RealMLP_TD_Regressor, RealMLP_HPO_Regressor, TabM_D_Regressor, XRFM_D_Classifier, \
+    XRFM_D_Regressor, XRFM_HPO_Classifier, XRFM_HPO_Regressor
 
 
 @pytest.mark.parametrize('estimator', [
@@ -20,6 +21,10 @@ from pytabkit import TabM_D_Classifier, RealMLP_HPO_Classifier, Ensemble_HPO_Cla
                        random_state=0),
     TabM_HPO_Classifier(val_metric_name='mae', n_hyperopt_steps=2, hpo_space_name='default',
                         random_state=0, use_caruana_ensembling=True),
+    XRFM_D_Classifier(val_metric_name='cross_entropy'),
+    XRFM_D_Regressor(),
+    XRFM_HPO_Classifier(n_hyperopt_steps=2),
+    XRFM_HPO_Regressor(n_hyperopt_steps=2),
     # use CPU since GPU might not support some features in the search space (it has problems with rsm for catboost)
     LGBM_HPO_Classifier(use_caruana_ensembling=True, n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu'),
     XGB_HPO_Classifier(use_caruana_ensembling=True, n_hyperopt_steps=2, hpo_space_name='tabarena', device='cpu'),

@@ -54,7 +54,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         assert idxs_list[0].n_trainval_splits == 1
 
         seed = idxs_list[0].sub_split_seeds[0]
-        print(f'Setting seed: {seed}')
+        # print(f'Setting seed: {seed}')
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
@@ -277,7 +277,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
             # (regression)     y_pred.shape == (batch_size, k)
             # (classification) y_pred.shape == (batch_size, k, n_classes)
             k = y_pred.shape[1]
-            print(f'{y_pred.flatten(0, 1).shape=}, {y_true.shape=}')
+            # print(f'{y_pred.flatten(0, 1).shape=}, {y_true.shape=}')
             return base_loss_fn(
                 y_pred.flatten(0, 1),
                 y_true.repeat_interleave(k) if model.share_training_batches else y_true,
@@ -356,27 +356,26 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
                 ]
             )
 
+            model.train()
             for batch_idx in tqdm(batches, desc=f"Epoch {epoch}"):
-                model.train()
-                optimizer.zero_grad()
-                loss = loss_fn(apply_model('train', batch_idx), Y_train[batch_idx])
+                optimizer.zero_grad(set_to_none=True)
 
-                # added from https://github.com/yandex-research/tabm/blob/main/bin/model.py
-                if gradient_clipping_norm is not None and gradient_clipping_norm != 'none':
-                    if grad_scaler is not None:
-                        grad_scaler.unscale_(optimizer)
-                    nn.utils.clip_grad.clip_grad_norm_(
-                        model.parameters(), gradient_clipping_norm
-                    )
+                preds = apply_model('train', batch_idx)
+                loss = loss_fn(preds, Y_train[batch_idx])
 
                 if grad_scaler is None:
                     loss.backward()
+                    if gradient_clipping_norm not in (None, 'none'):
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping_norm)  # type: ignore
                     optimizer.step()
                 else:
-                    grad_scaler.scale(loss).backward()  # type: ignore
+                    grad_scaler.scale(loss).backward()
+                    if gradient_clipping_norm not in (None, 'none'):
+                        # unscale before clipping so the grads are in FP32
+                        grad_scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping_norm)  # type: ignore
                     grad_scaler.step(optimizer)
                     grad_scaler.update()
-
 
 
             val_score = evaluate('val')
@@ -461,7 +460,7 @@ class TabMSubSplitInterface(SingleSplitAlgInterface):
         ram_params = {'': 0.15, 'ds_onehot_size_gb': 2.0}
         # gpu_ram_params = {'': 0.3, 'ds_onehot_size_gb': 1.0, 'n_train': 1e-6, 'n_features': 3e-4,
         #                   'cat_size_sum': 2e-3}
-        gpu_ram_params = {'': 0.5, 'ds_onehot_size_gb': 5.0, 'n_train': 6e-6, 'n_features': 1e-3,  # reduced from 2e-3
+        gpu_ram_params = {'': 0.5, 'ds_onehot_size_gb': 5.0, 'n_train': 6e-6, 'n_features': 1.5e-3,  # reduced from 2e-3
                           'cat_size_sum': 1e-4}  # reduced from 1e-3
         rc = ResourcePredictor(config=updated_config, time_params=time_params, gpu_ram_params=gpu_ram_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.02)  # , gpu_ram_params)
@@ -481,7 +480,7 @@ class RandomParamsTabMAlgInterface(RandomParamsAlgInterface):
                 "allow_amp": True,
                 "arch_type": "tabm-mini",
                 "tabm_k": 32,
-                "gradient_clipping_norm": 1.0,
+                # "gradient_clipping_norm": 1.0, # wasn't correctly implemented so we remove it in v1.7.0
                 # this makes it probably slower with numerical embeddings, and also more RAM intensive
                 # according to the paper it's not very important but should be a bit better (?)
                 "share_training_batches": False,
@@ -502,7 +501,7 @@ class RandomParamsTabMAlgInterface(RandomParamsAlgInterface):
                 "allow_amp": False,  # only for GPU, maybe we should change it to True?
                 "arch_type": "tabm-mini",
                 "tabm_k": 32,
-                "gradient_clipping_norm": 1.0,
+                # "gradient_clipping_norm": 1.0, # wasn't correctly implemented so we remove it in v1.7.0
                 # this makes it probably slower with numerical embeddings, and also more RAM intensive
                 # according to the paper it's not very important but should be a bit better (?)
                 "share_training_batches": False,
