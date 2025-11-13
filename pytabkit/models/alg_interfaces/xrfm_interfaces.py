@@ -62,14 +62,22 @@ class xRFMSubSplitInterface(SingleSplitAlgInterface):
         ds_val = ds.get_sub_dataset(idxs_list[0].val_idxs[0])
 
         num_numerical = ds_train.tensor_infos['x_cont'].get_n_features()
-        cat_sizes = ds_train.tensor_infos['x_cat'].get_cat_sizes()
+        raw_cat_sizes = ds_train.tensor_infos['x_cat'].get_cat_sizes()
+        if isinstance(raw_cat_sizes, torch.Tensor):
+            raw_cat_sizes = raw_cat_sizes.tolist()
+        else:
+            raw_cat_sizes = [int(size) for size in raw_cat_sizes]
         if 'factory' in self.config or 'one_hot' not in self.config['tfms']:
             cat_sizes = []  # don't apply fast_categorical stuff
-
-        use_missing_zero = self.config.get('use_missing_zero', True)
-        if use_missing_zero:
-            # print("use_missing_zero is True, subtracting 1 from cat_sizes")
-            cat_sizes = [size - 1 for size in cat_sizes]
+        else:
+            use_missing_zero = self.config.get('use_missing_zero', True)
+            use_binary_drop = self.config.get('use_1d_binary_onehot', True)
+            cat_sizes = []
+            for size in raw_cat_sizes:
+                adjusted = size - 1 if use_missing_zero else size
+                if adjusted == 2 and use_binary_drop:
+                    adjusted = 1
+                cat_sizes.append(adjusted)
 
         # transform according to factory
         fitter: Fitter = factory.create(ds.tensor_infos)
