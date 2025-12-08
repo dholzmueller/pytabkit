@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional
 
 import torch
 import numpy as np
@@ -118,7 +118,7 @@ class TorchTimer:
         print(t.elapsed)
     """
 
-    def __init__(self, use_cuda: bool | None = None, record_history: bool = False):
+    def __init__(self, use_cuda: Optional[bool] = None, record_history: bool = False):
         """
         Args:
             use_cuda:
