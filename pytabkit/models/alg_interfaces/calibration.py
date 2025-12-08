@@ -41,24 +41,52 @@ class PostHocCalibrationAlgInterface(AlgInterface):
         self.alg_interface.fit(ds, idxs_list, interface_resources, logger, tmp_folders, name)
         y_preds = self.alg_interface.predict(ds)
 
-        for tt_split_idx, split_idxs in enumerate(idxs_list):
-            for tv_split_idx in range(split_idxs.n_trainval_splits):
-                val_idxs = split_idxs.val_idxs[tv_split_idx]
-                y = ds.tensors['y'][val_idxs]
-                y_pred = y_preds[len(self.calibrators), val_idxs]
-                y_pred_probs = torch.softmax(y_pred, dim=-1)
+        self.n_tv_splits_list_ = [idxs.n_trainval_splits for idxs in idxs_list]
+
+        if self.config.get('calibrate_per_fold', True):
+            for tt_split_idx, split_idxs in enumerate(idxs_list):
+                for tv_split_idx in range(split_idxs.n_trainval_splits):
+                    val_idxs = split_idxs.val_idxs[tv_split_idx]
+                    y = ds.tensors['y'][val_idxs]
+                    y_pred = y_preds[len(self.calibrators), val_idxs]
+                    y_pred_probs = torch.softmax(y_pred, dim=-1)
+
+                    import probmetrics.calibrators
+                    import probmetrics.distributions
+                    calib = probmetrics.calibrators.get_calibrator(**self.config)
+                    if self.config.get('calibrate_with_logits', True):
+                        calib.fit_torch(y_pred=probmetrics.distributions.CategoricalLogits(y_pred.detach().cpu()),
+                                        y_true_labels=y[:, 0])
+                    else:
+                        calib.fit(self._transform_probs(y_pred_probs.detach().cpu().numpy()), y.cpu().numpy()[:, 0])
+
+                    self.calibrators.append(calib)
+                    self.n_calibs.append(val_idxs.shape[-1])
+        else:
+            y_pred_idx = 0
+            for tt_split_idx, split_idxs in enumerate(idxs_list):
+                y_pred_list = []
+                y_list = []
+                for tv_split_idx in range(split_idxs.n_trainval_splits):
+                    val_idxs = split_idxs.val_idxs[tv_split_idx]
+                    y_pred_list.append(y_preds[y_pred_idx, val_idxs])
+                    y_list.append(ds.tensors['y'][val_idxs])
+                    y_pred_idx += 1
+
+                y_pred = torch.cat(y_pred_list, dim=0)
+                y = torch.cat(y_list, dim=0)
 
                 import probmetrics.calibrators
                 import probmetrics.distributions
                 calib = probmetrics.calibrators.get_calibrator(**self.config)
                 if self.config.get('calibrate_with_logits', True):
                     calib.fit_torch(y_pred=probmetrics.distributions.CategoricalLogits(y_pred.detach().cpu()),
-                                    y_true_labels=y[:, 0])
+                                    y_true_labels=y[:, 0].detach().cpu())
                 else:
-                    calib.fit(self._transform_probs(y_pred_probs.detach().cpu().numpy()), y.cpu().numpy()[:, 0])
+                    calib.fit(self._transform_probs(torch.softmax(y_pred, dim=-1).detach().cpu().numpy()), y.cpu().numpy()[:, 0])
 
-                self.calibrators.append(calib)
-                self.n_calibs.append(val_idxs.shape[-1])
+                self.calibrators.extend([calib] * split_idxs.n_trainval_splits)
+                self.n_calibs.extend([y_pred.shape[0]] * split_idxs.n_trainval_splits)
 
         self.fit_params = [dict(sub_fit_params=fp) for fp in self.alg_interface.fit_params]
 
@@ -68,6 +96,15 @@ class PostHocCalibrationAlgInterface(AlgInterface):
         y_preds = self.alg_interface.predict(ds)
         y_preds_probs = torch.softmax(y_preds, dim=-1)
         y_preds_calib = []
+
+        if self.config.get('ensemble_before_calib', False):
+            start_idx = 0
+            for n_tv_splits in self.n_tv_splits_list_:
+                avg_probs = y_preds_probs[start_idx:start_idx+n_tv_splits].mean(dim=0, keepdim=True)
+                y_preds_probs[start_idx:start_idx + n_tv_splits] = avg_probs
+                start_idx += n_tv_splits
+            y_preds = torch.log(y_preds_probs + 1e-30)
+
         for i in range(y_preds.shape[0]):
             if self.config.get('calibrate_with_logits', True):
                 from probmetrics.distributions import CategoricalLogits
@@ -90,3 +127,7 @@ class PostHocCalibrationAlgInterface(AlgInterface):
     def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
                                split_seeds: List[int], n_train: int) -> RequiredResources:
         return self.alg_interface.get_required_resources(ds, n_cv, n_refit, n_splits, split_seeds, n_train=n_train)
+
+    def to(self, device: str) -> None:
+        self.alg_interface.to(device)
+

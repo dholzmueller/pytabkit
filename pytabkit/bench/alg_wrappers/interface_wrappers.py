@@ -19,7 +19,8 @@ from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
     KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
     TabPFN2SubSplitInterface, TabICLSubSplitInterface, RandomParamsExtraTreesAlgInterface, RandomParamsKNNAlgInterface, \
-    ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, LinearModelSubSplitInterface
+    ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, \
+    LinearModelSubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -34,8 +35,10 @@ from pytabkit.models.alg_interfaces.nn_interfaces import NNAlgInterface, RandomP
     NNHyperoptAlgInterface
 from pytabkit.models.alg_interfaces.xgboost_interfaces import XGBSubSplitInterface, XGBHyperoptAlgInterface, \
     XGBSklearnSubSplitInterface, RandomParamsXGBAlgInterface
+from pytabkit.models.alg_interfaces.xrfm_interfaces import xRFMSubSplitInterface, RandomParamsxRFMAlgInterface
 from pytabkit.models.data.data import TaskType, DictDataset
 from pytabkit.models.nn_models.models import PreprocessingFactory
+from pytabkit.models.torch_utils import TorchTimer
 from pytabkit.models.training.logging import Logger
 from pytabkit.models.training.metrics import Metrics
 
@@ -115,14 +118,12 @@ class AlgInterfaceWrapper(AlgWrapper):
 
         interface_resources = assigned_resources.get_interface_resources()
 
-
         old_torch_n_threads = torch.get_num_threads()
         old_torch_n_interop_threads = torch.get_num_interop_threads()
         torch.set_num_threads(interface_resources.n_threads)
         # don't set this because it can throw
         # Error: cannot set number of interop threads after parallel work has started or set_num_interop_threads called
         # torch.set_num_interop_threads(interface_resources.n_threads)
-
 
         ds = task.ds
         name = 'alg ' + task_package.alg_name + ' on task ' + str(task_desc)
@@ -185,22 +186,33 @@ class AlgInterfaceWrapper(AlgWrapper):
 
         rms = {name: [ResultManager() for _ in task_package.split_infos] for name in pred_param_names}
 
-        cv_alg_interface.fit(ds, cv_idxs_list, interface_resources, logger, cv_tmp_folders, name)
+        with TorchTimer() as cv_fit_timer:
+            cv_alg_interface.fit(ds, cv_idxs_list, interface_resources, logger, cv_tmp_folders, name)
 
         for pred_param_name in pred_param_names:
             cv_alg_interface.set_current_predict_params(pred_param_name)
 
-            cv_results_list = cv_alg_interface.eval(ds, cv_idxs_list, metrics, return_preds)
+            with TorchTimer() as cv_eval_timer:
+                cv_results_list = cv_alg_interface.eval(ds, cv_idxs_list, metrics, return_preds)
 
             for rm, cv_results in zip(rms[pred_param_name], cv_results_list):
-                rm.add_results(is_cv=True, results_dict=cv_results.get_dict())
+                rm.add_results(is_cv=True, results_dict=cv_results.get_dict() |
+                                                        dict(fit_time_s=cv_fit_timer.elapsed,
+                                                             eval_time_s=cv_eval_timer.elapsed))
 
             if n_refit > 0:
                 refit_alg_interface = cv_alg_interface.get_refit_interface(n_refit)
-                refit_results_list = refit_alg_interface.fit_and_eval(ds, refit_idxs_list, interface_resources, logger,
-                                                                      refit_tmp_folders, name, metrics, return_preds)
+
+                with TorchTimer() as refit_fit_timer:
+                    refit_alg_interface.fit(ds, refit_idxs_list, interface_resources, logger, refit_tmp_folders, name)
+
+                with TorchTimer() as refit_eval_timer:
+                    refit_results_list = refit_alg_interface.eval(ds, refit_idxs_list, metrics, return_preds)
                 for rm, refit_results in zip(rms[pred_param_name], refit_results_list):
-                    rm.add_results(is_cv=False, results_dict=refit_results.get_dict())
+                    rm.add_results(is_cv=False,
+                                   results_dict=refit_results.get_dict() |
+                                                dict(fit_time_s=refit_fit_timer.elapsed,
+                                                     eval_time_s=refit_eval_timer.elapsed))
 
         torch.set_num_threads(old_torch_n_threads)
         # torch.set_num_interop_threads(old_torch_n_interop_threads)
@@ -578,3 +590,14 @@ class RandomParamsLinearModelInterfaceWrapper(AlgInterfaceWrapper):
     def __init__(self, model_idx: int, **config):
         # model_idx should be the random search iteration (i.e. start from zero)
         super().__init__(RandomParamsLinearModelAlgInterface, model_idx=model_idx, **config)
+
+
+class xRFMInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return xRFMSubSplitInterface(**self.config)
+
+
+class RandomParamsxRFMInterfaceWrapper(MultiSplitAlgInterfaceWrapper):
+    def create_single_alg_interface(self, n_cv: int, task_type: TaskType) \
+            -> AlgInterface:
+        return RandomParamsxRFMAlgInterface(**self.config)

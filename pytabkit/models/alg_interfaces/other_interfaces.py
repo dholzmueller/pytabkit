@@ -1185,6 +1185,7 @@ class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
             ('average_before_softmax', None),
             ('inference_precision', None),
             ('fit_mode', None),
+            ('model_path', None),
         ]
 
         params = utils.extract_params(self.config, params_config)
@@ -1248,7 +1249,10 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
             params['inference_precision'] = torch.float32
         # print(f'{gpu_devices=}')
         if self.n_classes > 0:
-            from tabicl import TabICLClassifier
+            if self.config.get('use_tabiclex', False):
+                from tabiclex import TabICLClassifier
+            else:
+                from tabicl import TabICLClassifier
             return TabICLClassifier(random_state=seed,
                                     device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
                                     **params)
@@ -1304,3 +1308,5 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
         return rc.get_required_resources(ds)
+
+
