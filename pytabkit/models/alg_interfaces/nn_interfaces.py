@@ -1028,6 +1028,9 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
     def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
         return NNAlgInterface(**self.config).get_available_predict_params()
 
+    def to(self, device: str) -> None:
+        self.alg_interface.to(device)
+
 # class NNHyperoptAlgInterface(OptAlgInterface):
 #     def __init__(self, space=None, n_hyperopt_steps: int = 50, **config):
 #         from hyperopt import hp
