@@ -1308,3 +1308,5 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
         return rc.get_required_resources(ds)
+
+

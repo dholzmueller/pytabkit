@@ -1,5 +1,4 @@
 import shutil
-import time
 from pathlib import Path
 from typing import Callable, List, Optional, Dict
 
@@ -10,7 +9,6 @@ from pytabkit.models import utils
 from pytabkit.models.alg_interfaces.autogluon_model_interfaces import AutoGluonModelAlgInterface
 from pytabkit.models.alg_interfaces.catboost_interfaces import CatBoostSubSplitInterface, CatBoostHyperoptAlgInterface, \
     CatBoostSklearnSubSplitInterface, RandomParamsCatBoostAlgInterface
-from pytabkit.models.alg_interfaces.custom_interfaces import TabPFNV2SubSplitInterface
 from pytabkit.models.alg_interfaces.ensemble_interfaces import PrecomputedPredictionsAlgInterface, \
     CaruanaEnsembleAlgInterface, AlgorithmSelectionAlgInterface
 from pytabkit.models.alg_interfaces.lightgbm_interfaces import LGBMSubSplitInterface, LGBMHyperoptAlgInterface, \
@@ -21,7 +19,8 @@ from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
     KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
     TabPFN2SubSplitInterface, TabICLSubSplitInterface, RandomParamsExtraTreesAlgInterface, RandomParamsKNNAlgInterface, \
-    ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, LinearModelSubSplitInterface
+    ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, \
+    LinearModelSubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -591,11 +590,6 @@ class RandomParamsLinearModelInterfaceWrapper(AlgInterfaceWrapper):
     def __init__(self, model_idx: int, **config):
         # model_idx should be the random search iteration (i.e. start from zero)
         super().__init__(RandomParamsLinearModelAlgInterface, model_idx=model_idx, **config)
-
-
-class TabPFNV2InterfaceWrapper(SubSplitInterfaceWrapper):
-    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
-        return TabPFNV2SubSplitInterface(**self.config)
 
 
 class xRFMInterfaceWrapper(SubSplitInterfaceWrapper):
