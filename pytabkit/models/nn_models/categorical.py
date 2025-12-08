@@ -49,7 +49,7 @@ class EncodingLayer(Layer):
 
         new_tensors = []
         for i, l in enumerate(self.emb_layers):
-            sub_x_cat = x_cat[[slice(None)] * (x_cat.dim() - 1) + [slice(i, i + 1)]]
+            sub_x_cat = x_cat[tuple([slice(None)] * (x_cat.dim() - 1) + [slice(i, i + 1)])]
             sub_tensors = {'x_cat': sub_x_cat}
             if 'y' in tensors:
                 sub_tensors['y'] = tensors['y']
@@ -174,7 +174,7 @@ class SingleOneHotLayer(Layer):
     def _binary(self, x_cat, values):
         src = torch.as_tensor(values, dtype=torch.float32, device=x_cat.device)
         # add other dimensions to match those of x_cat
-        src = src[[None] * (x_cat.dim()-1) + [slice(None)]].expand(*(list(x_cat.shape[:-1]) + [-1]))
+        src = src[tuple([None] * (x_cat.dim()-1) + [slice(None)])].expand(*(list(x_cat.shape[:-1]) + [-1]))
         return src.gather(dim=-1, index=x_cat)
 
     def _multiple(self, x_cat, on_value, off_value):

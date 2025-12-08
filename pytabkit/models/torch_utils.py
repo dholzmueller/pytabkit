@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union, Optional
 
 import torch
 import numpy as np
@@ -84,4 +84,143 @@ def torch_np_quantile(tensor: torch.Tensor, q: float, dim: int, keepdim: bool = 
     x_np = tensor.detach().cpu().numpy()
     q_np = np.quantile(x_np, q=q, axis=dim, keepdims=keepdim)
     return torch.as_tensor(q_np, device=tensor.device, dtype=tensor.dtype)
+
+
+from time import perf_counter
+import torch
+
+
+def _cuda_in_use() -> bool:
+    """Return True if CUDA is available and initialized."""
+    if not torch.cuda.is_available():
+        return False
+    # is_initialized exists in recent PyTorch; fall back to True if missing
+    is_initialized = getattr(torch.cuda, "is_initialized", None)
+    if is_initialized is None:
+        return True
+    return is_initialized()
+
+
+class TorchTimer:
+    """
+    Timer for measuring code blocks, with optional CUDA synchronization.
+
+    Usage:
+        with TorchTimer() as t:
+            y = model(x)
+        print(t.elapsed)
+
+        # Or manual start/stop:
+        t = TorchTimer()
+        t.start()
+        y = model(x)
+        t.stop()
+        print(t.elapsed)
+    """
+
+    def __init__(self, use_cuda: Optional[bool] = None, record_history: bool = False):
+        """
+        Args:
+            use_cuda:
+                - None (default): auto-detect; sync only if CUDA is in use.
+                - True: force CUDA sync (if available).
+                - False: never sync CUDA.
+            record_history:
+                If True, every measurement is appended to `self.history`.
+        """
+        self._user_use_cuda = use_cuda
+        self.record_history = record_history
+        self.elapsed = None
+        self.history = [] if record_history else None
+        self._start = None
+
+    @property
+    def _do_cuda_sync(self) -> bool:
+        if self._user_use_cuda is False:
+            return False
+        if self._user_use_cuda is True:
+            return torch.cuda.is_available()
+        # Auto mode: only if CUDA is available *and* initialized
+        return _cuda_in_use()
+
+    # ------- context manager API -------
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+    # ------- manual API -------
+
+    def start(self):
+        if self._do_cuda_sync:
+            torch.cuda.synchronize()
+        self._start = perf_counter()
+
+    def stop(self):
+        if self._start is None:
+            raise RuntimeError("TorchTimer.stop() called before start().")
+        if self._do_cuda_sync:
+            torch.cuda.synchronize()
+        self.elapsed = perf_counter() - self._start
+        if self.record_history:
+            self.history.append(self.elapsed)
+        return self.elapsed
+
+
+def get_available_memory_gb(device: Union[str, torch.device]) -> float:
+    """
+    Return the available memory (in GB) on the given device.
+
+    Parameters
+    ----------
+    device : str or torch.device
+        Device identifier, e.g. "cuda", "cuda:0", or torch.device("cuda:0").
+
+    Returns
+    -------
+    float
+        Available memory in gigabytes.
+
+    Notes
+    -----
+    - For CUDA devices, this uses torch.cuda.mem_get_info if available.
+    - For CPU, it uses psutil.virtual_memory().available.
+    - For other device types, NotImplementedError is raised.
+    """
+    dev = torch.device(device)
+
+    if dev.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is not available, but a CUDA device was requested.")
+
+        # Ensure we are querying the correct device
+        torch.cuda.synchronize(dev)
+
+        if hasattr(torch.cuda, "mem_get_info"):
+            free_bytes, total_bytes = torch.cuda.mem_get_info(dev)
+        else:
+            # Fallback: approximate using total_memory - reserved_by_pytorch
+            props = torch.cuda.get_device_properties(dev)
+            total_bytes = props.total_memory
+            reserved_bytes = torch.cuda.memory_reserved(dev)
+            free_bytes = max(total_bytes - reserved_bytes, 0)
+
+        return free_bytes / (1024 ** 3)  # bytes -> GiB
+
+    elif dev.type == "cpu":
+        try:
+            import psutil
+        except ImportError as e:
+            raise ImportError(
+                "psutil is required to query CPU memory. Install via `pip install psutil`."
+            ) from e
+
+        mem = psutil.virtual_memory()
+        return mem.available / (1024 ** 3)
+
+    else:
+        raise NotImplementedError(f"Memory query not implemented for device type '{dev.type}'")
 

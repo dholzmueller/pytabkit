@@ -15,6 +15,7 @@ from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapp
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.nn_models.base import Fitter
 from pytabkit.models.nn_models.models import PreprocessingFactory
+from pytabkit.models.torch_utils import get_available_memory_gb
 from pytabkit.models.training.logging import Logger
 
 
@@ -67,6 +68,7 @@ class xRFMSubSplitInterface(SingleSplitAlgInterface):
             raw_cat_sizes = raw_cat_sizes.tolist()
         else:
             raw_cat_sizes = [int(size) for size in raw_cat_sizes]
+
         if 'factory' in self.config or 'one_hot' not in self.config['tfms']:
             cat_sizes = []  # don't apply fast_categorical stuff
         else:
@@ -131,12 +133,15 @@ class xRFMSubSplitInterface(SingleSplitAlgInterface):
         reg = self.config.get('reg', 1e-3)
         iters = self.config.get('rfm_iters', 5)
         diag = self.config.get('diag', True)
-        min_subset_size = self.config.get('max_leaf_samples', 60_000)
+        min_subset_size = self.config.get('max_leaf_samples', self.config.get('min_subset_size', 60_000))
         early_stop_rfm = self.config.get('early_stop_rfm', True)
         early_stop_multiplier = self.config.get('early_stop_multiplier', 1.1)
         classification_mode = self.config.get('classification_mode', 'prevalence')
         fast_categorical = self.config.get('fast_categorical', True)
-        M_batch_size = self.config.get('M_batch_size', 8000)
+        M_batch_size = self.config.get('M_batch_size', 'auto')
+        overlap_fraction = self.config.get('overlap_fraction', 0.1)
+        use_temperature_tuning = self.config.get('use_temperature_tuning', True)
+        temp_tuning_space = self.config.get('temp_tuning_space', None)
 
         bandwidth_mode = self.config.get('bandwidth_mode', 'constant')
         kernel_type = self.config.get('kernel_type', 'l2')
@@ -147,6 +152,20 @@ class xRFMSubSplitInterface(SingleSplitAlgInterface):
             bandwidth *= np.sqrt(x_train.shape[0])
         else:
             raise ValueError()
+
+        if M_batch_size == 'auto':
+            if kernel_type in ['gen_laplace', 'l1-laplace', 'lpq-laplace', 'l1', 'lpq', 'lpq_kermac']:
+                # heuristic for storing a (n_train, M_batch_size, n_features) tensor in memory
+                # 4 bytes per float
+                full_tensor_size_per_elem_gb = (4 * n_train * ds_train.tensor_infos['x_cont'].get_n_features()) / (
+                        1024 ** 3)
+                full_tensor_size_per_elem_gb *= 12  # just a heuristic
+                M_batch_size = max(1, min(8192, round(get_available_memory_gb(device) / full_tensor_size_per_elem_gb)))
+                # M_batch_size = 512 if n_train <= 10_000 else (256 if n_train <= 20_000 else 64)
+            else:
+                M_batch_size = 8192
+
+        print(f'{kernel_type=}, {M_batch_size=}')
 
         model_params, fit_params = {}, {}
         model_params['kernel'] = kernel_type
@@ -200,7 +219,8 @@ class xRFMSubSplitInterface(SingleSplitAlgInterface):
                              tuning_metric=tuning_metric,
                              categorical_info=categorical_info, 
                              classification_mode=classification_mode,
-                             split_method=split_method)
+                             split_method=split_method, overlap_fraction=overlap_fraction,
+                           use_temperature_tuning=use_temperature_tuning, temp_tuning_space=temp_tuning_space)
 
         self.model_.fit(x_train, y_train, x_val, y_val)
 
@@ -302,6 +322,191 @@ def sample_xrfm_params(seed: int, hpo_space_name: str = 'default'):
             # 'early_stop_rfm': True,
             # 'early_stop_multiplier': 1.1, # early stop if val metric > esm * best val metric (for loss)
             # 'split_method': 'top_vector_agop_on_subset',
+        }
+    elif hpo_space_name == 'paper-large':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',  # todo: adjust general solver?
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'top_vector_agop_on_subset',
+            'overlap_fraction': 0.0,
+            'use_temperature_tuning': False,
+        }
+    elif hpo_space_name == 'paper-large-pca':
+        # like paper-large, but with pca splitting
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,
+            'rfm_iters': 5,  # don't put it here, it's the default anyway and can be overridden
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',  # todo: adjust general solver?
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'pca',  # changed compared
+            'overlap_fraction': 0.0,
+            'use_temperature_tuning': False,
+        }
+    elif hpo_space_name == 'large-soft':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'top_vector_agop_on_subset',
+            # 'overlap_fraction': 0.0,
+            # 'use_temperature_tuning': False,
+        }
+    elif hpo_space_name == 'large-soft-pca':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'pca',
+            # 'overlap_fraction': 0.0,
+            # 'use_temperature_tuning': False,
+        }
+    elif hpo_space_name == 'large-temptune':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'top_vector_agop_on_subset',
+            'overlap_fraction': 0.0,
+            # 'use_temperature_tuning': False,
+            'temp_tuning_space': [0.0] + list(np.logspace(np.log10(0.025), np.log10(4.5), num=15))
+        }
+    elif hpo_space_name == 'large-temptune-pca':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'pca',
+            'overlap_fraction': 0.0,
+            # 'use_temperature_tuning': False,
+            'temp_tuning_space': [0.0] + list(np.logspace(np.log10(0.025), np.log10(4.5), num=15))
+        }
+    elif hpo_space_name == 'large-temptune-rf':
+        # used on meta-test in the paper
+        num_tfms_list = [['mean_center', 'l2_normalize']]
+        num_tfms = num_tfms_list[rng.integers(len(num_tfms_list))]
+        cat_tfms_list = [['ordinal_encoding'], ['one_hot']]
+        cat_tfms = cat_tfms_list[rng.integers(len(cat_tfms_list))]
+
+        params = {
+            'bandwidth_mode': rng.choice(['constant', 'adaptive']),
+            'bandwidth': np.exp(rng.uniform(np.log(0.4), np.log(80.0))),
+            'reg': np.exp(rng.uniform(np.log(1e-5), np.log(50.))),
+            'exponent': rng.uniform(0.7, 1.3),
+            'p_interp': rng.uniform(0., 0.8),
+            'tfms': num_tfms + cat_tfms,
+            'diag': rng.choice([False, True]),
+            'kernel_type': rng.choice(['lpq_kermac', 'l2'], p=[0.8, 0.2]),
+            # 'max_leaf_samples': 60_000,  # don't put it here, it's the default anyway and can be overridden
+            'rfm_iters': 5,
+            'classification_mode': 'zero_one',
+            'binary_solver': 'solve',
+            'early_stop_rfm': True,
+            'early_stop_multiplier': 1.1,  # early stop if val metric > esm * best val metric (for loss)
+            'split_method': 'rf_criterion',
+            'overlap_fraction': 0.0,
+            # 'use_temperature_tuning': False,
+            'temp_tuning_space': [0.0] + list(np.logspace(np.log10(0.025), np.log10(4.5), num=15))
         }
     else:
         raise ValueError(f'Unknown {hpo_space_name=}')

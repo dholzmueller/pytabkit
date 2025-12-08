@@ -30,11 +30,29 @@ from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, SingleSp
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
 
 
+def get_lignting_accel_and_devices(device: str):
+    if device == 'cpu':
+        pl_accelerator = 'cpu'
+        pl_devices = 'auto'
+    elif device == 'mps':
+        pl_accelerator = 'mps'
+        pl_devices = 'auto'
+    elif device == 'cuda':
+        pl_accelerator = 'gpu'
+        pl_devices = [0]
+    elif device.startswith('cuda:'):
+        pl_accelerator = 'gpu'
+        pl_devices = [int(device[len('cuda:'):])]
+    else:
+        raise ValueError(f'Unknown device "{device}"')
+
+    return pl_accelerator, pl_devices
+
+
 class NNAlgInterface(AlgInterface):
     def __init__(self, fit_params: Optional[List[Dict[str, Any]]] = None, **config):
         super().__init__(fit_params=fit_params, **config)
         self.model: Optional[TabNNModule] = None
-        self.trainer: Optional[pl.Trainer] = None
         self.device = None
 
     def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
@@ -86,20 +104,7 @@ class NNAlgInterface(AlgInterface):
                                  fit_params=fit_params)
         self.model.compile_model(ds, idxs_list, interface_resources)
 
-        if self.device == 'cpu':
-            pl_accelerator = 'cpu'
-            pl_devices = 'auto'
-        elif self.device == 'mps':
-            pl_accelerator = 'mps'
-            pl_devices = 'auto'
-        elif self.device == 'cuda':
-            pl_accelerator = 'gpu'
-            pl_devices = [0]
-        elif self.device.startswith('cuda:'):
-            pl_accelerator = 'gpu'
-            pl_devices = [int(self.device[len('cuda:'):])]
-        else:
-            raise ValueError(f'Unknown device "{self.device}"')
+        pl_accelerator, pl_devices = get_lignting_accel_and_devices(self.device)
 
         max_time = None if interface_resources.time_in_seconds is None else timedelta(
             seconds=interface_resources.time_in_seconds)
@@ -140,6 +145,9 @@ class NNAlgInterface(AlgInterface):
 
         torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
 
+        # remove all remaining references to GPU tensors, for some reason this can't be done in the model
+        del self.model._trainer
+
         # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
 
         # print(f'Importances (sorted):', self.get_importances().sort()[0])
@@ -153,13 +161,20 @@ class NNAlgInterface(AlgInterface):
         self.model.to(self.device)
         ds = ds.to(self.device)
         ds_x, _ = ds.split_xy()
+
+        pl_accelerator, pl_devices = get_lignting_accel_and_devices(self.device)
+
         # create new trainer so we don't have to pickle the full trainer that references the dataset somehow
-        trainer = pl.Trainer(**self.min_trainer_kwargs)
+        # update devices since the model device may have been moved since
+        trainer = pl.Trainer(**(self.min_trainer_kwargs | dict(accelerator=pl_accelerator, devices=pl_devices)))
         y_pred = trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
         y_pred = cat_if_necessary(y_pred, dim=-2).to('cpu')  # concat along batch dimension
         y_pred = postprocess_multiquantile(y_pred, **self.config)  # postprocessing in case of multiquantile loss
         torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
-        # self.model.to('cpu')  # to allow serialization without GPU issues, but doesn't work
+
+        # remove all remaining references to GPU tensors, for some reason this can't be done in the model
+        del self.model._trainer
+
         return y_pred
 
     def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
@@ -235,6 +250,11 @@ class NNAlgInterface(AlgInterface):
 
         factor = 1.2  # to go safe on ram
         return factor * n_parallel * n_params * 4 / (1024 ** 3)
+
+    def to(self, device: str) -> None:
+        # print(f'Move RealMLP model to device {device}')
+        self.model.to(device)
+        self.device = device
 
     def get_importances(self) -> torch.Tensor:
         net: Layer = self.model.model
@@ -1007,6 +1027,9 @@ class RandomParamsNNAlgInterface(SingleSplitAlgInterface):
 
     def get_available_predict_params(self) -> Dict[str, Dict[str, Any]]:
         return NNAlgInterface(**self.config).get_available_predict_params()
+
+    def to(self, device: str) -> None:
+        self.alg_interface.to(device)
 
 # class NNHyperoptAlgInterface(OptAlgInterface):
 #     def __init__(self, space=None, n_hyperopt_steps: int = 50, **config):

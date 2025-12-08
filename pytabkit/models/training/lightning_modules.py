@@ -269,14 +269,18 @@ class TabNNModule(pl.LightningModule):
                 for i in range(self.creator.n_tt_splits)
             ]
 
+        # put in eval() mode for predict(), so we don't need to save the trainer and the optimizer state
+        self.optimizers(use_pl_optimizer=False).eval()
+
         # delete stuff so we don't save the dataset when pickling RealMLP
         del self.creator.train_idxs
         del self.creator.val_idxs
         del self.train_dl
         del self.val_dl
+        del self.val_preds
+        del self.callbacks
+        del self.ckpt_callbacks
 
-        # put in eval() mode for predict(), so we don't need to save the trainer and the optimizer state
-        self.optimizers(use_pl_optimizer=False).eval()
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         self.model.eval()
@@ -334,3 +338,8 @@ class TabNNModule(pl.LightningModule):
         self.model.eval()
         # don't do it here in case we don't have the optimizers at predict time
         # self.optimizers(use_pl_optimizer=False).eval()
+
+    def to(self, *args: Any, **kwargs: Any) -> 'TabNNModule':
+        super().to(*args, **kwargs)
+        print(f'moving static model to {args} {kwargs}')
+        self.creator.static_model.to(*args, **kwargs)

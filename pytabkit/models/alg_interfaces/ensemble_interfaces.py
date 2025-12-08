@@ -176,6 +176,12 @@ class CaruanaEnsembleAlgInterface(SingleSplitAlgInterface):
             for ssi in self.alg_interfaces]
         return RequiredResources.combine_sequential(single_resources)
 
+    def to(self, device: str) -> None:
+        for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            with alg_ctx as alg_interface:
+                alg_interface.to(device)
+
+
 
 class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
     """
@@ -276,6 +282,12 @@ class AlgorithmSelectionAlgInterface(SingleSplitAlgInterface):
             ssi.get_required_resources(ds, n_cv, n_refit, n_splits=n_splits, split_seeds=split_seeds, n_train=n_train)
             for ssi in self.alg_interfaces]
         return RequiredResources.combine_sequential(single_resources)
+
+    def to(self, device: str) -> None:
+        for alg_idx, alg_ctx in enumerate(self.alg_contexts_):
+            with alg_ctx as alg_interface:
+                alg_interface.to(device)
+
 
 
 class PrecomputedPredictionsAlgInterface(SingleSplitAlgInterface):

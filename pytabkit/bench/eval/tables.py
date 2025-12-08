@@ -11,14 +11,17 @@ from pytabkit.models import utils
 from pytabkit.models.data.data import TaskType
 from pytabkit.models.data.nested_dict import NestedDict
 
-
-def _get_table_str(table_head: List[List[str]], table_body: List[List[str]]):
-    head_row_strs = [' & '.join(row) + r' \\' for row in table_head]
-    body_row_strs = [' & '.join(row) + r' \\' for row in table_body]
-    n_cols = max(len(row) for row in table_head + table_body)
+def _get_table_str(*parts: List[List[str]]):
+    part_rows = [[' & '.join(row) + r' \\' for row in part] for part in parts]
+    n_cols = max(len(row) for part in parts for row in part)
     begin_table_str = r'\begin{tabular}{' + ('c' * n_cols) + r'}' + '\n' + r'\toprule'
     end_table_str = r'\bottomrule' + '\n' + r'\end{tabular}'
-    all_row_strs = [begin_table_str] + head_row_strs + [r'\midrule'] + body_row_strs + [end_table_str]
+    all_row_strs = [begin_table_str]
+    for part in part_rows[:-1]:
+        all_row_strs.extend(part)
+        all_row_strs.append(r'\midrule')
+    all_row_strs.extend(part_rows[-1])
+    all_row_strs.append(end_table_str)
     complete_str = '\n'.join(all_row_strs)
     return complete_str
 
@@ -208,7 +211,7 @@ def generate_ablations_table(paths: Paths, tables: ResultsTables):
         (r'Activation=SELU', 'act-selu'),
         ('', ''),
         ('No dropout', 'pdrop-0.0'),
-        ('Dropout prob.\ $0.15$ (constant)', 'pdrop-0.15'),
+        (r'Dropout prob.\ $0.15$ (constant)', 'pdrop-0.15'),
         ('', ''),
         ('No weight decay', 'wd-0.0'),
         # ('Weight decay = 0.02 ($\operatorname{flat\_cos}$)', 'wd-0.02-flatcos'),

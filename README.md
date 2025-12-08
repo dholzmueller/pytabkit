@@ -200,6 +200,12 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.7.1:
+    - LightGBM now processes the `extra_trees`, `max_cat_to_onehot`, and `min_data_per_group` parameters 
+      used in the `'tabarena'` search space, which should improve results.
+    - Scikit-learn interfaces for RealMLP (TD, HPO) now support moving the model to a different device 
+      (e.g., before saving). This can be achived using, e.g., `model.to('cpu')` (which is in-place).
+    - Fixed an xRFM bug in handling binary categorical features.
 - v1.7.0:
     - added [xRFM](https://arxiv.org/abs/2508.10053) (D, HPO)
     - added new `'tabarena-new'` search space for RealMLP-HPO, including per-fold ensembling (more expensive)

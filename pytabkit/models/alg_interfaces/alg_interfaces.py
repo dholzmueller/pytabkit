@@ -1,4 +1,5 @@
 import functools
+import warnings
 from pathlib import Path
 from typing import List, Tuple, Any, Optional, Dict
 
@@ -245,6 +246,9 @@ class AlgInterface:
 
     def set_current_predict_params(self, name: str) -> None:
         self.curr_pred_params_name = name
+
+    def to(self, device: str) -> None:
+        warnings.warn(f'.to() method does nothing for {self.__class__} (not implemented)')
 
 
 class MultiSplitWrapperAlgInterface(AlgInterface):
