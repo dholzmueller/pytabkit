@@ -456,6 +456,15 @@ class AlgInterfaceEstimator(BaseEstimator):
         torch.set_num_threads(old_torch_n_threads)
         return y_preds
 
+    def to(self, device: str) -> None:
+        """
+        Move the model (only implemented for RealMLP at the moment) to the specified device.
+        :param device: PyTorch-compatible device name.
+        """
+        self.cv_alg_interface_.to(device)
+        if hasattr(self, 'refit_alg_interface_'):
+            self.refit_alg_interface_.to(device)
+
 
 class AlgInterfaceClassifier(ClassifierMixin, AlgInterfaceEstimator):
     # inheritance order is important in scikit-learn 1.6

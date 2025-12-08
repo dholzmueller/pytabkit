@@ -11,6 +11,7 @@ public_export
 dist
 files
 plots
+lightning_logs
 
 docs/build
 docs/source/modules.rst

@@ -28,7 +28,7 @@ on our benchmarks.
     (e.g., `class_error`, `cross_entropy`, `brier`, `1-auc_ovr`), or the corresponding `Regressor`. 
     (This might take very long to fit.)
   - For only a single model, we recommend using 
-    `RealMLP_HPO_Classifier(n_cv=8, hpo_space_name='tabarena', use_caruana_ensembling=True, n_hyperopt_steps=50)`,
+    `RealMLP_HPO_Classifier(n_cv=8, hpo_space_name='tabarena-new', use_caruana_ensembling=True, n_hyperopt_steps=50)`,
     also with `val_metric_name` as above, or the corresponding `Regressor`.
 - **Models**: [TabArena](https://github.com/AutoGluon/tabarena) 
   also includes some newer models like RealMLP and TabM 
@@ -184,9 +184,9 @@ If you use this repository for research purposes, please cite our [paper](https:
 - Léo Grinsztajn (deep learning baselines, plotting)
 - Ingo Steinwart (UCI dataset download)
 - Katharina Strecker (PyTorch-Lightning interface)
+- Daniel Beaglehole (part of the xRFM implementation)
 - Lennart Purucker (some features/fixes)
 - Jérôme Dockès (deployment, continuous integration)
-- 
 
 ## Acknowledgements
 
@@ -200,6 +200,12 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.7.1:
+    - LightGBM now processes the `extra_trees`, `max_cat_to_onehot`, and `min_data_per_group` parameters 
+      used in the `'tabarena'` search space, which should improve results.
+    - Scikit-learn interfaces for RealMLP (TD, HPO) now support moving the model to a different device 
+      (e.g., before saving). This can be achived using, e.g., `model.to('cpu')` (which is in-place).
+    - Fixed an xRFM bug in handling binary categorical features.
 - v1.7.0:
     - added [xRFM](https://arxiv.org/abs/2508.10053) (D, HPO)
     - added new `'tabarena-new'` search space for RealMLP-HPO, including per-fold ensembling (more expensive)

@@ -123,6 +123,9 @@ class LGBMSubSplitInterface(TreeBasedSubSplitInterface):
                          ('cat_smooth', None),
                          ('cat_l2', None),
                          ('early_stopping_round', ['early_stopping_round', 'early_stopping_rounds'], None),
+                         ('extra_trees', None),
+                         ('max_cat_to_onehot', None),
+                         ('min_data_per_group', None),
                          ]
 
         params = utils.extract_params(self.config, params_config)
@@ -686,10 +689,10 @@ class RandomParamsLGBMAlgInterface(RandomParamsAlgInterface):
                 'min_data_in_leaf': np.floor(np.exp(rng.uniform(np.log(1.0), np.log(65)))),
                 'extra_trees': rng.choice([False, True]),
 
-                'min_data_per_group': np.floor(np.exp(rng.uniform(np.log(2.0), np.log(101)))),
+                'min_data_per_group': round(np.floor(np.exp(rng.uniform(np.log(2.0), np.log(101))))),
                 'cat_l2': np.exp(rng.uniform(np.log(5e-3), np.log(2.0))),
                 'cat_smooth': np.exp(rng.uniform(np.log(1e-3), np.log(100.0))),
-                'max_cat_to_onehot': np.floor(np.exp(rng.uniform(np.log(8.0), np.log(101.0)))),
+                'max_cat_to_onehot': round(np.floor(np.exp(rng.uniform(np.log(8.0), np.log(101.0))))),
 
                 'lambda_l1': np.exp(rng.uniform(np.log(1e-5), np.log(1.0))),
                 'lambda_l2': np.exp(rng.uniform(np.log(1e-5), np.log(2.0))),
