@@ -69,7 +69,8 @@ class SkorchSubSplitInterface(SklearnSubSplitInterface):
             # missing values were encoded as zero, we need to make them missing again
             self.replace_zero_by_nans = SimpleImputer(missing_values=0.,
                                                       strategy="constant",
-                                                      fill_value=np.nan)
+                                                      fill_value=np.nan,
+                                                      keep_empty_features=True)
             x_train[:, self.categorical_indicator] = self.replace_zero_by_nans.fit_transform(
                 x_train[:, self.categorical_indicator])
             self.ord_enc = OrdinalEncoder(dtype=np.float32, handle_unknown='use_encoded_value', unknown_value=-1,

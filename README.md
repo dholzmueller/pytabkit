@@ -201,6 +201,7 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 ## Releases (see git tags)
 
 - v1.7.2: 
+    - Added scikit-learn 1.8 compatibility.
     - Removed debug print in RealMLP.
     - fixed device memory estimation error in the scheduler when `CUDA_VISIBLE_DEVICES` was used.
 - v1.7.1:

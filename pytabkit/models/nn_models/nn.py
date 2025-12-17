@@ -787,11 +787,11 @@ class ToSoftLabelLayer(Layer):
             for i, cs in enumerate(y_cs):
                 if cs == 0:
                     # already continuous
-                    new_y_cols.append(y[[slice(None)] * (y.dim() - 1) + [slice(i, i + 1)]])
+                    new_y_cols.append(y[tuple([slice(None)] * (y.dim() - 1) + [slice(i, i + 1)])])
                 else:
                     # make continuous
                     # todo: is there a better one-hot function without the long -> float conversion?
-                    new_y_cols.append(F.one_hot(y[[slice(None)] * (y.dim() - 1) + [i]], num_classes=cs).float())
+                    new_y_cols.append(F.one_hot(y[tuple([slice(None)] * (y.dim() - 1) + [i])], num_classes=cs).float())
             return utils.join_dicts(tensors, {'y': torch.cat(new_y_cols, dim=-1)})
 
 
