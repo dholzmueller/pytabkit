@@ -54,11 +54,11 @@ def check_X_y_wrapper(*args, **kwargs):
     if Version(sklearn.__version__) >= Version("1.8.0"):
         if 'force_all_finite' in kwargs:
             kwargs['ensure_all_finite'] = kwargs['force_all_finite']
-            kwargs['force_all_finite'] = None
+            del kwargs['force_all_finite']
     else:
         if 'ensure_all_finite' in kwargs:
             kwargs['force_all_finite'] = kwargs['ensure_all_finite']
-            kwargs['ensure_all_finite'] = None
+            del kwargs['ensure_all_finite']
 
     check_X_y(*args, **kwargs)
 
@@ -67,11 +67,11 @@ def check_array_wrapper(*args, **kwargs):
     if Version(sklearn.__version__) >= Version("1.8.0"):
         if 'force_all_finite' in kwargs:
             kwargs['ensure_all_finite'] = kwargs['force_all_finite']
-            kwargs['force_all_finite'] = None
+            del kwargs['force_all_finite']
     else:
         if 'ensure_all_finite' in kwargs:
             kwargs['force_all_finite'] = kwargs['ensure_all_finite']
-            kwargs['ensure_all_finite'] = None
+            del kwargs['ensure_all_finite']
 
     check_array(*args, **kwargs)
 
