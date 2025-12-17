@@ -341,5 +341,5 @@ class TabNNModule(pl.LightningModule):
 
     def to(self, *args: Any, **kwargs: Any) -> 'TabNNModule':
         super().to(*args, **kwargs)
-        print(f'moving static model to {args} {kwargs}')
+        # print(f'moving static model to {args} {kwargs}')
         self.creator.static_model.to(*args, **kwargs)

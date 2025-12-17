@@ -147,6 +147,8 @@ class NodeResources:
         gpu_rams_gb_all = fr.get_gpu_rams_gb() + rr.gpu_ram_gb
         gpu_availability = np.logical_and(gpu_usages_all <= self.get_gpu_usages() + 1e-8,
                                           gpu_rams_gb_all <= self.get_gpu_rams_gb())
+        # print(f'{fr.get_gpu_rams_gb()=}, {rr.gpu_ram_gb=}')
+        # print(f'{gpu_usages_all=}, {gpu_rams_gb_all=}, {self.get_gpu_usages()=}, {self.get_gpu_rams_gb()=}, {gpu_availability=}')
         available_gpus = np.argwhere(gpu_availability)[:, 0]  # squeeze second dimension
         # sort available gpus by usage
         available_gpu_usages = self.get_gpu_usages()[available_gpus]

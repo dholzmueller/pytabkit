@@ -318,7 +318,11 @@ class SimpleJobScheduler(BaseJobScheduler):
 
             # otherwise, try assigning the job
             for node_idx, r in enumerate(free_resources.resources):
+                # print(f'{fixed_resources.__dict__=}')
+                # print(f'{job_info.required_resources.__dict__=}')
+                # print(f'{r.data=}, {r.get_resource_vector()=}, {node_idx=}')
                 assigned_resources = r.try_assign(job_info.required_resources, fixed_resources)
+                # print(f'{bool(assigned_resources)=}')
                 if assigned_resources is not None:
                     job_info.set_started(assigned_resources)
                     self.job_manager.submit_job(job_info)

@@ -1250,7 +1250,7 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         # print(f'{gpu_devices=}')
         if self.n_classes > 0:
             if self.config.get('use_tabiclex', False):
-                from tabiclex import TabICLClassifier
+                from tabiclv2 import TabICLClassifier
             else:
                 from tabicl import TabICLClassifier
             return TabICLClassifier(random_state=seed,
@@ -1304,9 +1304,9 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         assert n_splits == 1
         updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
         time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
-        ram_params = {'': 0.5, 'ds_size_gb': 3.0, 'n_samples*n_estimators*n_tree_repeats': 3e-9}
+        ram_params = {'': 0.5}
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
-                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
+                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.999, gpu_ram_params={'': 10.0})
         return rc.get_required_resources(ds)
 
 

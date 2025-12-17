@@ -13,6 +13,38 @@ from pytabkit.bench.scheduling.resources import NodeResources, SystemResources
 from pytabkit.models.utils import FunctionProcess
 
 
+def get_gpu_rams_gb(use_reserved: bool = True):
+    """
+    Returns:
+      gpu_rams_gb: total GPU memory per visible device (GB)
+      gpu_rams_fixed_gb: this process GPU memory per visible device (GB)
+        - reserved (default): torch caching allocator reserved bytes (often matches "process used" better)
+        - allocated: live tensor bytes only
+    """
+    # do it in torch, it respects CUDA_VISIBLE_DEVICES and doesn't need the pynvml dependency
+    BYTES_TO_GB = 1024.0 ** 3
+    import torch
+
+    gpu_rams_gb = []
+    gpu_rams_fixed_gb = []
+
+    n = torch.cuda.device_count()  # respects CUDA_VISIBLE_DEVICES ("" => 0)
+    for i in range(n):
+        with torch.cuda.device(i):
+            _free_b, total_b = torch.cuda.mem_get_info()
+
+        gpu_rams_gb.append(total_b / BYTES_TO_GB)
+
+        if use_reserved:
+            used_b = torch.cuda.memory_reserved(i)
+        else:
+            used_b = torch.cuda.memory_allocated(i)
+
+        gpu_rams_fixed_gb.append(used_b / BYTES_TO_GB)
+
+    return gpu_rams_gb, gpu_rams_fixed_gb
+
+
 def measure_node_resources(node_id: int) -> Tuple[NodeResources, NodeResources]:
     """
     Function that measures available resources.
@@ -29,21 +61,22 @@ def measure_node_resources(node_id: int) -> Tuple[NodeResources, NodeResources]:
         # init cuda
         # alloc dummy tensors to know how much memory PyTorch uses for its runtime
         dummy_tensors = [torch.ones(1).to(f'cuda:{i}') for i in range(n_gpus)]
-        import pynvml
-        pynvml.nvmlInit()
-
-        gpu_rams_gb = []
-        gpu_rams_fixed_gb = []
-
-        for i in range(n_gpus):
-            # adapted torch.cuda.list_gpu_processes(gpu)
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
-            info = pynvml.nvmlDeviceGetMemoryInfo(h)
-            total = info.total
-            # print(f'free     : {info.free}')
-            used = info.used
-            gpu_rams_gb.append(total / (1024. ** 3))
-            gpu_rams_fixed_gb.append(used / (1024. ** 3))
+        gpu_rams_gb, gpu_rams_fixed_gb = get_gpu_rams_gb()
+        # import pynvml
+        # pynvml.nvmlInit()
+        #
+        # gpu_rams_gb = []
+        # gpu_rams_fixed_gb = []
+        #
+        # for i in range(n_gpus):
+        #     # adapted torch.cuda.list_gpu_processes(gpu)
+        #     h = pynvml.nvmlDeviceGetHandleByIndex(i)
+        #     info = pynvml.nvmlDeviceGetMemoryInfo(h)
+        #     total = info.total
+        #     # print(f'free     : {info.free}')
+        #     used = info.used
+        #     gpu_rams_gb.append(total / (1024. ** 3))
+        #     gpu_rams_fixed_gb.append(used / (1024. ** 3))
     else:
         gpu_rams_gb = []
         gpu_rams_fixed_gb = []
