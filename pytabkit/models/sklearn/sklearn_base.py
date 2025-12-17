@@ -2,6 +2,7 @@ import copy
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 from warnings import warn
+from packaging.version import Version
 
 import numpy as np
 import pandas as pd
@@ -47,6 +48,32 @@ def concat_arrays(x1, x2) -> Any:
     if isinstance(x1, pd.DataFrame) or isinstance(x1, pd.Series):
         return pd.concat([x1, x2], axis=0, ignore_index=True)
     return np.concatenate([x1, x2], axis=0)
+
+
+def check_X_y_wrapper(*args, **kwargs):
+    if Version(sklearn.__version__) >= Version("1.8.0"):
+        if 'force_all_finite' in kwargs:
+            kwargs['ensure_all_finite'] = kwargs['force_all_finite']
+            kwargs['force_all_finite'] = None
+    else:
+        if 'ensure_all_finite' in kwargs:
+            kwargs['force_all_finite'] = kwargs['ensure_all_finite']
+            kwargs['ensure_all_finite'] = None
+
+    check_X_y(*args, **kwargs)
+
+
+def check_array_wrapper(*args, **kwargs):
+    if Version(sklearn.__version__) >= Version("1.8.0"):
+        if 'force_all_finite' in kwargs:
+            kwargs['ensure_all_finite'] = kwargs['force_all_finite']
+            kwargs['force_all_finite'] = None
+    else:
+        if 'ensure_all_finite' in kwargs:
+            kwargs['force_all_finite'] = kwargs['ensure_all_finite']
+            kwargs['ensure_all_finite'] = None
+
+    check_array(*args, **kwargs)
 
 
 class AlgInterfaceEstimator(BaseEstimator):
@@ -138,7 +165,7 @@ class AlgInterfaceEstimator(BaseEstimator):
         """
 
         # do a first check, this includes to check if X or y are not None before other things are done to them
-        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
+        check_X_y_wrapper(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
 
         # if X is None:
         #     raise ValueError(f'This estimator requires X to be passed, but X is None')
@@ -184,7 +211,7 @@ class AlgInterfaceEstimator(BaseEstimator):
             y = concat_arrays(y, y_val)
 
         # check again with the validation set concatenated
-        check_X_y(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
+        check_X_y_wrapper(X, y, force_all_finite='allow-nan', multi_output=True, dtype=None)
 
         if self._is_classification():
             # classes_ is overridden later, but this raises an error when y is a regression target, so it is useful
@@ -446,7 +473,7 @@ class AlgInterfaceEstimator(BaseEstimator):
 
         # Input validation
         # if isinstance(X, np.ndarray):
-        check_array(X, force_all_finite='allow-nan', dtype=None)
+        check_array_wrapper(X, force_all_finite='allow-nan', dtype=None)
 
         x_ds = self.x_converter_.transform(to_df(X))
         if torch.any(torch.isnan(x_ds.tensors['x_cont'])):
