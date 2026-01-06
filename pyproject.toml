@@ -74,6 +74,12 @@ models = [
     # but apparently it can also cause a bug in ray due to its monkey-patching of msgpack functions# in theory we shouldn't be using if for numpy arrays at the moment, not sure why the need for this occurred
     # maybe it occurred because we tried to save hyperparameters that were numpy scalars instead of python scalars
     # "msgpack_numpy>=0.4",
+
+    # this is needed because probmetrics uses unpinned numba,
+    # but for some reason the github actions CI wants to install 0.53.1
+    # which is incompatible with Python 3.11 and 3.12.
+    # 0.59.0 is the lowest version that is compatible with 3.12
+    "numba>=0.59.0",
 ]
 autogluon = [
     "autogluon.tabular[all]>=1.0",

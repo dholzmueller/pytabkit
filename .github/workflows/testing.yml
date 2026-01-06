@@ -33,9 +33,4 @@ jobs:
       - name: Install swig
         run: uv pip install --system swig
       - name: Run tests
-        run: hatch test
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.5.0
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: dholzmueller/pytabkit
+        run: hatch test  # removed codecov upload in v1.7.3

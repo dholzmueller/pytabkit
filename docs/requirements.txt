@@ -8,6 +8,7 @@ lightgbm>=4.1
 matplotlib>=3.0
 msgpack>=1.0
 myst_parser>=3.0
+numba>=0.59.0
 numpy>=1.25
 openml>=0.14
 openpyxl>=3.0
