@@ -62,21 +62,6 @@ def measure_node_resources(node_id: int) -> Tuple[NodeResources, NodeResources]:
         # alloc dummy tensors to know how much memory PyTorch uses for its runtime
         dummy_tensors = [torch.ones(1).to(f'cuda:{i}') for i in range(n_gpus)]
         gpu_rams_gb, gpu_rams_fixed_gb = get_gpu_rams_gb()
-        # import pynvml
-        # pynvml.nvmlInit()
-        #
-        # gpu_rams_gb = []
-        # gpu_rams_fixed_gb = []
-        #
-        # for i in range(n_gpus):
-        #     # adapted torch.cuda.list_gpu_processes(gpu)
-        #     h = pynvml.nvmlDeviceGetHandleByIndex(i)
-        #     info = pynvml.nvmlDeviceGetMemoryInfo(h)
-        #     total = info.total
-        #     # print(f'free     : {info.free}')
-        #     used = info.used
-        #     gpu_rams_gb.append(total / (1024. ** 3))
-        #     gpu_rams_fixed_gb.append(used / (1024. ** 3))
     else:
         gpu_rams_gb = []
         gpu_rams_fixed_gb = []

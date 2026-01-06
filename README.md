@@ -200,6 +200,10 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.7.3:
+    - disabled RealMLP lightning log file creation that was accidentally introduced 
+      in predict() in >=v1.7.0.
+    - removed pynvml dependency.
 - v1.7.2: 
     - Added scikit-learn 1.8 compatibility.
     - Removed debug print in RealMLP.

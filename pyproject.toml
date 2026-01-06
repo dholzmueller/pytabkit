@@ -90,7 +90,6 @@ hpo = [
 bench = [
     "fire", # argparse utilities
     "ray>=2.8", # parallelization
-    "pynvml>=11.0", # NVIDIA GPU utilization
     "openml>=0.14", # OpenML data download
     # ----- UCI import ------
     "requests>=2.0",

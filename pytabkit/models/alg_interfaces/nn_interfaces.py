@@ -166,7 +166,8 @@ class NNAlgInterface(AlgInterface):
 
         # create new trainer so we don't have to pickle the full trainer that references the dataset somehow
         # update devices since the model device may have been moved since
-        trainer = pl.Trainer(**(self.min_trainer_kwargs | dict(accelerator=pl_accelerator, devices=pl_devices)))
+        trainer = pl.Trainer(**(self.min_trainer_kwargs | dict(accelerator=pl_accelerator, devices=pl_devices,
+                                                               logger=pl.loggers.logger.DummyLogger())))
         y_pred = trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
         y_pred = cat_if_necessary(y_pred, dim=-2).to('cpu')  # concat along batch dimension
         y_pred = postprocess_multiquantile(y_pred, **self.config)  # postprocessing in case of multiquantile loss
