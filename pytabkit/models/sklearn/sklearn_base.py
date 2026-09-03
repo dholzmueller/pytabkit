@@ -51,7 +51,7 @@ def concat_arrays(x1, x2) -> Any:
 
 
 def check_X_y_wrapper(*args, **kwargs):
-    if Version(sklearn.__version__) >= Version("1.8.0"):
+    if Version(sklearn.__version__) >= Version("1.6.0"):
         if 'force_all_finite' in kwargs:
             kwargs['ensure_all_finite'] = kwargs['force_all_finite']
             del kwargs['force_all_finite']
@@ -64,7 +64,7 @@ def check_X_y_wrapper(*args, **kwargs):
 
 
 def check_array_wrapper(*args, **kwargs):
-    if Version(sklearn.__version__) >= Version("1.8.0"):
+    if Version(sklearn.__version__) >= Version("1.6.0"):
         if 'force_all_finite' in kwargs:
             kwargs['ensure_all_finite'] = kwargs['force_all_finite']
             del kwargs['force_all_finite']
