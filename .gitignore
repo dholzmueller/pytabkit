@@ -26,3 +26,4 @@ rtdl_checkpoints
 examples/.ipynb_checkpoints
 
 scripts/custom_paths.py
+*.npz

@@ -81,6 +81,12 @@ models = [
     # 0.59.0 is the lowest version that is compatible with 3.12
     "numba>=0.59.0",
 ]
+# MLX backend (pytabkit_mlx): Apple silicon only. The markers make
+# `pip install pytabkit[mlx]` a no-op elsewhere instead of a resolution error.
+mlx = [
+    "mlx>=0.20; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+
 autogluon = [
     "autogluon.tabular[all]>=1.0",
     "autogluon.multimodal>=1.0",
@@ -130,12 +136,12 @@ features = ["models", "bench", "dev", "hpo"]
 #features = ["models","bench","autogluon","extra","hpo","dev"]
 
 [tool.hatch.build.targets.sdist]
-package = ['pytabkit']
-only-include = ['pytabkit']
+package = ['pytabkit', 'pytabkit_mlx']
+only-include = ['pytabkit', 'pytabkit_mlx']
 
 [tool.hatch.build.targets.wheel]
-package = ['pytabkit']
-only-include = ['pytabkit']
+package = ['pytabkit', 'pytabkit_mlx']
+only-include = ['pytabkit', 'pytabkit_mlx']
 
 [project.urls]
 Documentation = "https://github.com/dholzmueller/pytabkit#readme"

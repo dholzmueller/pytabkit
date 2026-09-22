@@ -47,6 +47,7 @@ pip install pytabkit[models]
 ```
 
 - RealMLP (and TabM) can be used without the `[models]` part.
+- RealMLP is also available as a native MLX model on Apple silicon (see `pytabkit[mlx]` below).
 - For xRFM on GPU, faster kernels will be used if you install `kermac[cu12]` or `kermac[cu11]` 
 (depending on your CUDA version).
 - If you want to use **TabR**, you have to manually install
@@ -61,6 +62,10 @@ pip install pytabkit[models]
   See also the [documentation](https://pytabkit.readthedocs.io).
   To run the data download for the meta-train benchmark, you need one of rar, unrar, or 7-zip
   to be installed on the system.
+- On **Apple silicon**, `pip install pytabkit[mlx]` additionally installs
+  [MLX](https://github.com/ml-explore/mlx) for the `pytabkit_mlx` package, a native MLX
+  port of RealMLP-TD that runs on the Mac GPU. It does not require torch. See
+  [pytabkit_mlx/README.md](pytabkit_mlx/README.md) for parity results and benchmarks.
 
 ## Using the ML models
 
