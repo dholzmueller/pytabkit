@@ -59,12 +59,13 @@ class TabrModelContextFreeze(nn.Module):
             add_scaling_layer: bool = False,
             scale_lr_factor: float = 6.0,
     ) -> None:
+        if candidate_encoding_batch_size is not None and not memory_efficient:
+            raise ValueError('candidate_encoding_batch_size is only used with memory_efficient=True; '
+                             'set memory_efficient=True or leave candidate_encoding_batch_size as None')
         # import locally so importing this file doesn't cause problems if faiss is not installed
         # import in constructor as well to make model fail earlier if not installed
         import faiss
         import faiss.contrib.torch_utils  # noqa  << this line makes faiss work with PyTorch
-        if not memory_efficient:
-            assert candidate_encoding_batch_size is None
         if mixer_normalization == 'auto':
             mixer_normalization = encoder_n_blocks > 0
         if encoder_n_blocks == 0:
