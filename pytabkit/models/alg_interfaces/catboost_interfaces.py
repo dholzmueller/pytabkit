@@ -86,7 +86,10 @@ class CatBoostCustomMetric:
 
     def evaluate(self, approxes, target, weight):
         assert len(target) == len(approxes[0])
-        assert weight is None
+        if weight is not None:
+            # print(f'{weight=}')
+            assert np.allclose(weight, 0.0 * weight + 1.0)
+        # assert weight is None
 
         y = torch.as_tensor(target, dtype=torch.long if self.is_classification else torch.float32)
         if len(y.shape) == 1:
@@ -242,9 +245,19 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
         import catboost
 
         # print(f'Fitting CatBoost')
+        y = train_ds.tensors['y']
         n_classes = train_ds.tensor_infos['y'].get_cat_sizes()[0].item()
         params = self._preprocess_params(params, n_classes)
         params.update({'random_seed': seed, 'thread_count': n_threads})
+        if n_classes > 0:
+            n_train_classes = len(torch.unique(train_ds.tensors['y']))
+            if n_train_classes <= 1:  # catboost crashes when there is only a single class in the training set
+                self.unique_class_ = train_ds.tensors['y'][0, 0].item()
+                return None, [0.0] * params.get('n_estimators', 1000)
+
+        if n_classes == 0 and (y[1:] == y[0:1]).all().item():
+            self.y_const_ = y[0:1]
+            return None, [0.0] * params.get('n_estimators', 1000)
 
         if val_ds is None:
             params = utils.update_dict(params, remove_keys=['od_type', 'od_pval', 'od_wait'])
@@ -271,6 +284,15 @@ class CatBoostSubSplitInterface(TreeBasedSubSplitInterface):
 
     def _predict(self, bst, ds: DictDataset, n_classes: int,
                  other_params: Dict[str, Any]) -> torch.Tensor:
+
+        if hasattr(self, 'unique_class_'):
+            y_pred = torch.full(size=[ds.n_samples, n_classes], fill_value=np.log(1e-30), dtype=torch.float32)
+            y_pred[:, self.unique_class_] = 0.0
+            return y_pred
+
+        if hasattr(self, 'y_const_'):
+            return self.y_const_.expand(ds.n_samples, -1)
+
         # bst should be of type catboost.CatBoost
         # print(f'CatBoost _predict(): {other_params=}')
         ntree_end = 0 if other_params is None else other_params['n_estimators']

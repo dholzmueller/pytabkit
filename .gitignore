@@ -4,6 +4,7 @@
 *.ckpt
 
 experiments/*/
+!experiments/new_mlp
 experiments/trace.json
 !experiments/meta_hpo
 !experiments/prototypes
@@ -26,3 +27,7 @@ rtdl_checkpoints
 examples/.ipynb_checkpoints
 
 scripts/custom_paths.py
+
+# Claude Code local sandbox/workflow artifacts
+.venv/
+.claude/settings.local.json

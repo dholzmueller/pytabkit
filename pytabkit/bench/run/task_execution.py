@@ -110,7 +110,8 @@ class RunConfig:
 
     def __init__(self, n_tt_splits: int, n_cv: int = 1, n_refit: int = 0, use_default_split: bool = False,
                  trainval_fraction: float = 0.8, train_fraction: float = 0.75,
-                 save_y_pred: bool = False, min_split_idx: int = 0, metrics: Optional[Metrics] = None):
+                 save_y_pred: bool = False, min_split_idx: int = 0, metrics: Optional[Metrics] = None,
+                 max_trainval_samples: Optional[int] = None, max_test_samples: Optional[int] = None):
         """
         :param n_tt_splits: Number of trainval-test-splits to evaluate the method with.
         :param n_cv: Number of cross-validation folds. If n_cv=1, use a single random split.
@@ -126,6 +127,8 @@ class RunConfig:
         :param min_split_idx: Minimum index of the split that should be used.
         Can be set larger than zero if only a sub-range of the splits should be run.
         :param metrics: Metrics object that specifies which metrics should be evaluated.
+        :param max_trainval_samples: Maximum number of samples used for training + validation
+        :param max_test_samples: Maximum number of samples used for testing
         """
         self.n_tt_splits = n_tt_splits
         self.n_cv = n_cv
@@ -136,6 +139,8 @@ class RunConfig:
         self.save_y_pred = save_y_pred
         self.min_split_idx = min_split_idx
         self.metrics = metrics
+        self.max_trainval_samples = max_trainval_samples
+        self.max_test_samples = max_test_samples
 
 
 class TabBenchJobManager:
@@ -172,11 +177,15 @@ class TabBenchJobManager:
         if tags is None:
             tags = ['default']
 
+        random_splits_config = dict(n_splits=run_config.n_tt_splits,
+                                    trainval_fraction=run_config.trainval_fraction,
+                                    train_fraction=run_config.train_fraction,
+                                    max_trainval_samples=run_config.max_trainval_samples,
+                                    max_test_samples=run_config.max_test_samples)
+
+        # dummy for get_pred_param_names
         dummy_task_package = TaskPackage(task_infos[0],
-                                         split_infos=task_infos[0].get_random_splits(run_config.n_tt_splits,
-                                                                                     trainval_fraction=run_config.trainval_fraction,
-                                                                                     train_fraction=run_config.train_fraction)[
-                                                     0:1],
+                                         split_infos=task_infos[0].get_random_splits(**random_splits_config)[0:1],
                                          n_cv=run_config.n_cv, n_refit=run_config.n_refit,
                                          paths=self.paths, rerun=rerun, alg_name=alg_name,
                                          save_y_pred=run_config.save_y_pred)
@@ -189,9 +198,7 @@ class TabBenchJobManager:
             if run_config.use_default_split:
                 tt_split_infos = task_info.get_default_splits(run_config.n_tt_splits)
             else:
-                tt_split_infos = task_info.get_random_splits(run_config.n_tt_splits,
-                                                             trainval_fraction=run_config.trainval_fraction,
-                                                             train_fraction=run_config.train_fraction)
+                tt_split_infos = task_info.get_random_splits(**random_splits_config)
             tt_split_infos = tt_split_infos[run_config.min_split_idx:]
 
             if not rerun:

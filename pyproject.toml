@@ -7,7 +7,7 @@ name = "pytabkit"
 dynamic = ["version"]
 description = 'ML models + benchmark for tabular data classification and regression'
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 keywords = ['tabular data', 'scikit-learn', 'deep learning', 'gradient boosting', 'RealMLP']
 authors = [
@@ -18,7 +18,6 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -50,6 +49,8 @@ models = [
     "catboost>=1.2",
     "lightgbm>=4.1",
     "xrfm>=0.4.3",  # lower bound is not checked extensively
+    # NVIDIA's KumoTabular foundation model (imported as sdm), requires Python >= 3.11 and torch >= 2.7
+    "structured-data-models>=0.2; python_version >= '3.11'",
     # for rtdl models (MLP, ResNet) but also lightly used in TabR
     # note that scikit-learn 1.6 needs skorch >= 1.1.0
     "skorch>=0.15",

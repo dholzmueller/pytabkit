@@ -220,6 +220,10 @@ class RealMLPConstructorMixin:
             factors for the given parameter if available, and the respective schedule.
             Note that this is not identical to the original AdamW paper,
             where the lr base value is not included in the update equation.
+            Also note that the lr and wd factors of a parameter are applied twice in this update,
+            i.e., the decay is proportional to lr * wd * (lr_factor * wd_factor)**2
+            (see https://github.com/dholzmueller/pytabkit/issues/40).
+            This is kept for backward compatibility.
         :param wd_sched: Weight decay schedule.
         :param opt: Optimizer (default='adam'). See optim.optimizers.get_opt_class().
         :param lr: Learning rate base value (default=0.04 for classification and 0.14 for regression).

@@ -13,7 +13,7 @@ benchmarked in our [paper](https://arxiv.org/abs/2407.04491), see below.
 It also contains the code we used for **benchmarking** these methods
 on our benchmarks.
 
-![Meta-test benchmark results](./figures/meta-test_benchmark_results.png)
+![Meta-test benchmark results](https://raw.githubusercontent.com/dholzmueller/pytabkit/main/figures/meta-test_benchmark_results.png)
 
 ## When (not) to use pytabkit
 
@@ -49,6 +49,8 @@ pip install pytabkit[models]
 - RealMLP (and TabM) can be used without the `[models]` part.
 - For xRFM on GPU, faster kernels will be used if you install `kermac[cu12]` or `kermac[cu11]` 
 (depending on your CUDA version).
+- The KumoTabular wrapper needs the `structured-data-models` package, 
+  which is only installed with `[models]` for Python >= 3.11 (it also requires `torch>=2.7`).
 - If you want to use **TabR**, you have to manually install
   [faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md),
   which is only available on **conda**.
@@ -159,6 +161,17 @@ Our benchmarking code has functionality for
 
 For more details, we refer to the [documentation](https://pytabkit.readthedocs.io).
 
+The benchmarking code also contains wrappers for further models, 
+such as TabPFN, TabICL, and the KumoTabular foundation model (`KumoTabularInterfaceWrapper`).
+
+**Few-shot benchmark (new in 1.8.0).** 
+The code for the few-shot benchmark from the [TabICLv2 paper](https://arxiv.org/abs/2602.11139) (ICML) is included:
+datasets from the TALENT benchmark with 100–2000 samples (binary classification and regression),
+where methods only get 16 samples for training and validation.
+Import the datasets with `import_talent_tiny=True` in `scripts/download_data.py`,
+run the methods with `scripts/run_fewshot_experiments.py`,
+and create the result tables with `scripts/create_fewshot_tables.py`.
+
 ## Preprocessing code
 
 While many preprocessing methods are implemented in this repository,
@@ -200,6 +213,46 @@ and https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html
 
 ## Releases (see git tags)
 
+- v1.8.0:
+    - Added a standalone, simplified RealMLP implementation in `pytabkit.models.realmlp` 
+      (plain PyTorch, no Lightning or fitter framework), 
+      which additionally supports missing numerical values.
+      It is **experimental** and half vibe-coded,
+      but it has been confirmed experimentally to yield similarly good results as the original implementation.
+      See [its README](https://github.com/dholzmueller/pytabkit/blob/main/pytabkit/models/realmlp/README.md) for the differences to the original implementation.
+    - Added the code for the few-shot benchmark from the [TabICLv2 paper](https://arxiv.org/abs/2602.11139) (ICML),
+      see the [benchmarking section](#benchmarking-code).
+    - Added a benchmark wrapper for the KumoTabular foundation model (`KumoTabularInterfaceWrapper`).
+      It requires the `structured-data-models` package (Python >= 3.11), 
+      which is now an optional dependency in `pytabkit[models]`.
+    - Other benchmarking additions: dummy baselines, TabICL for regression, selectable TabPFN versions,
+      refitting for RF, ExtraTrees, linear models, TabPFN, and TabICL,
+      and limits on the number of training/validation and test samples (`max_trainval_samples`, `max_test_samples`
+      in `RunConfig`).
+    - Bugfixes found through the few-shot benchmark:
+        - CatBoost no longer crashes if the training set contains only a single class
+          or if the regression target is constant.
+        - The CatBoost validation metric now also works when CatBoost passes (all-one) sample weights.
+        - The expected calibration error no longer fails when only a single class is present.
+    - Fixed `batch_size='auto'` in RealMLP: 
+      the batch size was chosen based on the number of vectorized splits instead of the number of training samples,
+      so it was effectively always 64.
+    - Pytorch-Lightning's info messages ("GPU available: ..." etc.) are no longer printed for every fit/predict
+      of RealMLP and TabR (with `verbosity=0`), 
+      fixing [#39](https://github.com/dholzmueller/pytabkit/issues/39).
+    - TabR now raises a clear error if `candidate_encoding_batch_size` is set without `memory_efficient=True`
+      ([#44](https://github.com/dholzmueller/pytabkit/pull/44)).
+    - Fixed a `FutureWarning` on every `fit()` with scikit-learn 1.6 and 1.7
+      ([#41](https://github.com/dholzmueller/pytabkit/issues/41), 
+      [#42](https://github.com/dholzmueller/pytabkit/pull/42)).
+    - Documented that RealMLP applies the lr and wd factors of a parameter twice in the weight decay
+      ([#40](https://github.com/dholzmueller/pytabkit/issues/40)). 
+      This is kept for backward compatibility;
+      the new standalone implementation applies them once.
+    - Dropped support for Python 3.9. 
+      The CI now installs OpenMP (`libomp`) on macOS
+      (see [#42](https://github.com/dholzmueller/pytabkit/pull/42)).
+    - Python 3.13 is now also tested in the CI (Ray provides Windows wheels for Python 3.13 now).
 - v1.7.3:
     - disabled RealMLP lightning log file creation that was accidentally introduced 
       in predict() in >=v1.7.0.

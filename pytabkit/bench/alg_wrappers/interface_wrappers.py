@@ -18,9 +18,9 @@ from pytabkit.bench.data.tasks import TaskPackage, TaskInfo
 from pytabkit.bench.run.results import ResultManager
 from pytabkit.models.alg_interfaces.other_interfaces import RFSubSplitInterface, SklearnMLPSubSplitInterface, \
     KANSubSplitInterface, GrandeSubSplitInterface, GBTSubSplitInterface, RandomParamsRFAlgInterface, \
-    TabPFN2SubSplitInterface, TabICLSubSplitInterface, RandomParamsExtraTreesAlgInterface, RandomParamsKNNAlgInterface, \
+    TabPFN2SubSplitInterface, TabICLSubSplitInterface, KumoTabularSubSplitInterface, RandomParamsExtraTreesAlgInterface, RandomParamsKNNAlgInterface, \
     ExtraTreesSubSplitInterface, KNNSubSplitInterface, RandomParamsLinearModelAlgInterface, \
-    LinearModelSubSplitInterface
+    LinearModelSubSplitInterface, DummySubSplitInterface
 from pytabkit.bench.scheduling.resources import NodeResources
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, MultiSplitWrapperAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, RequiredResources
@@ -370,6 +370,38 @@ class NNInterfaceWrapper(AlgInterfaceWrapper):
         return 1
 
 
+class StandaloneRealMLPInterfaceWrapper(AlgInterfaceWrapper):
+    """Wrapper for the standalone RealMLP implementation in pytabkit.models.realmlp."""
+    def __init__(self, **config):
+        from pytabkit.models.realmlp.alg_interface import StandaloneRealMLPAlgInterface
+        super().__init__(StandaloneRealMLPAlgInterface, **config)
+
+    def get_max_n_vectorized(self, task_info: TaskInfo) -> int:
+        from pytabkit.models.realmlp.alg_interface import StandaloneRealMLPAlgInterface
+        ds = DictDataset(tensors=None, tensor_infos=task_info.tensor_infos, device='cpu',
+                         n_samples=task_info.n_samples)
+        max_ram_gb = 8.0
+        max_n_vectorized = self.config.get('max_n_vectorized', 50)
+        alg_interface = StandaloneRealMLPAlgInterface(**self.config)
+        while max_n_vectorized > 1:
+            required_resources = alg_interface.get_required_resources(ds, n_cv=1, n_refit=0, n_splits=max_n_vectorized,
+                                                                      split_seeds=[0] * max_n_vectorized,
+                                                                      n_train=task_info.n_samples)
+            if required_resources.gpu_ram_gb <= max_ram_gb and required_resources.cpu_ram_gb <= max_ram_gb:
+                return max_n_vectorized
+            max_n_vectorized -= 1
+
+        return 1
+
+
+class RandomParamsStandaloneRealMLPInterfaceWrapper(AlgInterfaceWrapper):
+    """One random search step of the standalone RealMLP (pytabkit.models.realmlp)."""
+    def __init__(self, model_idx: int, **config):
+        # model_idx should be the random search iteration (i.e. start from zero)
+        from pytabkit.models.realmlp.alg_interface import RandomParamsStandaloneRealMLPAlgInterface
+        super().__init__(RandomParamsStandaloneRealMLPAlgInterface, model_idx=model_idx, **config)
+
+
 class NNHyperoptInterfaceWrapper(AlgInterfaceWrapper):
     def __init__(self, **config):
         super().__init__(NNHyperoptAlgInterface, **config)
@@ -463,6 +495,11 @@ class RandomParamsCatBoostInterfaceWrapper(MultiSplitAlgInterfaceWrapper):
         return RandomParamsCatBoostAlgInterface(**self.config)
 
 
+class DummyInterfaceWrapper(SubSplitInterfaceWrapper):
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return DummySubSplitInterface(**self.config)
+
+
 class RFInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return RFSubSplitInterface(**self.config)
@@ -511,6 +548,15 @@ class TabPFN2InterfaceWrapper(SubSplitInterfaceWrapper):
 class TabICLInterfaceWrapper(SubSplitInterfaceWrapper):
     def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
         return TabICLSubSplitInterface(**self.config)
+
+
+class KumoTabularInterfaceWrapper(SubSplitInterfaceWrapper):
+    """
+    Wrapper for NVIDIA's KumoTabular foundation model (structured-data-models package).
+    Use size='small', 'medium', or 'large' (default) to select the model variant.
+    """
+    def create_sub_split_interface(self, task_type: TaskType) -> AlgInterface:
+        return KumoTabularSubSplitInterface(**self.config)
 
 
 class MLPRTDLInterfaceWrapper(SubSplitInterfaceWrapper):

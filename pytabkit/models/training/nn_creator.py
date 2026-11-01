@@ -229,7 +229,7 @@ class NNCreator:
         batch_size = self.config.get('batch_size', 256)
         n_ens = self.config.get('n_ens', 1)
         if batch_size == 'auto':
-            batch_size = get_realmlp_auto_batch_size(self.train_idxs.shape[0])
+            batch_size = get_realmlp_auto_batch_size(self.train_idxs.shape[1])  # shape[0] is the number of splits
         train_dl = ParallelDictDataLoader(ds, self.train_idxs.repeat_interleave(n_ens, dim=0), batch_size=batch_size,
                                           shuffle=True, drop_last=True, adjust_bs=self.config.get('adjust_bs', False))
         val_dl = None

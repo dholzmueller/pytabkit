@@ -55,6 +55,9 @@ class OptimizerBase(torch.optim.Optimizer):
             if names == 'wd':
                 with torch.no_grad():
                     for i, group in enumerate(self.opt.param_groups):
+                        # note: wd and lr already include the hyper factors of the parameter, which are multiplied
+                        # in again below, so the factors effectively enter squared. This is kept for backward
+                        # compatibility, see https://github.com/dholzmueller/pytabkit/issues/40
                         wd = self.get_hyper_values('wd', i)
                         lr = self.get_hyper_values('lr', i)
                         if wd != 0.0:

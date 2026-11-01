@@ -223,10 +223,13 @@ class TaskInfo:
         return TaskInfo(task_desc=task_desc, n_samples=ds.n_samples, tensor_infos=ds.tensor_infos,
                         default_split_idx=default_split_idx, more_info_dict=more_info_dict)
 
-    def get_random_splits(self, n_splits: int, trainval_fraction: float = 0.8, train_fraction: float = 0.75) -> List[SplitInfo]:
+    def get_random_splits(self, n_splits: int, trainval_fraction: float = 0.8, train_fraction: float = 0.75,
+                          max_trainval_samples: Optional[int] = None, max_test_samples: Optional[int] = None) -> List[SplitInfo]:
         # use n_samples to generate alg_seed
         # in order to have the randomness also depend on the data set and not only on the split index
-        return [SplitInfo(RandomSplitter(seed=i, first_fraction=trainval_fraction, max_n_first=self.max_n_trainval),
+        return [SplitInfo(RandomSplitter(seed=i, first_fraction=trainval_fraction,
+                                         max_n_first=max_trainval_samples or self.max_n_trainval,
+                                         max_n_second=max_test_samples),
                           SplitType.RANDOM, id=i,
                           alg_seed=utils.combine_seeds(self.n_samples, i), train_fraction=train_fraction)
                 for i in range(n_splits)]

@@ -219,10 +219,15 @@ def expected_calibration_error(y_pred: torch.Tensor, y: torch.Tensor):
         y_pred_indiv_probs = y_pred_indiv_probs / y_pred_indiv_probs.sum(dim=-1, keepdim=True)
 
         num_classes = y_pred_indiv_probs.shape[-1]
-        is_binary = num_classes == 2
-        if is_binary:
+        # if num_classes == 1 and len(torch.unique(y_indiv)) == 1:
+        #     return y_pred
+            # print(f'{len(torch.unique(y_indiv))=}', flush=True)
+        is_binary = num_classes <= 2
+        if num_classes == 2:
             # binary classification, torchmetrics expects only probabilities of the positive class
             y_pred_indiv_probs = y_pred_indiv_probs[..., 1]
+        elif num_classes == 1:
+            y_pred_indiv_probs = 1. - y_pred_indiv_probs[..., 0]
 
         # print(f'{torch.unique(y_indiv)=}')
         # print(f'{torch.unique(y_pred_indiv_probs)=}')

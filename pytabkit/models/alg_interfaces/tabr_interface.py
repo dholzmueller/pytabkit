@@ -17,7 +17,7 @@ from pytabkit.models.alg_interfaces.rtdl_interfaces import choose_batch_size_rtd
 from pytabkit.models.alg_interfaces.sub_split_interfaces import SingleSplitWrapperAlgInterface
 from pytabkit.models.data.data import DictDataset
 from pytabkit.models.sklearn.default_params import DefaultParams
-from pytabkit.models.training.logging import Logger
+from pytabkit.models.training.logging import Logger, silence_lightning_info_logs
 from pytabkit.models.nn_models.models import PreprocessingFactory
 from pytabkit.models.nn_models.tabr import TabrLightning, TabrModel
 from pytabkit.models.nn_models.tabr_context_freeze import TabrModelContextFreeze, TabrLightningContextFreeze
@@ -313,6 +313,8 @@ class TabRSubSplitInterface(AlgInterface):
         else:
             raise ValueError(f'Unknown device "{self.device}"')
         
+        if self.config["verbosity"] <= 0:
+            silence_lightning_info_logs()
         self.trainer = pl.Trainer(
                            accelerator=pl_accelerator,
                             devices=pl_devices,

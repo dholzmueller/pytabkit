@@ -1,10 +1,12 @@
+import contextlib
 import os
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.compose import TransformedTargetRegressor
+from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, \
     GradientBoostingRegressor, ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
@@ -16,6 +18,32 @@ from pytabkit.models.alg_interfaces.base import RequiredResources
 from pytabkit.models.alg_interfaces.sub_split_interfaces import SklearnSubSplitInterface, SingleSplitWrapperAlgInterface
 from pytabkit.models import utils
 from pytabkit.models.data.data import DictDataset
+
+
+class DummySubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+
+        if self.n_classes > 0:
+            return DummyClassifier(random_state=seed)
+        else:
+            return DummyRegressor()
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=100), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0}
+        ram_params = {'': 0.5, 'ds_size_gb': 3.0}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params)
+        return rc.get_required_resources(ds)
+
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return DummySubSplitInterface(fit_params=fit_params, **self.config)
 
 
 class RFSubSplitInterface(SklearnSubSplitInterface):
@@ -63,6 +91,11 @@ class RFSubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params)
         return rc.get_required_resources(ds)
+
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return RFSubSplitInterface(fit_params=fit_params, **self.config)
 
 
 class RandomParamsRFAlgInterface(RandomParamsAlgInterface):
@@ -555,6 +588,11 @@ class ExtraTreesSubSplitInterface(SklearnSubSplitInterface):
                                cpu_ram_params=ram_params)
         return rc.get_required_resources(ds)
 
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return ExtraTreesSubSplitInterface(fit_params=fit_params, **self.config)
+
 
 class RandomParamsExtraTreesAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
@@ -915,6 +953,11 @@ class LinearModelSubSplitInterface(SklearnSubSplitInterface):
                                cpu_ram_params=ram_params)
         return rc.get_required_resources(ds)
 
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return LinearModelSubSplitInterface(fit_params=fit_params, **self.config)
+
 
 class RandomParamsLinearModelAlgInterface(RandomParamsAlgInterface):
     def _sample_params(self, is_classification: bool, seed: int, n_train: int):
@@ -1191,19 +1234,34 @@ class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
         params = utils.extract_params(self.config, params_config)
         if self.config.get('use_float32', False):
             params['inference_precision'] = torch.float32
+
+        params = dict(random_state=seed,
+                      device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                      # device='cuda' if len(gpu_devices) > 0 else 'cpu',
+                      ignore_pretraining_limits=True, **params)
         # print(f'{gpu_devices=}')
+        tabpfn_version = self.config.get('tabpfn_version', None)
+
         if self.n_classes > 0:
             from tabpfn import TabPFNClassifier
-            return TabPFNClassifier(random_state=seed,
-                                    device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
-                                    # device='cuda' if len(gpu_devices) > 0 else 'cpu',
-                                    ignore_pretraining_limits=True, **params)
+            tabpfn_class = TabPFNClassifier
         else:
             from tabpfn import TabPFNRegressor
-            return TabPFNRegressor(random_state=seed,
-                                   device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
-                                   # device='cuda' if len(gpu_devices) > 0 else 'cpu',
-                                   ignore_pretraining_limits=True, **params)
+            tabpfn_class = TabPFNRegressor
+
+        from tabpfn.constants import ModelVersion
+        if tabpfn_version == '2.6':
+            return tabpfn_class.create_default_for_version(ModelVersion.V2_6, **params)
+        elif tabpfn_version == '2.5':
+            return tabpfn_class.create_default_for_version(ModelVersion.V2_5, **params)
+        elif tabpfn_version == '2.0':
+            return tabpfn_class.create_default_for_version(ModelVersion.V2, **params)
+        elif tabpfn_version == '3.0':
+            return tabpfn_class.create_default_for_version(ModelVersion.V3, **params)
+        elif tabpfn_version is None:
+            return tabpfn_class(**params)
+        else:
+            raise ValueError(f'Unknown tabpfn_version: {tabpfn_version}')
 
     def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
                      cat_col_names: Optional[List[str]] = None):
@@ -1228,6 +1286,11 @@ class TabPFN2SubSplitInterface(SklearnSubSplitInterface):
         rc = ResourcePredictor(config=updated_config, time_params=time_params,
                                cpu_ram_params=ram_params, n_gpus=1, gpu_usage=1.0, gpu_ram_params={'': 10.0})
         return rc.get_required_resources(ds)
+
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return TabPFN2SubSplitInterface(fit_params=fit_params, **self.config)
 
 
 class TabICLSubSplitInterface(SklearnSubSplitInterface):
@@ -1257,7 +1320,18 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
                                     device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
                                     **params)
         else:
-            raise ValueError(f'TabICL for regression does not exist')
+            if self.config.get('use_tabiclex', False):
+                from tabiclv2 import TabICLRegressor
+            else:
+                from tabicl import TabICLRegressor
+            return TabICLRegressor(random_state=seed,
+                                   device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                   **params)
+
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return TabICLSubSplitInterface(fit_params=fit_params, **self.config)
 
     def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
                      cat_col_names: Optional[List[str]] = None):
@@ -1310,3 +1384,203 @@ class TabICLSubSplitInterface(SklearnSubSplitInterface):
         return rc.get_required_resources(ds)
 
 
+class KumoTabularSklearnModel:
+    """
+    Minimal scikit-learn-like adapter around NVIDIA's KumoTabular foundation model
+    from the structured-data-models package (``pip install structured-data-models``, imported as ``sdm``).
+    Expects pandas DataFrames with numerical and pandas-categorical columns.
+    """
+
+    def __init__(self, is_classification: bool, size: str = 'large', n_estimators: int = 8,
+                 estimator_batch_size: Optional[int] = 1, predict_batch_size: Optional[Union[int, str]] = None,
+                 regression_output: str = 'mean', use_amp: bool = False, amp_dtype: str = 'float16',
+                 device: str = 'cpu', random_state: int = 0):
+        """
+        :param predict_batch_size: Number of test samples per predict() call of the sdm model.
+            None predicts all samples at once, 'auto' uses sdm's estimate based on the free GPU memory.
+        :param use_amp: Whether to run the network under CUDA autocast (reduces GPU memory).
+            The sdm preprocessing explicitly disables autocast, so only the network is affected.
+        :param amp_dtype: Autocast dtype, 'float16' or 'bfloat16'.
+        """
+        self.is_classification = is_classification
+        self.size = size
+        self.n_estimators = n_estimators
+        self.estimator_batch_size = estimator_batch_size
+        self.predict_batch_size = predict_batch_size
+        self.regression_output = regression_output
+        self.use_amp = use_amp
+        self.amp_dtype = amp_dtype
+        self.device = device
+        self.random_state = random_state
+
+    def _is_cuda(self) -> bool:
+        return torch.device(self.device).type == 'cuda'
+
+    def _autocast(self):
+        if self.use_amp and self._is_cuda():
+            return torch.autocast('cuda', dtype=getattr(torch, self.amp_dtype))
+        return contextlib.nullcontext()
+
+    def _get_predict_batch_size(self, n_samples: int) -> int:
+        if self.predict_batch_size is None:
+            return max(n_samples, 1)
+        if self.predict_batch_size == 'auto':
+            if not self._is_cuda():
+                return max(n_samples, 1)
+            from sdm.models.kumo.tabular import estimate_predict_batch_size
+            free_bytes, _ = torch.cuda.mem_get_info(torch.device(self.device))
+            bs = estimate_predict_batch_size(
+                self.model_, self.x_context_, self.y_context_, memory_budget=free_bytes,
+                num_estimators=self.n_estimators,
+                estimator_batch_size=self.estimator_batch_size or self.n_estimators,
+                dtype=getattr(torch, self.amp_dtype) if self.use_amp else torch.float32)
+            return max(1, min(bs, n_samples))
+        return int(self.predict_batch_size)
+
+    def _to_table(self, X: pd.DataFrame):
+        import sdm
+        X = X.copy()
+        X.columns = [str(c) for c in X.columns]
+        stypes = {col: ('categorical' if isinstance(X[col].dtype, pd.CategoricalDtype) else 'numerical')
+                  for col in X.columns}
+        return sdm.TableTensor.from_pandas(X, stypes=stypes, device=self.device)
+
+    @staticmethod
+    def _disable_incompatible_triton_kernels():
+        # sdm's fused Triton RMSNorm kernel (used under autocast) needs tl.gather, which requires triton>=3.3
+        # (torch>=2.7). sdm only falls back to PyTorch on ImportError, so disable the kernel for older triton.
+        try:
+            import triton.language as tl
+        except ImportError:
+            return
+        if not hasattr(tl, 'gather'):
+            import importlib
+            # sdm._kernels.rmsnorm_cast as an attribute is shadowed by the function of the same name
+            # (re-exported in sdm/_kernels/__init__.py), so get the module itself
+            importlib.import_module('sdm._kernels.rmsnorm_cast')._triton_rmsnorm_cast = None
+
+    def fit(self, X: pd.DataFrame, y: np.ndarray) -> 'KumoTabularSklearnModel':
+        import sdm
+        self._disable_incompatible_triton_kernels()
+        y = np.asarray(y)
+        if self.is_classification:
+            y = y.astype(np.int64)
+            self.classes_ = np.unique(y)
+            y_df = pd.DataFrame({'target': pd.Categorical(y, categories=self.classes_)})
+            y_stype = 'categorical'
+        else:
+            y_df = pd.DataFrame({'target': y.astype(np.float32)})
+            y_stype = 'numerical'
+        y_table = sdm.TableTensor.from_pandas(y_df, stypes={'target': y_stype}, device=self.device)
+
+        self.model_ = sdm.models.KumoTabular(task='classification' if self.is_classification else 'regression',
+                                             size=self.size, device=self.device)
+        generator = torch.Generator(device=self.device)
+        generator.manual_seed(int(self.random_state))
+        x_table = self._to_table(X)
+        with self._autocast():
+            self.model_.fit(x_table, y_table, num_estimators=self.n_estimators,
+                            estimator_batch_size=self.estimator_batch_size, generator=generator)
+        # only needed for predict_batch_size='auto' (small compared to the model's context cache)
+        self.x_context_, self.y_context_ = x_table, y_table
+        return self
+
+    def _predict_raw(self, X: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        # returns array of shape (n_samples, n_outputs) and the output column names
+        from sdm import Stype
+        bs = self._get_predict_batch_size(len(X))
+        outputs = []
+        col_names = None
+        for start in range(0, len(X), bs):
+            with self._autocast():
+                out = self.model_.predict(self._to_table(X.iloc[start:start + bs]))
+            col_names = list(out.columns[Stype.numerical])
+            arr = out.numerical.detach().float().cpu().numpy()
+            # remove potential leading estimator dimensions
+            arr = arr.reshape(-1, arr.shape[-2], arr.shape[-1]).mean(axis=0)
+            outputs.append(arr)
+        return np.concatenate(outputs, axis=0), col_names
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        assert self.is_classification
+        probs, col_names = self._predict_raw(X)
+        # output columns are named after the class values, map them back to the order of self.classes_
+        name_to_idx = {name: i for i, name in enumerate(col_names)}
+        result = np.zeros((probs.shape[0], len(self.classes_)), dtype=np.float32)
+        for j, c in enumerate(self.classes_):
+            idx = name_to_idx.get(str(c.item()), None)
+            if idx is not None:
+                result[:, j] = probs[:, idx]
+        return result / np.maximum(result.sum(axis=1, keepdims=True), 1e-30)
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        if self.is_classification:
+            return self.classes_[np.argmax(self.predict_proba(X), axis=1)]
+        quantiles, col_names = self._predict_raw(X)  # 999 quantiles q001, ..., q999
+        if self.regression_output == 'mean':
+            return quantiles.mean(axis=1)
+        elif self.regression_output == 'median':
+            return quantiles[:, col_names.index('q500')]
+        else:
+            raise ValueError(f'Unknown regression_output "{self.regression_output}"')
+
+
+class KumoTabularSubSplitInterface(SklearnSubSplitInterface):
+    def _create_sklearn_model(self, seed: int, n_threads: int, gpu_devices: List[str]) -> Any:
+        params_config = [
+            ('size', None, 'large'),
+            ('n_estimators', None, 8),
+            ('estimator_batch_size', None, 1),
+            ('predict_batch_size', None, None),
+            ('regression_output', None, 'mean'),
+            ('use_amp', None, False),
+            ('amp_dtype', None, 'float16'),
+        ]
+        params = utils.extract_params(self.config, params_config)
+        return KumoTabularSklearnModel(is_classification=self.n_classes > 0, random_state=seed,
+                                       device=gpu_devices[0] if len(gpu_devices) > 0 else 'cpu',
+                                       **params)
+
+    def get_refit_interface(self, n_refit: int, fit_params: Optional[List[Dict]] = None) -> 'AlgInterface':
+        if n_refit != 1:
+            raise NotImplementedError()
+        return KumoTabularSubSplitInterface(fit_params=fit_params, **self.config)
+
+    def _fit_sklearn(self, x_df: pd.DataFrame, y: np.ndarray, val_idxs: np.ndarray,
+                     cat_col_names: Optional[List[str]] = None):
+        # by default, we ignore the validation set
+        if not self.config.get('fit_on_valid', False):
+            n_samples = len(x_df)
+            train_mask = np.ones(shape=(n_samples,), dtype=np.bool_)
+            train_mask[val_idxs] = False
+            x_df = x_df.iloc[train_mask, :]
+            y = y[train_mask]
+        self.model.fit(self._cat_missing_to_nan(x_df), y)
+
+    @staticmethod
+    def _cat_missing_to_nan(x_df: pd.DataFrame) -> pd.DataFrame:
+        # in pytabkit, category 0 encodes missing values; convert it to NaN (pandas code -1),
+        # which sdm treats as a missing value
+        x_df = x_df.copy()
+        for col in x_df.select_dtypes(include='category').columns:
+            if 0 in x_df[col].cat.categories:
+                x_df[col] = x_df[col].cat.remove_categories([0])
+        return x_df
+
+    def _predict_sklearn(self, x_df: pd.DataFrame) -> np.ndarray:
+        return self.model.predict(self._cat_missing_to_nan(x_df))
+
+    def _predict_proba_sklearn(self, x_df: pd.DataFrame) -> np.ndarray:
+        return self.model.predict_proba(self._cat_missing_to_nan(x_df))
+
+    def get_required_resources(self, ds: DictDataset, n_cv: int, n_refit: int, n_splits: int,
+                               split_seeds: List[int], n_train: int) -> RequiredResources:
+        assert n_cv == 1
+        assert n_refit == 0
+        assert n_splits == 1
+        updated_config = utils.join_dicts(dict(n_estimators=8), self.config)
+        time_params = {'': 0.5, 'ds_size_gb': 10.0, '1/n_threads*n_samples*n_estimators*n_tree_repeats': 4e-8}
+        ram_params = {'': 0.5}
+        rc = ResourcePredictor(config=updated_config, time_params=time_params,
+                               cpu_ram_params=ram_params, n_gpus=1, gpu_usage=0.999, gpu_ram_params={'': 10.0})
+        return rc.get_required_resources(ds)

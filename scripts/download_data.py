@@ -15,6 +15,7 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
                import_grinsztajn: bool = False, import_grinsztajn_medium: bool = False,
                import_tabzilla_hard: bool = False, import_automl_class_small: bool = False,
                import_talent_class_small: bool = False, import_talent_reg_small: bool = False,
+               import_talent_tiny: bool = False,
                import_tabarena: bool = False,
                talent_folder: Optional[str] = None):
     paths = Paths.from_env_variables()
@@ -187,6 +188,17 @@ def run_import(openml_cache_dir: str = None, import_meta_train: bool = False, im
                                             'x_cat'].get_n_features() <= 500]
 
         TaskCollection('talent-reg-tabpfn', talent_reg_tabpfn_task_descs).save(paths)
+
+    if import_talent_tiny:
+        if talent_folder is None:
+            raise ValueError(f'Please specify talent_folder to import datasets from the TALENT benchmark')
+        import_talent_benchmark(paths, talent_folder=talent_folder, source_name='talent-class-tiny',
+                                allow_regression=False,
+                                min_n_samples=100, max_n_samples=2000, ignore_above_n_classes=2)
+        import_talent_benchmark(paths, talent_folder=talent_folder, source_name='talent-reg-tiny',
+                                allow_classification=False,
+                                min_n_samples=100, max_n_samples=2000)
+
 
     if import_tabarena:
         all_ids = {

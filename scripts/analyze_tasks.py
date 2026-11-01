@@ -32,6 +32,7 @@ def print_task_analysis(coll_name: str, paths: Paths):
         largest_cat = 0
         if cat_sizes is not None and len(cat_sizes) > 0:
             largest_cat = int(np.max(task_info.tensor_infos['x_cat'].get_cat_sizes().numpy()))
+            print(f'{task_info.task_desc}: {cat_sizes=}')
 
         str_table.append([name + ' ', str(n) + ' ', str(k) + ' ', str(d.item()) + ' ', str(d_one_hot.item()) + ' ',
                           str(d_one_hot_leq_10.item()) + ' ', str(d_one_hot_target.item()) + ' ',

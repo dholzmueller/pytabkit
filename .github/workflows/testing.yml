@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']  # 3.13 fails on Windows because it doesn't find a ray version
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install libomp
+        if: runner.os == 'macOS'
+        run: brew install libomp  # OpenMP, needed e.g. by LightGBM / XGBoost on macOS
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:

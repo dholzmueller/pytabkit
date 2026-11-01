@@ -40,10 +40,11 @@ class Splitter:
 
 
 class RandomSplitter(Splitter):
-    def __init__(self, seed, first_fraction=0.8, max_n_first: Optional[int] = None):
+    def __init__(self, seed, first_fraction=0.8, max_n_first: Optional[int] = None, max_n_second: Optional[int] = None):
         self.seed = seed
         self.first_fraction = first_fraction
         self.max_n_first = max_n_first
+        self.max_n_second = max_n_second
 
     def get_idxs(self, ds: DictDataset) -> Tuple[torch.Tensor, torch.Tensor]:
         # use ceil such that e.g. in the case of 1 sample, the sample ends up in the training set.
@@ -51,13 +52,19 @@ class RandomSplitter(Splitter):
         if self.max_n_first is not None:
             split_idx = min(split_idx, self.max_n_first)
         perm = seeded_randperm(ds.n_samples, ds.device, self.seed)
-        return perm[:split_idx], perm[split_idx:]
+        first, second = perm[:split_idx], perm[split_idx:]
+        if self.max_n_second is not None and len(second) > self.max_n_second:
+            second = second[:self.max_n_second]
+        return first, second
 
     def get_split_sizes(self, n_samples: int) -> Tuple:
         split_idx = int(math.ceil(self.first_fraction * n_samples))
         if self.max_n_first is not None:
             split_idx = min(split_idx, self.max_n_first)
-        return split_idx, n_samples-split_idx
+        first, second = split_idx, n_samples-split_idx
+        if self.max_n_second is not None and second > self.max_n_second:
+            second = self.max_n_second
+        return first, second
 
 
 class IndexSplitter(Splitter):

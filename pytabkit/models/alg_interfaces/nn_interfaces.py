@@ -13,7 +13,6 @@ try:
 except ImportError:
     import pytorch_lightning as pl
 
-import logging
 
 from datetime import timedelta
 
@@ -25,7 +24,7 @@ from pytabkit.models.nn_models.models import NNFactory
 from pytabkit.models.sklearn.default_params import DefaultParams
 from pytabkit.models.torch_utils import cat_if_necessary
 from pytabkit.models.training.lightning_modules import TabNNModule, postprocess_multiquantile
-from pytabkit.models.training.logging import Logger
+from pytabkit.models.training.logging import Logger, silence_lightning_info_logs
 from pytabkit.models.alg_interfaces.alg_interfaces import AlgInterface, SingleSplitAlgInterface, OptAlgInterface
 from pytabkit.models.alg_interfaces.base import SplitIdxs, InterfaceResources, RequiredResources
 
@@ -81,10 +80,7 @@ class NNAlgInterface(AlgInterface):
                                    sub_split_seeds=[idxs.sub_split_seeds[0]] * len(idxs.sub_split_seeds),
                                    split_id=idxs.split_id) for idxs in idxs_list]
 
-        # https://stackoverflow.com/questions/74364944/how-to-get-rid-of-info-logging-messages-in-pytorch-lightning
-        log = logging.getLogger("lightning")
-        log.propagate = False
-        log.setLevel(logging.ERROR)
+        silence_lightning_info_logs()
 
         warnings.filterwarnings("ignore", message="You defined a `validation_step` but have no `val_dataloader`.")
 
@@ -166,6 +162,7 @@ class NNAlgInterface(AlgInterface):
 
         # create new trainer so we don't have to pickle the full trainer that references the dataset somehow
         # update devices since the model device may have been moved since
+        silence_lightning_info_logs()  # also here in case the model was loaded in a new process
         trainer = pl.Trainer(**(self.min_trainer_kwargs | dict(accelerator=pl_accelerator, devices=pl_devices,
                                                                logger=pl.loggers.logger.DummyLogger())))
         y_pred = trainer.predict(model=self.model, dataloaders=self.model.get_predict_dataloader(ds_x))
