@@ -17,6 +17,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30  # the tests usually take < 10 minutes
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -35,5 +36,19 @@ jobs:
         run: uv pip install --system hatch
       - name: Install swig
         run: uv pip install --system swig
+      - name: Use PyTorch's OpenMP runtime for LightGBM / XGBoost (macOS)
+        # PyTorch's wheel ships its own libomp, while LightGBM / XGBoost load Homebrew's libomp.
+        # Two OpenMP runtimes in one process can crash or hang, so we point Homebrew's libomp to PyTorch's.
+        if: runner.os == 'macOS'
+        run: |
+          hatch env create hatch-test.py${{ matrix.python-version }}
+          ENV_PYTHON="$(hatch env find hatch-test.py${{ matrix.python-version }})/bin/python"
+          TORCH_LIB=$("$ENV_PYTHON" -c "import os, torch; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))")
+          ln -sf "$TORCH_LIB/libomp.dylib" "$(brew --prefix libomp)/lib/libomp.dylib"
+          ls -l "$(brew --prefix libomp)/lib/libomp.dylib"
       - name: Run tests
-        run: hatch test  # removed codecov upload in v1.7.3
+        env:
+          # print the stack traces of all threads if a single test takes longer than 2 minutes (e.g., when it hangs)
+          PYTEST_ADDOPTS: -o faulthandler_timeout=120
+        # use the same environment as in the macOS OpenMP step above
+        run: hatch test --python ${{ matrix.python-version }}  # removed codecov upload in v1.7.3
