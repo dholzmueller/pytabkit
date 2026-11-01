@@ -55,6 +55,10 @@ pip install pytabkit[models]
   [faiss](https://github.com/facebookresearch/faiss/blob/main/INSTALL.md),
   which is only available on **conda**.
 - Please install torch separately if you want to control the version (CPU/GPU etc.)
+- On macOS, LightGBM and XGBoost need OpenMP (e.g., `brew install libomp`). 
+  Using PyTorch-based models (like RealMLP) and LightGBM/XGBoost in the same process (e.g., in the ensembles)
+  can then crash with a segmentation fault, since the pip wheels load two different OpenMP runtimes.
+  Installing `pytorch`, `lightgbm`, and `xgboost` from conda-forge avoids this.
 - Use `pytabkit[models,autogluon,extra,hpo,bench,dev]` to install additional dependencies for the other models,
   AutoGluon models, extra preprocessing,
   hyperparameter optimization methods beyond random search (hyperopt/SMAC),
